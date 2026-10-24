@@ -141,40 +141,6 @@
   color: #64748b;
   font-size: 12px;
 }
-.result-meanings {
-  display: grid;
-  gap: 8px;
-  margin: 0 0 12px;
-  font-size: 12px;
-}
-.result-meanings dt {
-  font-weight: 700;
-}
-.result-meanings dd {
-  margin: 2px 0 0;
-  color: var(--muted);
-}
-.result-risk-note {
-  color: var(--muted);
-  font-size: 12px;
-}
-.result-compare-table {
-  table-layout: fixed;
-  white-space: normal;
-}
-.result-compare-table th,
-.result-compare-table td {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.result-compare-table th:first-child {
-  width: 40%;
-}
-.result-compare-table tbody th {
-  padding: 8px;
-  font-weight: 500;
-  text-align: left;
-}
 .result-sections-list {
   display: grid;
   gap: 8px;

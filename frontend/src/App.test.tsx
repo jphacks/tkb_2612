@@ -504,46 +504,31 @@ describe("App search flow and condition ownership", () => {
 });
 
 describe("App result comparison and failures (frontend-spec 5, 10)", () => {
-  it("shows the comparison with the requested departure and auto/manual sources in the sidebar", async () => {
-    const user = await openConditions();
-    await user.click(screen.getByRole("radio", { name: "自転車" }));
-    await user.click(screen.getByRole("radio", { name: /夕 16:00/ }));
-    await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
-    const sidebar = await screen.findByRole("complementary", {
+  it("shows the aggregation settings and all candidates in the sidebar and syncs the selection with the map", async () => {
+    const user = await openResults();
+    const sidebar = screen.getByRole("complementary", {
       name: "検索結果と条件",
     });
     const response: RouteResponse =
       await api.searchRoutes.mock.results.at(-1)?.value;
-    expect(within(sidebar).getByText(response.reason)).toBeInTheDocument();
-    expect(within(sidebar).getByText(response.risk_note)).toBeInTheDocument();
-    const applied = within(sidebar).getByRole("region", {
-      name: "適用された条件",
-    });
+    await user.click(within(sidebar).getByText("集計条件と全候補"));
     expect(
-      within(applied).getByText(/^現在（.*の検索時点）$/),
-    ).toBeInTheDocument();
-    expect(within(applied).getByText("自転車")).toBeInTheDocument();
-    expect(within(applied).getByText("夕（手動）")).toBeInTheDocument();
-    expect(
-      within(applied).getByText(
-        `${response.effective_conditions.day_type}（自動）`,
-      ),
-    ).toBeInTheDocument();
-
-    // Selecting in the panel updates the map selection too.
+      within(sidebar).getByText(`${response.data_years.join("・")}年`),
+    ).toBeVisible();
+    const fastestIndex = response.candidates.findIndex(
+      (route) => route.id === response.fastest_id,
+    );
     await user.click(
-      within(
-        within(sidebar).getByRole("group", { name: "比較結果の経路" }),
-      ).getByRole("button", { name: /^最短時間経路/ }),
+      within(sidebar).getByRole("button", { name: `候補${fastestIndex + 1}` }),
     );
     expect(
       screen.getByRole("button", { name: "最短時間を選択" }),
     ).toHaveAttribute("aria-pressed", "true");
 
-    // Editing a condition clears the comparison with the result.
+    // Editing a condition clears the table together with the result.
     await user.click(within(sidebar).getByRole("radio", { name: "雨" }));
     expect(
-      within(sidebar).queryByRole("region", { name: "適用された条件" }),
+      within(sidebar).queryByText("集計条件と全候補"),
     ).not.toBeInTheDocument();
   });
 

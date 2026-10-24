@@ -13,7 +13,7 @@ import {
 import { isDemo, searchRoutes } from "./api/client";
 import { describeError, ROUTE_INPUT_HINT } from "./api/errorMessage";
 import type { Scenario } from "./lib/types";
-import { toTokyoInput, toTokyoIso } from "./lib/format";
+import { toTokyoIso } from "./lib/format";
 import LocationInput, {
   type GeocodeAttribution,
   type LocationValue,
@@ -21,7 +21,7 @@ import LocationInput, {
 import ConditionFields from "./components/ConditionFields";
 import { DataAttribution } from "./components/DataAttribution";
 import { LogoIntro } from "./components/LogoIntro";
-import { ResultsPanel, type SearchSnapshot } from "./components/ResultsPanel";
+import { ResultsPanel } from "./components/ResultsPanel";
 import { RouteMap } from "./components/RouteMap";
 import { useConditions } from "./state/useConditions";
 import { useCurrentLocation } from "./state/useCurrentLocation";
@@ -56,7 +56,7 @@ export default function App() {
   const confirmed = !!origin.place && !!dest.place;
 
   const health = useHealth();
-  const route = useRouteSearch<SearchSnapshot>();
+  const route = useRouteSearch();
   const { invalidate, searching, result } = route;
   const conditions = useConditions({
     origin: origin.place,
@@ -107,7 +107,7 @@ export default function App() {
       (searching && !restart)
     )
       return;
-    const { departure, dateTime, auto } = conditions;
+    const { departure, dateTime } = conditions;
     if (departure === "custom") {
       try {
         toTokyoIso(dateTime);
@@ -126,11 +126,6 @@ export default function App() {
       );
     if (page !== "results") setSidebarOpen(true);
     setPage("results");
-    const snapshot: SearchSnapshot = {
-      departure,
-      dateTime: departure === "now" ? toTokyoInput(new Date()) : dateTime,
-      auto,
-    };
     await route.run(
       async (signal) => {
         const applied = await conditions.valuesForSearch(
@@ -146,7 +141,7 @@ export default function App() {
           signal,
           currentScenario,
         );
-        return { response, snapshot };
+        return response;
       },
       (response) => health.noteRouteDataset(response.dataset_id),
     );
@@ -379,17 +374,11 @@ export default function App() {
                   検索結果と条件
                 </h1>
               </div>
-              {result && route.snapshot && route.selectedRoute && (
+              {result && route.selectedRoute && (
                 <ResultsPanel
                   result={result}
-                  snapshot={route.snapshot}
                   selectedRouteId={route.selectedRoute}
                   onSelectRoute={selectRoute}
-                  selectedSectionId={route.selectedSection}
-                  onSelectSection={route.setSelectedSection}
-                  showAccidents={showAccidents}
-                  onShowAccidents={setShowAccidents}
-                  isDemo={isDemo}
                 />
               )}
               <h2 className="panel-subtitle">検索条件</h2>
