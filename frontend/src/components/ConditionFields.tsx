@@ -8,6 +8,7 @@ import {
   CloudSnow,
   Footprints,
   Moon,
+  MoonStar,
   RotateCcw,
   Sun,
   Sunrise,
@@ -43,7 +44,7 @@ const periods: { value: Period; hours: string; Icon: LucideIcon }[] = [
   { value: "昼", hours: "09:00–15:59", Icon: Sun },
   { value: "夕", hours: "16:00–18:59", Icon: Sunset },
   { value: "夜", hours: "19:00–23:59", Icon: Moon },
-  { value: "深夜", hours: "00:00–03:59", Icon: Cloud },
+  { value: "深夜", hours: "00:00–03:59", Icon: MoonStar },
 ];
 const weathers: { value: Weather; Icon: LucideIcon }[] = [
   { value: "晴", Icon: Sun },
