@@ -146,6 +146,7 @@ paths:
                             segment_index: 6
                             source_vertex_start_index: 0
                             source_vertex_end_index: 1
+                      high_risk_total: 1
                       id: route-1
                       exact_condition_count: 1
                       extra_minutes: 0.0
@@ -205,6 +206,7 @@ paths:
                       high_risk_sections:
                         type: FeatureCollection
                         features: []
+                      high_risk_total: 0
                       id: route-1
                       exact_condition_count: 0
                       extra_minutes: 0.0
@@ -789,6 +791,7 @@ components:
           items: {$ref: '#/components/schemas/HighRiskFeature'}
       description: |
         重み降順、同値はsegment_index昇順の最大100区間、重み3以上。
+        切り捨ての有無は候補のhigh_risk_totalとの比較で判定する。
         連結しない。全高リスク区間の網羅ではなく表示用の上位集合。空ならfeatures=[]。
         自動GPS警告に流用せず、将来の全区間配信は別契約にする。
     WeatherMatch:
@@ -804,7 +807,7 @@ components:
       description: 集合Bのうち事故の天候が指定天候と一致する事故の集計。該当なしは全項目0。
     RouteCandidate:
       type: object
-      required: [id, duration, distance, geometry, accident_count, fatal_accidents, injury_accidents, deaths, injuries, weather_match, weighted_risk, risk_per_km, accident_points, points_shown, high_risk_sections, exact_condition_count, extra_minutes, within_detour]
+      required: [id, duration, distance, geometry, accident_count, fatal_accidents, injury_accidents, deaths, injuries, weather_match, weighted_risk, risk_per_km, accident_points, points_shown, high_risk_sections, high_risk_total, exact_condition_count, extra_minutes, within_detour]
       additionalProperties: false
       properties:
         id: {$ref: '#/components/schemas/RouteId'}
@@ -848,6 +851,9 @@ components:
           maximum: 250
           description: accident_points.features.length=min(accident_count,250)。表示点数。
         high_risk_sections: {$ref: '#/components/schemas/HighRiskCollection'}
+        high_risk_total:
+          $ref: '#/components/schemas/Count'
+          description: severity_weightが3以上の小線分の総数（100件で切る前）。high_risk_sections.features.length=min(high_risk_total,100)。
         exact_condition_count:
           $ref: '#/components/schemas/Count'
           deprecated: true

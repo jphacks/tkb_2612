@@ -224,11 +224,11 @@ Bを事故ID昇順（gzip CSVの行順）で走査して、死者ありFとそ�
 
 ### 高リスク区間と将来GPS用参照
 
-Bの各事故の深刻度 `10×deaths+injuries` を最寄り小線分1本に加算する。距離減衰と天候倍率は含めない。sid別の `severity_weight` を `(-weight,sid)` 昇順に並べ、先頭100件を取り、その中のweight>=3のみ返す（同等な先行フィルタでも順序を維持）。連続線分の結合、経路長による区間重み正規化はしない。
+Bの各事故の深刻度 `10×deaths+injuries` を最寄り小線分1本に加算する。距離減衰と天候倍率は含めない。sid別の `severity_weight` を `(-weight,sid)` 昇順に並べ、先頭100件を取り、その中のweight>=3のみ返す（同等な先行フィルタでも順序を維持）。連続線分の結合、経路長による区間重み正規化はしない。候補の `high_risk_total` には、100件で切る前のweight>=3の小線分の総数を返す。`high_risk_sections.features.length = min(high_risk_total, 100)` を満たし、`length < high_risk_total` でフロントが切り捨てを判定する。
 
 移行契約の `high_risk_sections` はFeatureCollection。geometryはその小線分の補間済み両端を持つLineString。propertiesはroute_id、severity_weight、`segment_index`、`source_vertex_start_index` と `source_vertex_end_index`。後者2つは元geometryの隣接頂点番号jとj+1で、小線分はその内側の一部分である。geometryをそのまま描画し、元頂点範囲全体を強調しない。feature.idは `route-N:segment-S`。sidは元頂点番号ではない。
 
-これで将来のGPS点と区間geometryの距離判定、元経路への対応付けが可能。ただし返却は上位100区間だけで、すべての重み3以上の区間を網羅しない。将来の全区間配信・接近警告閾値・進行方向・map matching・再検索頻度は**要確認**。v1では自動警告を実装しない。必要なら別バージョンで全区間を提供し、現在の表示用サブセットを完全な安全判定データに流用しない。
+これで将来のGPS点と区間geometryの距離判定、元経路への対応付けが可能。ただし返却は上位100区間だけで、すべての重み3以上の区間を網羅しない（総数は `high_risk_total`）。将来の全区間配信・接近警告閾値・進行方向・map matching・再検索頻度は**要確認**。v1では自動警告を実装しない。必要なら別バージョンで全区間を提供し、現在の表示用サブセットを完全な安全判定データに流用しない。
 
 ## 8. 最短時間・事故考慮経路の決定
 
@@ -400,8 +400,8 @@ JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-
 
 1. 同一入力データ、同一順序の固定OSRM応答で、ID/候補順/件数/重み/選定/間引き順が決定的に一致することをfixtureで検証する。Pythonとの比較は参考であり合格条件にしない。
 2. 浮動小数の距離・補間座標は通常ケースで座標絶対誤差1e-10度以内を目安とするが、採用/除外・丸め済み数値・順序の差は許さない。72m境界、75m分割、20m/30km/80km、許容時間+1e-6、丸め後のリスク同点、duration同点のfixtureを追加する。
-3. 15,000/15,001頂点、本文16,384/16,385バイト、provider12,000,000超、死亡250超、hotspot100超/重み2対3、重複座標と0長線分、元CSV重複行、初回/追加バッチ途中失敗を追加する。
-4. 全スキーマの必須/null/列挙/座標順を検証。`points_shown == features.length`、source頂点範囲、feature.id/route_id、fastest_id/safest_idの参照整合を検証。正常・全候補0件（safest_id=null）・天候一致0件・天候all（weather_match=null）・同一経路・全HTTPエラーの共通fixtureでReact/Rustを結合する。
+3. 15,000/15,001頂点、本文16,384/16,385バイト、provider12,000,000超、死亡250超、hotspot100超（high_risk_totalが100超）/重み2対3、重複座標と0長線分、元CSV重複行、初回/追加バッチ途中失敗を追加する。
+4. 全スキーマの必須/null/列挙/座標順を検証。`points_shown == features.length`、`high_risk_sections.features.length == min(high_risk_total, 100)`、source頂点範囲、feature.id/route_id、fastest_id/safest_idの参照整合を検証。正常・全候補0件（safest_id=null）・天候一致0件・天候all（weather_match=null）・同一経路・全HTTPエラーの共通fixtureでReact/Rustを結合する。
 5. 前処理の全入力行数/保持数/除外理由とCSV復号後の全行を検査する。現行記録は入力2,182,298、保持2,182,127、除外171（全件DMS不正）だが入力スナップショットに依存する。曜日区分の追加で保持・除外件数は変わらない。性能記録（6モックケースで1秒未満）はSLAではない。実OSRM/Geoapify/Open-Meteo、ブラウザ描画、実GPSはVALIDATION時点で未検証で、別の結合受け入れ試験が必要。
 
 ### 時間帯・曜日区分・条件取得の追加試験
@@ -415,6 +415,7 @@ JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-
 
 ## 12. 要確認事項と暫定扱い
 
+- 高リスク区間の返却上限100件は利用者決定で確定（2026-10-24）。切り捨ての有無は `high_risk_total` で伝える。
 - σ=24m・打切り72m・天候倍率（雨2、霧/雪4）は暫定値。根拠の実験は小規模で証拠が弱く、時間帯・曜日区分・天候の条件下では未検証（[route-scoring-decision.md](../route-scoring-decision.md) 3・6章）。深刻度の重み10と区間しきい値3は旧プロトタイプの定数を維持する。
 - 真の事故ID・原本の重複有無は不明。入力行IDと経路内重複排除だけを維持する。
 - PDFの自動内容検証なし、事故類型コードと死傷者/A/Bの整合検証なし。強化する場合は除外件数が変わるため別の仕様変更とする。
