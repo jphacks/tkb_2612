@@ -2,7 +2,7 @@
 
 ## 1. 方針と文書の優先順位
 
-Rust/Axumはデータ前処理・ロード・外部サービス呼出し・候補生成・事故集計・選定を担当する。出発日時からの時間帯・曜日区分の判定（祝日表）と、地域の天候の取得（気象提供元）もbackendが担う。React/TypeScript/Vite/MapLibre GL JSは入力、出発日時と条件の自動/手動の管理、地図、比較、GPS許可、PWAを担当する。両者はHTTP/JSONだけで連携し、ソース・ビルド・依存関係を分離する。
+Rust/Axumはデータ前処理・ロード・外部サービス呼出し・候補生成・事故集計・選定を担当する。出発日時からの時間帯・曜日区分の判定（祝日表）と、地域の天候の取得（気象提供元）もbackendが担う。React/TypeScript/Vite/MapLibre GL JSは入力、出発日時と条件の自動/手動の管理、地図、比較、GPS許可・ナビの進捗/接近/逸脱判定・模擬走行、PWAを担当する。両者はHTTP/JSONだけで連携し、ソース・ビルド・依存関係を分離する。
 
 [api/openapi.yaml](api/openapi.yaml) を外部契約の正本、[api/behavior.md](api/behavior.md) を計算と互換性の正本、[frontend-spec.md](frontend-spec.md) を操作の正本にする。本書は構成と運用の新設計であり、現行Pythonの実装済み機能を示すものではない。配備先・アクセス制御・外部提供元・共有レート制御の決定と根拠は [backend-spec.md](backend-spec.md) と [cloud-selection.md](cloud-selection.md) にあり、本書はそれに合わせて記述する。
 
@@ -10,10 +10,10 @@ Rust/Axumはデータ前処理・ロード・外部サービス呼出し・候�
 
 ## 2. ディレクトリ案と依存境界
 
-以下は将来の構成案で、今回作成するのはdocsの4文書だけ。
+以下は将来の構成案。本作業はdocsの仕様書と契約fixtureだけを編集する。既存のapp/はデモ、backend/・frontend/は誤って作成された実装であり、仕様の根拠にせず変更しない。
 
 ```text
-app/                         現行Python参照実装。変更しない
+app/                         デモ。仕様の根拠にせず変更しない
 accident/                    原本CSV/PDF/XLSX。読み取り専用
 backend/
   Cargo.toml / Cargo.lock
@@ -38,6 +38,7 @@ frontend/
     api/                     HTTPラッパー
     components/              スタイルを持たない最小構成
     state/                   入力・出発日時・条件の自動/手動・結果・世代管理
+    navigation/              実機/模擬の位置源、時計、共通判定、音声/Wake Lock
     map/                     MapLibre source/layerとスタイル接続
     styles/                  後で確定するデザイントークン
   public/                    manifest/SWの生成元等
@@ -51,7 +52,7 @@ docs/
   architecture.md
 ```
 
-backendはfrontendのソースを読まず、ビルド済みdistを設定されたパスから配信するだけ。frontendはbackendのRust型やデータCSVを直接importしない。API層はドメイン型とDTOを分離し、GeoJSON包装やHTTPの都合を空間集計へ持ち込まない。候補の数値・順序を決めるロジックはbackend一か所にする。
+backendはfrontendのソースを読まず、ビルド済みdistを設定されたパスから配信するだけ。frontendはbackendのRust型やデータCSVを直接importしない。API層はドメイン型とDTOを分離し、GeoJSON包装やHTTPの都合を空間集計へ持ち込まない。候補とナビ区間の数値・順序・結合を決めるロジックはbackend一か所にする。選定後だけnavigationを組み立て、表示用の上位100区間と同じsid別集計を使う。フロントは送られた累積距離軸で幾何学的な進捗と通知時点を判定し、事故リスクを再計算しない。
 
 時間帯・曜日区分の判定関数もbackendのdomainに一つだけ置き、前処理コマンドと `/api/conditions` の両方から呼ぶ。frontendは時刻境界や祝日を計算せず、ブラウザのタイムゾーンにも依存しない。気象提供元への通信はbackendだけが行い、ブラウザから気象APIを直接呼ばない。
 
@@ -73,12 +74,12 @@ Rust側はserde DTOを実装し、OpenAPIのoptional/required/null/enumに合わ
 契約の整合は次の順で保証する。
 
 1. 変更はまずOpenAPIと関連仕様に記載し、同じ変更単位でDTO・生成TS・fixtureを更新する。サーバから逆生成したOpenAPIを別の正本にしない。
-2. CIでOpenAPI 3.1文法・全参照を検査し、各共通fixtureをJSON Schema Draft 2020-12で検証する。HTTP status/code、ID参照・個数一致・非緩和（relaxed_conditions=[]）・weather_matchとsafest_idのnull条件等の相関制約は別の契約試験で検査する。
+2. CIでOpenAPI 3.1文法・全参照を検査し、各共通fixtureをJSON Schema Draft 2020-12で検証する。HTTP status/code、ID参照・個数一致・非緩和（relaxed_conditions=[]）・weather_matchとsafest_idのnull条件、選定候補だけnavigation非null・累積配列長/末尾・区間順序/総数等の相関制約は別の契約試験で検査する。
 3. RustでfixtureをDTOへdeserialize/serializeして再検証する。レスポンスの必須値欠落、null/省略の違いを検出する。Axum extractorの既定エラーもJSON形式へ変換されることを確認する。
 4. frontendで型を再生成して差分ゼロを確認し、型チェックとfixture利用の操作試験を実施する。生成型だけでは実応答を保証しないので、API境界ではJSON形状とID参照の検査を行う。
 5. 固定外部応答でRustの決定性とfixture一致の試験を通し、その後同一契約のReact/Axumを結合する。Pythonとの数値同等性は要求しない。
 
-必須フィールド削除・型変更・意味変更は契約版更新が必要。追加フィールドも本OpenAPIのadditionalProperties制約に従い、仕様更新→生成・検査→協調リリースとする。時間帯の5区分化（periodの整数3と「夜」の意味の変更）、day_typeの追加、effective_conditionsへの必須項目追加、天候の重み付け化とweather_matchの追加、スコア方式・半径の変更、safest_idのnull許容は意味変更なので、未リリースの統合契約をapi_version 2.0として揃える。frontendは2.0以外のapi_versionを受けたら、古いUIとAPIの混在として扱う。将来の本格的なGPS APIはv1の上位100区間の意味を変えず別契約にする。
+必須フィールド削除・型変更・意味変更は契約版更新が必要。追加フィールドも本OpenAPIのadditionalProperties制約に従い、仕様更新→生成・検査→協調リリースとする。時間帯の5区分化（periodの整数3と「夜」の意味の変更）、day_typeの追加、effective_conditionsへの必須項目追加、天候の重み付け化とweather_matchの追加、スコア方式・半径の変更、safest_idのnull許容は意味変更なので、未リリースの統合契約をapi_version 2.0として揃える。frontendは2.0以外のapi_versionを受けたら、古いUIとAPIの混在として扱う。GPSナビ用の必須nullable navigationとその全対象区間も未リリースの2.0に含める。既存UIが2.0とだけ検査して通過しても、navigation欠落・相関不正なら応答を拒否する。新旧DTO/生成TS/fixtureを協調更新し、既に配信済みになった後の同様な契約変更は版更新を必要とする。表示用high_risk_sectionsの上位100件の意味は変えない。判断の比較・根拠は [navigation-delegated-decisions.md](navigation-delegated-decisions.md) を参照。
 
 ## 4. 開発・配信
 
@@ -88,7 +89,9 @@ strictPortを有効にして勝手なポート移動を避ける。localhost利�
 
 本番は **Google Cloud Run 東京（`asia-northeast1`）** とし、Cloud RunのTLS終端→Axum（`0.0.0.0:$PORT`）で、APIとビルド済みdistを1つのコンテナから同一オリジンで配信する。初期1 vCPU / 2 GiB・同時受付4・最大1台、通常は最小0台、実演中は最小1台（[cloud-selection.md](cloud-selection.md)）。実演はCloud RunのURL（HTTPS）へブラウザから直接アクセスし、IAPで許可したGoogleアカウント（開発者・審査員）だけに限定する。`allUsers` を付けない。アプリ独自のログインやブラウザへのトークン埋込みは作らない。IAPのログインはページ遷移で行われ、セッション切れの `/api/*` はログインへのリダイレクトになり得る。Cloud Run・IAPがアプリ到達前に返す認証リダイレクト・拒否・429等は非JSONになるので、フロントは非JSONの失敗として扱い、再読込を案内する。PWAのmanifestはIAPのcookieが必要なので `<link rel="manifest" crossorigin="use-credentials">` で読み込む。`/api/*` を先に解決し、未知APIへHTMLを返さない。static root外、dotfiles、ディレクトリ一覧、ソース/原本/データへのアクセスを禁止する。
 
-HTML/manifest/sw.jsはno-cache（再検証可能）、内容ハッシュ付きassetsは長期immutable、APIはすべてno-store。画面は `/` のみ、未知パスは404。MapLibre style/tilesの配信元と帰属は別途設定する。APIクライアントは45秒で打切り、サーバのroute/geocodeは受付から応答JSON準備完了まで最大35秒の要求全体期限を設ける（キュー待ち・集計・シリアライズを含み、クライアントへの転送時間は含まない）。全体期限切れは処理段階によらず503 service_busyで終了し、既存候補があっても200を返さない。この制御は追加候補のAPIError捕捉より外側に置く。全体期限内の個別上流通信の8秒期限切れは502 external_api_errorで、追加候補だけの失敗ならbehavior通り警告にして集計を続けられる。待ち行列満杯は503 service_busy。未完了の処理をキャンセルし、CPU集計も期限を確認して停止できるようにし、無制限に積み上げない。
+HTML/manifest/sw.jsはno-cache（再検証可能）、内容ハッシュ付きassetsは長期immutable、APIはすべてno-store。画面は `/` のみ、未知パスは404。MapLibre style/tilesの配信元と帰属は別途設定する。利用者決定により通常検索・ナビ再検索とも中止操作を設けず、再検索中のナビ停止/一時停止/終了も不可として応答または期限まで待つ。hidden/pagehide・unmountによる中断と再検索中断後の手動再試行はfrontend-spec 7.6に従う。APIクライアントはrouteがfetch開始から本文受信・展開・JSON解析/検査を含め180秒、geocode/healthが45秒で打切り、サーバのroute/geocodeは受付から応答JSON準備完了まで最大35秒の要求全体期限を設ける（キュー待ち・集計・シリアライズ・gzip圧縮を含み、クライアントへの転送時間は含まない）。全体期限切れは処理段階によらず503 service_busyで終了し、既存候補があっても200を返さない。この制御は追加候補のAPIError捕捉より外側に置く。全体期限内の個別上流通信の8秒期限切れは502 external_api_errorで、追加候補だけの失敗ならbehavior通り警告にして集計を続けられる。待ち行列満杯は503 service_busy。未完了の処理をキャンセルし、CPU集計も期限を確認して停止できるようにし、無制限に積み上げない。
+
+routeはAxumでgzip対応要求への圧縮を必須とし、Content-Encoding: gzip・Vary: Accept-Encodingを返す。identity要求も扱い、no-storeを維持する。サーバの転送待ちは送信開始から120秒、Cloud Runの要求タイムアウトは180秒以上とし、35秒の処理期限とは分離する。全応答概ね11〜12MB（小計10,847,344バイト）を想定し、下り1Mbps・RTT 300msなら非圧縮12MBの96秒＋サーバ35秒＋通信等2秒＋端末解析5秒=138秒。圧縮率を仮定して期限を短縮しない。Cloud Run＋IAP経由の圧縮/ヘッダー/転送期限の実効性は**要確認**。正確なサイズ規則と本文受信完了の受け入れはbehavior 7章。
 
 `/api/conditions` はクライアント10秒、サーバ全体8秒、気象提供元への1通信5秒とする。サーバ全体の期限はクライアントより短くし、期限内に天候が得られなければ天候だけunavailableとして200を返す。気象提供元の失敗・待ち行列満杯はエラー応答にせず、時間帯・曜日区分は常に返す。
 
@@ -134,7 +137,8 @@ HTML/manifest/sw.jsはno-cache（再検証可能）、内容ハッシュ付きas
 | ROUTING_MIN_INTERVAL_MS | 1050 | 同一提供元の通信開始最短間隔。公共OSRMでは短縮不可 |
 | GEOCODING_MIN_INTERVAL_MS | 1050 | 全インスタンス共通の開始最短間隔。同時通信は1 |
 | UPSTREAM_QUEUE_CAPACITY | 16 | 提供元別の待ち通信上限。満杯はservice_busy |
-| REQUEST_TIMEOUT_MS | 35000 | queue待ち含むAPI要求全体の上限 |
+| REQUEST_TIMEOUT_MS | 35000 | route/geocodeのqueue待ち・JSON準備・route圧縮まで。転送を除く |
+| ROUTE_TRANSFER_TIMEOUT_MS | 120000 | routeの送信開始からの転送待ち上限。計算期限とは別 |
 | UPSTREAM_GATE | firestore | 全インスタンス共通の上流ゲート。本番はfirestore必須、localはローカル開発専用 |
 | WEATHER_PROVIDER | open-meteo | 初期対応の気象アダプタ識別子。未対応値は起動拒否 |
 | OPEN_METEO_BASE_URL | 必須 | `/v1/forecast` を付加するベースURL。無料版と有償版で接続先が異なる |
@@ -171,17 +175,19 @@ routingアダプタはorigin/dest/mode/optional viaを受け、順序付きdurat
 
 接続先設定の変更で自己ホストや同互換サービスへ替えられるようにする。異なるプロトコルの提供元は新アダプタを実装するが、フロント契約は維持する。徒歩/自転車プロファイルを提供できないサービスへ替えたとき、drivingへ黙って代替しない。提供元が変わると候補geometry/時間が変わるため、受け入れは固定上流応答を使い、確定仕様から作ったfixtureとの一致で判定する。Pythonとの数値互換は保証しない。
 
-提供元別に全利用者共通の直列化・通信開始間隔・有限待ち行列を設ける。Cloud Runは最大1台でも再配備・保守で複数インスタンスが一時的に併存するため、**全インスタンス共通の上流ゲートをFirestore Standardのトランザクションで管理する**。保存するのは提供元/アカウントの識別子、呼出し開始時刻・期限、同時通信のリース/世代番号と集計件数だけで、住所・座標・経路・利用者ID・リクエストIDを保存しない。通信をトランザクション内で実行せず、共有状態が読めない/競合が解消しない場合は呼び出さない（route/geocodeは追加候補の取得中でも要求全体を503 service_busy、conditionsは天候unavailable）。クライアントからFirestoreへの直接アクセスは許可しない。OSRM追加候補の要求順は現行と同じで、最大3呼出しを並列化しない。
+提供元別に全利用者共通の直列化・通信開始間隔・有限待ち行列を設ける。Cloud Runは最大1台でも再配備・保守で複数インスタンスが一時的に併存するため、**全インスタンス共通の上流ゲートをFirestore Standardのトランザクションで管理する**。保存するのは提供元/アカウントの識別子、呼出し開始時刻・期限、同時通信のリース/世代番号と集計件数だけで、住所・座標・経路・利用者ID・リクエストIDを保存しない。通信をトランザクション内で実行せず、共有状態が読めない/競合が解消しない場合は呼び出さない（route/geocodeは追加候補の取得中でも要求全体を503 service_busy、conditionsは天候unavailable）。クライアントからFirestoreへの直接アクセスは許可しない。OSRM追加候補の要求順は既存契約と同じで、最大3呼出しを並列化しない。公共OSRMは全利用者合計1req/秒、ROUTING_MIN_INTERVAL_MS=1050を維持する。ナビデータは既存route応答の選定1〜2本に同梱し、ナビ開始/進行/模擬には上流呼出しを追加しない。ナビ中の明示再検索だけが通常検索として同じゲートを通る。steps=falseを維持し、専用追跡・区間再取得APIやサーバ上の経路保存は設けない。
 
 ## 8. プライバシー
 
 利用者の位置（GPS/手入力/地図指定）、住所検索語、出発地/目的地、経路、検索履歴を永続保存しない。アカウント、位置DB、追跡イベント、リクエスト本文の計測基盤送信は初期版に設けない。公開事故原本と前処理結果は保持してよい。
 
-ブラウザはページのメモリだけ、サーバは要求処理中の一時保持だけを標準とする。localStorage/IndexedDB/SW/API cache/URL query・hashへルート状態・出発日時・条件取得結果を保存しない。GPS取得だけではサーバ送信しない。サーバへ座標を送るのは、両地点の確定後の条件取得（2地点の中点を小数2桁、約1kmに丸めた1点）と、明示的な経路検索だけである。
+ブラウザはページのメモリだけ、サーバは要求処理中の一時保持だけを標準とする。ナビ用区間・実GPS/模擬位置・accuracy・進捗・通知済みIDも同じ扱いで、ログ・分析イベント・履歴配列に蓄積しない。判定に必要な限定した直近値・時点/カウンタだけを保持し、走行時間に比例して保持量を増やさず、終了/unmountでナビ状態を破棄する。localStorage/IndexedDB/SW/API cache/URL query・hashへルート状態・出発日時・条件取得結果を保存しない。GPS取得・ナビ開始・各測位・模擬更新だけではサーバ送信しない。ナビ中に条件の定期再取得をしない。サーバへ座標を送るのは、両地点の確定後の条件取得（2地点の中点を小数2桁、約1kmに丸めた1点）と、明示的な経路検索（ナビの再検索ボタンを含む）だけである。再検索時の現在日時・条件の再取得/手動保持はfrontend-spec 7.6に従う。
 
 例外として、気象応答のキャッシュは丸めた座標（約1km格子）をキーにしてプロセスメモリに最大10分保持する。利用者・要求との対応付けは持たず、永続化しない。再起動で消える。気象提供元へは丸めた座標だけを送り、元の出発地・目的地は送らない。ブラウザ自身やOSの許可履歴までアプリが消去できるという保証はしない。
 
 アクセスログはルート名（パステンプレート）、status、処理時間、匿名のエラーコードなど位置を含まない項目に限定する。Cloud Runが自動生成するリクエストログはクエリ文字列を含むため、実位置・住所を送る前に `_Default` sinkへ当該サービスのリクエストログの除外フィルタを設定し、他sink・組織転送も確認する（[cloud-selection.md](cloud-selection.md)）。`/api/geocode?q=...` と `/api/conditions?...&lat=..&lon=..` のraw URI、OSRMとOpen-Meteoの座標入りURL、body、Refererの機微値、エラー内のURLを、Axum・HTTPクライアント・リバースプロキシ・APMすべてで記録しない。メトリクスlabelにも含めない。ページのReferrer-Policyはno-referrerを基本とし、提供元識別にはUAを使用する。
+
+hidden/pagehideでwatch・模擬・音声を停止し、経路保持時の復帰は明示再開・全経路再確認とする。良好測位または照合に使える位置の更新が30秒超途絶えた場合も、旧進捗に制限せず全経路から再確認する。再検索中なら要求世代を無効化し、経路なしの再検索中断へ遷移、入力snapshotを保持して操作抑止を解除する。復帰は手動再試行だけで、自動送信しない。再検索の中断・失敗のどちらも、入力編集でsnapshotを破棄し専用再試行を解除して通常入力へ戻る（frontend-spec 3章・7.6/7.8）。バックグラウンド追跡を行わず、SWはナビ中（一時停止を含む）に強制更新しない。通信なしのメモリ内ナビはオフラインでも継続できるが再訪では復元しない。IAPの定期確認はせず、明示通信で認証失敗を検出したら停止する（frontend-spec 7.8）。
 
 外部ルーティングには座標、住所検索（Geoapify）にはq、気象提供元には丸めた座標、地図提供元には表示範囲が伝わり得る。外部提供元の運用ログは利用者が許容済みである。アプリ内で位置・検索履歴を永続保存しない方針とは別に扱い、提供元の一時処理や運用ログまで消せるとは説明しない。
 
@@ -191,4 +197,6 @@ backend担当はbehavior 11章の試験・追加境界試験・OpenAPI応答検�
 
 結合では座標順/単位、選定ID、GeoJSONの直接描画、事故点のID重複排除、区間の元頂点対応、null削減率、エラー/ローディング、healthデータ世代、API no-storeを確認する。条件については、conditionsの結果がそのままrouteのperiod/day_type/weatherへ渡ること、手動値が上書きされないこと、送信座標が丸めた中点だけであることを確認する。実上流の疎通・実道路妥当性、実際の気象応答、スマートフォンGPS、HTTPS、PWA更新/オフライン、提供元条件、Cloud Run IAP・共有上流ゲート・ログ除外の実効性は別の受け入れ項目であり、単体テスト成功で代用しない。
 
-最終的に要確認なのは商用提供元/タイル契約、Open-Meteoの商用プラン、天候変換表の扱い、σ・天候倍率の妥当性（[route-scoring-decision.md](route-scoring-decision.md) 6章）、対応端末の範囲、IAPでの組織外アカウントの扱い、将来のGPS警告の意味。これらはv1の集計・JSON・UI操作を実装する際の未決定分岐にはしない。本書の暫定契約で実装し、公開前に運用側の確認を完了する。
+ナビはbehavior 11章の人工fixtureとfrontend-spec 11章の模擬走行で結合検証する。2選定/同一ID/null・上位100件超と全区間・交差/折返し・低精度・通知抑止・逸脱/明示再検索・503・世代競合を確認する。最大navigation 5,000,000バイトと概ね11〜12MBの全応答ケースで、Cloud Run初期資源/圧縮を含む35秒期限・ブラウザ解析/描画時間を測る。下り1Mbps・RTT 300msでgzip/identityともfetch開始から本文全受信・展開・解析/検査完了まで180秒以内（IAP経由も含む）を確認し、サーバ処理/転送/解析を別々に記録する。照合の方式は利用者決定に従ってfrontend-spec 7.3と [navigation-matching-cases.md](navigation-matching-cases.md) の条件・テストを満たすものを実装時に選び記録する。500m/50秒・51秒往復、揺らぎと複数seed、実際の後戻り、90秒欠測/1,800m、hidden中の再検索中断と失敗後の入力編集、音声の実時間3秒/15秒/10秒と位置の仮想時計も共通判定器で検査する。実機での通知・GPS・音声・Wake Lock・IAP・非表示・SW更新は別の受け入れとし、模擬成功で代用しない。
+
+最終的に**要確認**なのは商用提供元/タイル契約、Open-Meteoの商用プラン、天候変換表、σ・天候倍率の妥当性（[route-scoring-decision.md](route-scoring-decision.md) 6章）、対応端末、IAPの組織外アカウント、ナビの精度/距離/継続時間の暫定値とサイズ/性能、Web Speech APIのja-JPとiOS操作起点、Wake Lock、道路交通法と2024年11月からの自転車ながらスマホ罰則を踏まえた注意文の最終適否。今回ネットワークで現行の外部仕様・法令は確認していない。ナビの機能範囲は確定済みで、これらは実装/配備前の検証残件とする。走行中に復旧操作を要求せず、設定・再検索・再ログインは安全な場所で停止後に行う。

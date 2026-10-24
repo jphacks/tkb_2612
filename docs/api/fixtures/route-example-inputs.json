@@ -1,0 +1,253 @@
+{
+  "description": "OpenAPIのroute応答例を再集計する共通の人工事故。事故IDは全候補共通。各routesは固定OSRM応答の集計入力で、distance/durationはgeometryの局所距離と別。実事故・位置履歴ではない。",
+  "accidents": [
+    {
+      "type": "Feature",
+      "id": 0,
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          139.005,
+          35.0
+        ]
+      },
+      "properties": {
+        "deaths": 1,
+        "injuries": 2,
+        "source_year": 2025,
+        "date": 20250101,
+        "weather": "晴",
+        "period": "昼",
+        "day_type": "休日"
+      },
+      "modes": [
+        "walk",
+        "bike",
+        "car"
+      ]
+    },
+    {
+      "type": "Feature",
+      "id": 1,
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          139.0025,
+          35.0005
+        ]
+      },
+      "properties": {
+        "deaths": 0,
+        "injuries": 3,
+        "source_year": 2025,
+        "date": 20250101,
+        "weather": "晴",
+        "period": "昼",
+        "day_type": "休日"
+      },
+      "modes": [
+        "walk",
+        "bike",
+        "car"
+      ]
+    },
+    {
+      "type": "Feature",
+      "id": 2,
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          139.0025,
+          35.001000000000005
+        ]
+      },
+      "properties": {
+        "deaths": 0,
+        "injuries": 8,
+        "source_year": 2025,
+        "date": 20250101,
+        "weather": "晴",
+        "period": "昼",
+        "day_type": "休日"
+      },
+      "modes": [
+        "walk",
+        "bike",
+        "car"
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "name": "singleRoute",
+      "request": {
+        "origin": {
+          "lat": 35,
+          "lon": 139
+        },
+        "dest": {
+          "lat": 35,
+          "lon": 139.01
+        },
+        "mode": "walk",
+        "period": "昼",
+        "day_type": "休日",
+        "weather": "晴",
+        "max_detour_min": 10
+      },
+      "accident_ids": [
+        0
+      ],
+      "routes": [
+        {
+          "id": "route-1",
+          "duration": 600,
+          "distance": 1000,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "noAccidents",
+      "request": {
+        "origin": {
+          "lat": 35,
+          "lon": 139
+        },
+        "dest": {
+          "lat": 35,
+          "lon": 139.01
+        },
+        "mode": "walk",
+        "period": "深夜",
+        "day_type": "休日",
+        "weather": "雪",
+        "max_detour_min": 10
+      },
+      "accident_ids": [
+        0,
+        1,
+        2
+      ],
+      "routes": [
+        {
+          "id": "route-1",
+          "duration": 600,
+          "distance": 1000,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "twoSelected",
+      "request": {
+        "origin": {
+          "lat": 35,
+          "lon": 139
+        },
+        "dest": {
+          "lat": 35,
+          "lon": 139.01
+        },
+        "mode": "walk",
+        "period": "昼",
+        "day_type": "休日",
+        "weather": "晴",
+        "max_detour_min": 10
+      },
+      "accident_ids": [
+        0,
+        1,
+        2
+      ],
+      "routes": [
+        {
+          "id": "route-1",
+          "duration": 600,
+          "distance": 1000,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          }
+        },
+        {
+          "id": "route-2",
+          "duration": 750,
+          "distance": 1100,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.005,
+                35.001
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          }
+        },
+        {
+          "id": "route-3",
+          "duration": 900,
+          "distance": 1400,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.005,
+                35.002
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
