@@ -4,16 +4,28 @@
 //! `navigation-cases.json` の入力（geometryとsid別の重み）をそのまま使える。
 
 use crate::contract::engine::MAX_HIGH_RISK_SECTIONS;
-use crate::contract::{HighRiskSegment, NavigationData, NavigationSection};
+use crate::contract::{CancelToken, HighRiskSegment, Interrupt, NavigationData, NavigationSection};
 
-use super::corridor::Subdivision;
+use super::corridor::{CANCEL_CHECK_INTERVAL, Subdivision};
 
 /// 高リスク区間・ナビ対象とする小線分の重みの下限。
 pub const HIGH_RISK_MIN_WEIGHT: u64 = 3;
 
 /// 表示用の高リスク区間（`(-weight, sid)` 昇順の先頭100件）と、
-/// 100件で切る前の重み3以上の小線分数。
+/// 100件で切る前の重み3以上の小線分数。期限なしで作る。
 pub fn display_sections(subdivision: &Subdivision, weights: &[u64]) -> (Vec<HighRiskSegment>, u64) {
+    display_sections_checked(subdivision, weights, &CancelToken::unbounded())
+        .expect("期限なしでは中断しない")
+}
+
+/// [`display_sections`] を、整列の前後で `cancel.check()` を確かめながら作る。
+/// 整列の対象は最大で小線分数（16,466本）。
+pub fn display_sections_checked(
+    subdivision: &Subdivision,
+    weights: &[u64],
+    cancel: &CancelToken,
+) -> Result<(Vec<HighRiskSegment>, u64), Interrupt> {
+    cancel.check()?;
     let mut targets: Vec<(u64, usize)> = weights
         .iter()
         .enumerate()
@@ -22,6 +34,7 @@ pub fn display_sections(subdivision: &Subdivision, weights: &[u64]) -> (Vec<High
         .collect();
     let total = targets.len() as u64;
     targets.sort_by_key(|&(w, sid)| (std::cmp::Reverse(w), sid));
+    cancel.check()?;
     let sections = targets
         .into_iter()
         .take(MAX_HIGH_RISK_SECTIONS)
@@ -36,7 +49,7 @@ pub fn display_sections(subdivision: &Subdivision, weights: &[u64]) -> (Vec<High
             }
         })
         .collect();
-    (sections, total)
+    Ok((sections, total))
 }
 
 /// 元geometryの各頂点までの累積距離（m）。先頭0、末尾が `length_m`。
@@ -71,8 +84,19 @@ fn segment_range_m(subdivision: &Subdivision, vertex_distances: &[f64], sid: usi
 }
 
 /// 選定経路のナビ用データ。重み3以上のsidが連続する最大の列を1区間に結合する。
-/// 100件で切る前の全対象を使い、切り捨てない。
+/// 100件で切る前の全対象を使い、切り捨てない。期限なしで作る。
 pub fn navigation_data(subdivision: &Subdivision, weights: &[u64]) -> NavigationData {
+    navigation_data_checked(subdivision, weights, &CancelToken::unbounded())
+        .expect("期限なしでは中断しない")
+}
+
+/// [`navigation_data`] を、小線分1024本ごとに `cancel.check()` を確かめながら作る。
+pub fn navigation_data_checked(
+    subdivision: &Subdivision,
+    weights: &[u64],
+    cancel: &CancelToken,
+) -> Result<NavigationData, Interrupt> {
+    cancel.check()?;
     let vertex_distances_m = vertex_distances(subdivision);
     let length_m = *vertex_distances_m.last().expect("頂点は1個以上");
     let mut sections: Vec<NavigationSection> = Vec::new();
@@ -90,6 +114,9 @@ pub fn navigation_data(subdivision: &Subdivision, weights: &[u64]) -> Navigation
         });
     };
     for (sid, &weight) in weights.iter().enumerate() {
+        if sid % CANCEL_CHECK_INTERVAL == 0 {
+            cancel.check()?;
+        }
         if weight >= HIGH_RISK_MIN_WEIGHT {
             open = Some(match open {
                 Some((start, _, total)) => (start, sid, total + weight),
@@ -102,10 +129,10 @@ pub fn navigation_data(subdivision: &Subdivision, weights: &[u64]) -> Navigation
     if let Some(section) = open {
         close(section, &mut sections);
     }
-    NavigationData {
+    Ok(NavigationData {
         projection_lat_deg: subdivision.projection.phi_deg,
         length_m,
         vertex_distances_m,
         sections,
-    }
+    })
 }

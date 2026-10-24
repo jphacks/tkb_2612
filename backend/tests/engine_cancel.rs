@@ -147,3 +147,35 @@ fn cancel_is_prompt_when_many_subsegments_share_a_cell() {
         "取消しから{lag:?}かかった"
     );
 }
+
+#[test]
+fn cancel_is_prompt_when_many_accidents_share_a_cell() {
+    // 元CSVの重複行は除かないので、1セルに大量の事故があり得る（ここでは同じ地点に300万件）。
+    // セル内の事故の登録・走査の途中でも中断を確かめる
+    let accidents = vec![Acc::at(139.0005, 35.0005); 3_000_000];
+    let e = engine(&accidents);
+    let q = query(Mode::Walk, 10.0, ConditionFilter::default());
+    let candidates = CandidateSet {
+        routes: vec![straight_east(600.0, 1000.0, 1000.0)],
+        warnings: vec![],
+    };
+    let cancel = CancelToken::unbounded();
+    let remote = cancel.clone();
+    let canceller = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(2));
+        remote.cancel();
+        Instant::now()
+    });
+    let result = e.evaluate(&q, candidates, &cancel);
+    let returned = Instant::now();
+    let cancelled_at = canceller.join().unwrap();
+    assert_eq!(
+        result.unwrap_err(),
+        EngineError::Interrupted(Interrupt::Cancelled)
+    );
+    let lag = returned.saturating_duration_since(cancelled_at);
+    assert!(
+        lag < Duration::from_millis(500),
+        "取消しから{lag:?}かかった"
+    );
+}

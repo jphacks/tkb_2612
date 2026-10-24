@@ -10,7 +10,7 @@ use crate::contract::{
 
 use super::candidates;
 use super::corridor::{Subdivision, corridor_hits};
-use super::navigation::{display_sections, navigation_data};
+use super::navigation::{display_sections_checked, navigation_data_checked};
 use super::rounding::py_round;
 use super::scoring::{RouteScore, score_route};
 use super::snapshot::AccidentSnapshot;
@@ -106,7 +106,7 @@ impl RouteEngine for AccidentEngine {
         let mut scored = Vec::with_capacity(routes.len());
         for path in &routes {
             cancel.check()?;
-            let subdivision = Subdivision::new(&path.coordinates);
+            let subdivision = Subdivision::build(&path.coordinates, cancel)?;
             let hits = corridor_hits(&subdivision, &self.snapshot, mask, cancel)?;
             let score = score_route(
                 &hits,
@@ -197,10 +197,17 @@ impl RouteEngine for AccidentEngine {
         {
             cancel.check()?;
             let (high_risk_sections, high_risk_total) =
-                display_sections(&subdivision, &score.segment_weights);
+                display_sections_checked(&subdivision, &score.segment_weights, cancel)?;
             let selected = i == fastest || safest == Some(i);
-            let navigation =
-                selected.then(|| navigation_data(&subdivision, &score.segment_weights));
+            let navigation = if selected {
+                Some(navigation_data_checked(
+                    &subdivision,
+                    &score.segment_weights,
+                    cancel,
+                )?)
+            } else {
+                None
+            };
             evaluated.push(EvaluatedRoute {
                 path,
                 totals: score.totals,
@@ -216,6 +223,8 @@ impl RouteEngine for AccidentEngine {
             });
         }
 
+        // 結果の組立て後にも確かめる（期限後の結果の採用は③の settle でも防ぐ）
+        cancel.check()?;
         let aggregation_ms = py_round(started.elapsed().as_secs_f64() * 1000.0, 2);
         Ok(RouteOutcome {
             dataset_id: self.dataset.dataset_id.clone(),

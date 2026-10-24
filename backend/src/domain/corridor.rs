@@ -106,12 +106,20 @@ fn interpolate(a: LonLat, b: LonLat, k: u32, n: u32) -> LonLat {
 }
 
 impl Subdivision {
-    /// `coordinates` は2頂点以上（候補の検証済み）。
+    /// `coordinates` は2頂点以上（候補の検証済み）。期限なしで作る。
     pub fn new(coordinates: &[LonLat]) -> Self {
+        Self::build(coordinates, &CancelToken::unbounded()).expect("期限なしでは中断しない")
+    }
+
+    /// 元の辺1024本ごとに `cancel.check()` を確かめながら作る。
+    pub fn build(coordinates: &[LonLat], cancel: &CancelToken) -> Result<Self, Interrupt> {
         let projection = Projection::for_path(coordinates);
         let mut edge_lengths = Vec::with_capacity(coordinates.len().saturating_sub(1));
         let mut segments = Vec::new();
         for (j, pair) in coordinates.windows(2).enumerate() {
+            if j % CANCEL_CHECK_INTERVAL == 0 {
+                cancel.check()?;
+            }
             let (a, b) = (pair[0], pair[1]);
             let length = projection.distance(a, b);
             edge_lengths.push(length);
@@ -133,11 +141,11 @@ impl Subdivision {
                 });
             }
         }
-        Self {
+        Ok(Self {
             projection,
             edge_lengths,
             segments,
-        }
+        })
     }
 }
 
@@ -199,11 +207,13 @@ pub fn corridor_hits(
             for gx in gx_lo..=gx_hi {
                 let sids = cell_sids.entry((gy, gx)).or_default();
                 if sids.is_empty() {
-                    let ids = snapshot.cell((gy, gx));
-                    for &id in ids {
-                        candidates[id as usize / 64] |= 1 << (id % 64);
+                    // 元CSVの重複行を除かないので、セル内の件数に小さい上限はない
+                    for chunk in snapshot.cell((gy, gx)).chunks(CANCEL_CHECK_INTERVAL) {
+                        tick(chunk.len())?;
+                        for &id in chunk {
+                            candidates[id as usize / 64] |= 1 << (id % 64);
+                        }
                     }
-                    tick(ids.len())?;
                 }
                 sids.push(sid as u32);
             }
