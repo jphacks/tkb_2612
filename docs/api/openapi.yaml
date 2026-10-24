@@ -48,8 +48,16 @@ paths:
         同一選定IDでは1個を共用する。ナビ用生成でOSRM呼出しを追加せず、1検索最大3呼出し・steps=falseを維持する。
         全体期限内の追加候補のみの個別上流通信の失敗は200のwarningsに残す。
         ただし共有上流ゲートの読取失敗・競合未解消と待ち行列満杯は、追加候補の取得中でも要求全体を503 service_busyにする。
-        受付からJSON準備完了までの全体期限35秒を超えたら、段階によらず503 service_busy。
+        受付からJSON準備・gzip圧縮完了までの全体期限35秒（転送を除く）を超えたら、段階によらず503 service_busy。
         候補が取得済みでも全体期限後に200を返さない。
+        gzipを許可するAccept-Encodingなら応答圧縮必須、Content-Encoding: gzipとVary: Accept-Encodingを返す。
+        identity要求は非圧縮。サイズ・スキーマ検査は展開後のJSONに適用する。
+        全応答は概ね11〜12MB、負荷基準は非圧縮12000000バイト。圧縮率は保証しない。
+        クライアント期限180秒はfetch開始から本文全受信・展開・解析/検査完了まで。ヘッダーで解除しない。
+        想定下り1Mbps以上・RTT 300ms以下。非圧縮12MBは転送96秒、サーバ等を含む見積り138秒。
+        サーバの転送待ちは送信開始から120秒、Cloud Run要求タイムアウトは180秒以上。
+        Cloud Run＋IAP経由の圧縮/ヘッダー/期限は要確認。途中切断は本文不完了として失敗扱い。
+        詳細と回線制限下の本文受信完了の受け入れはbehavior.md 7章。
       requestBody:
         required: true
         content:
@@ -78,8 +86,14 @@ paths:
                   max_detour_min: 5
       responses:
         '200':
-          description: 候補と比較結果。事故0件も正常応答。
+          description: 候補と比較結果。事故0件も正常応答。gzip/identityの圧縮表現によらず、展開後のJSONは同じスキーマ。
           headers:
+            Content-Encoding:
+              description: gzipを許可する要求ではgzip必須。identityでは省略。
+              schema: {type: string, enum: [gzip]}
+            Vary:
+              description: 圧縮表現の選択を示す。identityでも返す。
+              schema: {type: string, const: Accept-Encoding}
             Cache-Control: {$ref: '#/components/headers/NoStore'}
             X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
           content:

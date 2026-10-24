@@ -51,7 +51,7 @@ GeoJSONはWGS84の`[lon,lat]`、入力/住所候補は名前付きlat/lon。緯�
 
 `NavigationData` はprojection_lat_deg・length_m・vertex_distances_m・sections。behavior 6章の局所平面で累積距離を作り、深刻度3以上の全sidを経路順に並べ、連続sidの最大列だけ結合する。距離減衰・天候倍率を加えない。数値・結合・順序はbackend一か所に置き、表示用high_risk_sectionsの上位100件・非結合・high_risk_totalは維持する。正確な計算と相関制約は [api/behavior.md](api/behavior.md) 7章、判断理由は [navigation-delegated-decisions.md](navigation-delegated-decisions.md) に従う。
 
-80km/15,000頂点から保守的に局所全長110,000m、小線分16,466本、結合後8,233区間/経路。2経路のnavigationは5,000,000バイト以下を検証し、全route応答は概ね11〜12MBのケースでサイズ・RAM・全体35秒期限を測る。navigation構築もaggregation_msへ含む。区間を切り捨てた部分成功にはしない。
+80km/15,000頂点から保守的に局所全長110,000m、小線分16,466本、結合後8,233区間/経路。2経路のnavigationは5,000,000バイト以下を検証し、全route応答の小計は10,847,344バイト、メタデータ込み概ね11〜12MBのケースでサイズ・RAM・gzip圧縮を含む全体35秒期限を測る。圧縮率は保証せず、送信形式は区間オブジェクトを維持する。1Mbps・RTT 300msでgzip/identityとも本文全受信・展開・解析/検査まで180秒以内を受け入れとする（behavior 7章）。navigation構築もaggregation_msへ含む。区間を切り捨てた部分成功にはしない。
 
 ナビ生成・開始・進行でOSRM呼出しを増やさない。公共OSRM全利用者合計1req/秒・ROUTING_MIN_INTERVAL_MS=1050・1検索最大3呼出し・steps=falseを維持する。現在地を使う再検索は明示ボタンによる通常route検索であり、既存ゲート・上限・503を適用する。ナビの位置はブラウザ内だけで処理し、再検索と既存conditions規則以外では送信しない。実機/模擬とも同じ無保存・ログ除外を適用する。
 
@@ -97,11 +97,13 @@ Firestoreは事故DBではなく少数の運用レコードだけに用い、期
 
 | 対象 | 初期制御 |
 |---|---|
-| route / geocode | 受付から応答JSON準備まで35秒（待ち・集計を含む）。1上流通信8秒、上流応答12,000,000バイト、提供元別のローカル待ち行列16。自動再試行なし。全体期限後に部分成功200を返さない。 |
+| route / geocode | 受付から応答JSON準備まで35秒（待ち・集計・シリアライズ・routeのgzip圧縮を含み、転送を除く）。1上流通信8秒、上流応答12,000,000バイト、提供元別のローカル待ち行列16。自動再試行なし。全体期限後に部分成功200を返さない。 |
+| routeの転送 | gzipを許可する要求はAxumで圧縮必須、Content-Encoding: gzip・Vary: Accept-Encoding。identity要求は非圧縮。送信開始から120秒で転送待ちを中止、Cloud Run要求タイムアウトは180秒以上。クライアントはfetchから本文受信・展開・解析/検査まで180秒。IAP経由の圧縮/ヘッダー/期限は要確認（behavior 7章）。 |
+| geocode / healthの受信 | クライアント45秒。routeの受信期限とは分ける。 |
 | conditions | 全体8秒・気象通信5秒・上流応答1,000,000バイト。気象失敗/混雑/期限は天候unavailableの200。クライアント期限10秒。 |
 | キャンセル | 期限/切断で未着手の上流呼出しを除去し、開始済み通信とCPU集計も停止させる。返答後に無制限に処理を残さない。 |
 
-エラー本文は`{"error":{"code":"…","message":"…"}}`、日本語の説明に住所/座標/秘密/スタックトレースを含めない。400 invalid_request、404 not_found、405 method_not_allowed（Allow必須）、422 route_too_long、502 no_route/external_api_error、503 data_unavailable/service_busy、500 internal_error。上流429は502。健康確認/routeでHTTP稼働中に未readyなら503、conditionsは事故データ未準備を理由に503へしない。Cloud Run・IAPでアプリ到達前に起こる認証リダイレクト/拒否/429等は別形式になり得る。
+エラー本文は`{"error":{"code":"…","message":"…"}}`、日本語の説明に住所/座標/秘密/スタックトレースを含めない。400 invalid_request、404 not_found、405 method_not_allowed（Allow必須）、422 route_too_long、502 no_route/external_api_error、503 data_unavailable/service_busy、500 internal_error。上流429は502。健康確認/routeでHTTP稼働中に未readyなら503、conditionsは事故データ未準備を理由に503へしない。送信開始後の途中切断はJSONの500/503へ差し替えず、本文不完了としてクライアントが失敗扱いにする。Cloud Run・IAPでアプリ到達前に起こる認証リダイレクト/拒否/429等は別形式になり得る。
 
 API成功/失敗は`Cache-Control: no-store`・nosniff。APIを先に解決し、未知APIへHTMLを返さない。静的rootはビルド済みdistだけ。`/ /assets/* /manifest.webmanifest /sw.js`を配信し、未知パスは404、一覧/原本/データ/ソース/dotfileを公開しない。HTML/manifest/SWは再検証、ハッシュassetsはimmutable。API/位置/経路/外部応答をPWAの永続キャッシュへ入れない。具体的な画面操作と描画は別検証に従う。
 

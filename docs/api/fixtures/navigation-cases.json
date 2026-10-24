@@ -3779,6 +3779,121 @@
           ]
         }
       }
+    },
+    {
+      "name": "overlapping_round_trip",
+      "description": "同一直線のA(0m)→B(200m)→A(0m)→C(100m)。経路順の連続性を使う共通判定器の試験。",
+      "route_id": "route-1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            139,
+            35
+          ],
+          [
+            139.00219573489437,
+            35
+          ],
+          [
+            139,
+            35
+          ],
+          [
+            139.00109786744719,
+            35
+          ]
+        ]
+      },
+      "segment_severity_weights": [
+        {
+          "segment_index": 0,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 3,
+          "severity_weight": 4
+        },
+        {
+          "segment_index": 6,
+          "severity_weight": 3
+        }
+      ],
+      "expected": {
+        "subsegment_count": 8,
+        "high_risk_total": 3,
+        "display_segment_indices": [
+          3,
+          0,
+          6
+        ],
+        "navigation": {
+          "projection_lat_deg": 35.0,
+          "length_m": 499.9999999977854,
+          "vertex_distances_m": [
+            0.0,
+            199.99999999911415,
+            399.9999999982283,
+            499.9999999977854
+          ],
+          "sections": [
+            {
+              "id": "route-1:nav-0-0",
+              "start_segment_index": 0,
+              "end_segment_index": 0,
+              "start_m": 0.0,
+              "end_m": 66.66666666637138,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-3-3",
+              "start_segment_index": 3,
+              "end_segment_index": 3,
+              "start_m": 199.99999999911415,
+              "end_m": 266.66666666548554,
+              "severity_weight": 4
+            },
+            {
+              "id": "route-1:nav-6-6",
+              "start_segment_index": 6,
+              "end_segment_index": 6,
+              "start_m": 399.9999999982283,
+              "end_m": 449.99999999800684,
+              "severity_weight": 3
+            }
+          ]
+        }
+      },
+      "simulation": {
+        "mode": "car",
+        "distance": 500,
+        "duration": 50,
+        "accuracy": 10,
+        "jitter": false,
+        "virtual_tick_s": 1,
+        "multipliers": [
+          1,
+          2,
+          4,
+          8
+        ],
+        "expected": {
+          "arrival_by_virtual_s": 56,
+          "terminal_raw_candidates_m": [
+            100,
+            300,
+            500
+          ],
+          "stops_as_arrived": true
+        },
+        "unresolved_probe": {
+          "description": "試験入力だけを仮想0〜60秒の間C(100m)に固定し、複数候補が解消しない場合を注入する。UIの基準進行/終点時刻は通常どおり。",
+          "fixed_local_x_m": 100,
+          "expected_stop_virtual_s": 60,
+          "expected_reason": "照合保留",
+          "stops_as_arrived": false
+        }
+      }
     }
   ]
 }
