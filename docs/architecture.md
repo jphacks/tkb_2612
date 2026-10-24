@@ -86,7 +86,7 @@ Rust側はserde DTOを実装し、OpenAPIのoptional/required/null/enumに合わ
 
 strictPortを有効にして勝手なポート移動を避ける。localhost利用だけならCORS不要。別オリジン運用は初期版の対象外で、必要時に許可originを限定して追加設計する。LAN端末でGPS/PWAを検証する場合は信頼されたHTTPSを使う。
 
-本番は **Google Cloud Run 東京（`asia-northeast1`）** とし、Cloud RunのTLS終端→Axum（`0.0.0.0:$PORT`）で、APIとビルド済みdistを1つのコンテナから同一オリジンで配信する。初期1 vCPU / 2 GiB・同時受付4・最大1台、通常は最小0台、実演中は最小1台（[cloud-selection.md](cloud-selection.md)）。初期アクセスはCloud Run IAMで開発者のGoogleアカウントだけに `roles/run.invoker` を与え、`allUsers` を付けない。開発者端末で `gcloud run services proxy` をlocalhostに開き、その画面を審査員に見せる。アプリ独自のログインやブラウザへのトークン埋込みは作らない。Cloud Runがアプリ到達前に返す認証拒否・429等は非JSONになり得るので、フロントは非JSONの失敗も扱う。`/api/*` を先に解決し、未知APIへHTMLを返さない。static root外、dotfiles、ディレクトリ一覧、ソース/原本/データへのアクセスを禁止する。
+本番は **Google Cloud Run 東京（`asia-northeast1`）** とし、Cloud RunのTLS終端→Axum（`0.0.0.0:$PORT`）で、APIとビルド済みdistを1つのコンテナから同一オリジンで配信する。初期1 vCPU / 2 GiB・同時受付4・最大1台、通常は最小0台、実演中は最小1台（[cloud-selection.md](cloud-selection.md)）。実演はCloud RunのURL（HTTPS）へブラウザから直接アクセスし、IAPで許可したGoogleアカウント（開発者・審査員）だけに限定する。`allUsers` を付けない。アプリ独自のログインやブラウザへのトークン埋込みは作らない。IAPのログインはページ遷移で行われ、セッション切れの `/api/*` はログインへのリダイレクトになり得る。Cloud Run・IAPがアプリ到達前に返す認証リダイレクト・拒否・429等は非JSONになるので、フロントは非JSONの失敗として扱い、再読込を案内する。PWAのmanifestはIAPのcookieが必要なので `<link rel="manifest" crossorigin="use-credentials">` で読み込む。`/api/*` を先に解決し、未知APIへHTMLを返さない。static root外、dotfiles、ディレクトリ一覧、ソース/原本/データへのアクセスを禁止する。
 
 HTML/manifest/sw.jsはno-cache（再検証可能）、内容ハッシュ付きassetsは長期immutable、APIはすべてno-store。画面は `/` のみ、未知パスは404。MapLibre style/tilesの配信元と帰属は別途設定する。APIクライアントは45秒で打切り、サーバのroute/geocodeは受付から応答JSON準備完了まで最大35秒の要求全体期限を設ける（キュー待ち・集計・シリアライズを含み、クライアントへの転送時間は含まない）。全体期限切れは処理段階によらず503 service_busyで終了し、既存候補があっても200を返さない。この制御は追加候補のAPIError捕捉より外側に置く。全体期限内の個別上流通信の8秒期限切れは502 external_api_errorで、追加候補だけの失敗ならbehavior通り警告にして集計を続けられる。待ち行列満杯は503 service_busy。未完了の処理をキャンセルし、CPU集計も期限を確認して停止できるようにし、無制限に積み上げない。
 
@@ -189,6 +189,6 @@ routingアダプタはorigin/dest/mode/optional viaを受け、順序付きdurat
 
 backend担当はbehavior 11章の試験・追加境界試験・OpenAPI応答検証を行う。frontend担当は同じOpenAPIから生成した型と共通fixtureで実装し、UI側に独自の事故リスク計算を作らない。先に通常・同一・全候補0件（safest_id=null）・天候一致0件・天候all（weather_match=null）・間引き・HTTP失敗（非JSONのプラットフォーム失敗を含む）のfixtureを共有して、その後は互いの実装待ちなしに進める。`/api/conditions` も、ok（現況/予報）・no_location・past・out_of_range・unavailable・祝日表範囲外のfixtureを先に共有する。
 
-結合では座標順/単位、選定ID、GeoJSONの直接描画、事故点のID重複排除、区間の元頂点対応、null削減率、エラー/ローディング、healthデータ世代、API no-storeを確認する。条件については、conditionsの結果がそのままrouteのperiod/day_type/weatherへ渡ること、手動値が上書きされないこと、送信座標が丸めた中点だけであることを確認する。実上流の疎通・実道路妥当性、実際の気象応答、スマートフォンGPS、HTTPS、PWA更新/オフライン、提供元条件、Cloud Run IAM・共有上流ゲート・ログ除外の実効性は別の受け入れ項目であり、単体テスト成功で代用しない。
+結合では座標順/単位、選定ID、GeoJSONの直接描画、事故点のID重複排除、区間の元頂点対応、null削減率、エラー/ローディング、healthデータ世代、API no-storeを確認する。条件については、conditionsの結果がそのままrouteのperiod/day_type/weatherへ渡ること、手動値が上書きされないこと、送信座標が丸めた中点だけであることを確認する。実上流の疎通・実道路妥当性、実際の気象応答、スマートフォンGPS、HTTPS、PWA更新/オフライン、提供元条件、Cloud Run IAP・共有上流ゲート・ログ除外の実効性は別の受け入れ項目であり、単体テスト成功で代用しない。
 
-最終的に要確認なのは商用提供元/タイル契約、Open-Meteoの商用プラン、天候変換表の扱い、σ・天候倍率の妥当性（[route-scoring-decision.md](route-scoring-decision.md) 6章）、対応端末の範囲、Cloud Run IAMのlocalhost実演とGPS/PWAの「本番HTTPS」要件の関係、将来のGPS警告の意味。これらはv1の集計・JSON・UI操作を実装する際の未決定分岐にはしない。本書の暫定契約で実装し、公開前に運用側の確認を完了する。
+最終的に要確認なのは商用提供元/タイル契約、Open-Meteoの商用プラン、天候変換表の扱い、σ・天候倍率の妥当性（[route-scoring-decision.md](route-scoring-decision.md) 6章）、対応端末の範囲、IAPでの組織外アカウントの扱い、将来のGPS警告の意味。これらはv1の集計・JSON・UI操作を実装する際の未決定分岐にはしない。本書の暫定契約で実装し、公開前に運用側の確認を完了する。

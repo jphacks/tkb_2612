@@ -6,7 +6,7 @@
 
 ## 1. 利用者合意と対象範囲
 
-- Rust/Axumをクラウドで動かし、React/TypeScript/Vite/MapLibre GL JSの画面と連携する。警察庁の事故原本を使い、徒歩・自転車・自動車の経路を比較する。一般ユーザー向けには公開しない。審査員各自端末での操作は初期の必須条件にしない。
+- Rust/Axumをクラウドで動かし、React/TypeScript/Vite/MapLibre GL JSの画面と連携する。警察庁の事故原本を使い、徒歩・自転車・自動車の経路を比較する。一般ユーザー向けには公開しない。実演はCloud Run上のアプリへIAPで許可したGoogleアカウントから直接アクセスして行う（利用者決定）。
 - 時間帯・曜日区分・移動手段は事故の対象条件として維持する。**天候は除外条件にせず、一致する事故を評価で重く扱う。** 全天候と指定天候一致の件数/死傷者数を分け、0件でも条件を自動解除しない。死傷者は該当事故全体の人数。
 - 外部の経路/住所提供元による座標/住所の運用ログは許容する。提供元まで含めた完全な無保存を要件にしない。利用規約の免除や、自アプリでの位置/検索履歴の永続保存機能の追加には拡張しない。
 - 経路探索の式・係数・候補生成・周辺事故の空間判定・選定・区間抽出と、フロントエンド実装は別検証の対象。本書はそれらの旧案を無条件には確定しない。
@@ -91,7 +91,7 @@ Firestoreは事故DBではなく少数の運用レコードだけに用い、期
 | conditions | 全体8秒・気象通信5秒・上流応答1,000,000バイト。気象失敗/混雑/期限は天候unavailableの200。クライアント期限10秒。 |
 | キャンセル | 期限/切断で未着手の上流呼出しを除去し、開始済み通信とCPU集計も停止させる。返答後に無制限に処理を残さない。 |
 
-エラー本文は`{"error":{"code":"…","message":"…"}}`、日本語の説明に住所/座標/秘密/スタックトレースを含めない。400 invalid_request、404 not_found、405 method_not_allowed（Allow必須）、422 route_too_long、502 no_route/external_api_error、503 data_unavailable/service_busy、500 internal_error。上流429は502。健康確認/routeでHTTP稼働中に未readyなら503、conditionsは事故データ未準備を理由に503へしない。Cloud Runでアプリ到達前に起こるIAM拒否/429等は別形式になり得る。
+エラー本文は`{"error":{"code":"…","message":"…"}}`、日本語の説明に住所/座標/秘密/スタックトレースを含めない。400 invalid_request、404 not_found、405 method_not_allowed（Allow必須）、422 route_too_long、502 no_route/external_api_error、503 data_unavailable/service_busy、500 internal_error。上流429は502。健康確認/routeでHTTP稼働中に未readyなら503、conditionsは事故データ未準備を理由に503へしない。Cloud Run・IAPでアプリ到達前に起こる認証リダイレクト/拒否/429等は別形式になり得る。
 
 API成功/失敗は`Cache-Control: no-store`・nosniff。APIを先に解決し、未知APIへHTMLを返さない。静的rootはビルド済みdistだけ。`/ /assets/* /manifest.webmanifest /sw.js`を配信し、未知パスは404、一覧/原本/データ/ソース/dotfileを公開しない。HTML/manifest/SWは再検証、ハッシュassetsはimmutable。API/位置/経路/外部応答をPWAの永続キャッシュへ入れない。具体的な画面操作と描画は別検証に従う。
 
@@ -99,17 +99,13 @@ API成功/失敗は`Cache-Control: no-store`・nosniff。APIを先に解決し�
 
 Cloud Run東京のリクエスト課金、初期1 vCPU/2 GiB・同時受付4・最大1台、通常最小0台/実演中1台を使う。事故原本約420 MiBはRAM実測ではない。前処理をビルド前に行い、読み取り専用成果物とビルド済み画面を同梱する。実測でCPU/RAM/同時数と起動時間を見直す。詳細な比較・料金・ログ除外フィルタは[cloud-selection.md](cloud-selection.md)。
 
-**初期実演はCloud Run IAMで開発者だけに許可する。** ingressは開発者端末から届くall、認証は必須、`roles/run.invoker`を対象Googleアカウントだけへ与え、allUsersを付けない。ブラウザへのトークン埋込みや独自ログインは作らず、開発者端末で次のローカルプロキシを使う。localhostにだけ公開し、審査員にはその画面を見せる。各自端末への一般配布は初期対象外。[認証付きブラウザ実演](https://docs.cloud.google.com/run/docs/authenticating/developers)
-
-```text
-gcloud run services proxy tkb-api --project=PROJECT_ID --region=asia-northeast1 --port=8080
-```
+**実演はCloud RunのURLへブラウザから直接アクセスし、IAPで許可したGoogleアカウントだけに限定する（利用者決定、2026-10-24）。** ingressはall、IAPを有効化し、許可する開発者・審査員のアカウントへ`roles/iap.httpsResourceAccessor`、IAPのサービスエージェントへ`roles/run.invoker`を与える。allUsersを付けない。アプリ独自ログインやブラウザへのトークン埋込みは作らない。HTTPS配信なのでスマートフォンのGPS・PWAも対象にする。組織外アカウントを許可する場合のOAuthクライアント設定は配備前に確認する。[Cloud RunのIAP](https://cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run)
 
 開発時はAxum127.0.0.1:8000、Vite127.0.0.1:5173・strictPort・/apiプロキシ。本番Axumは0.0.0.0:$PORT、パスは絶対パス、同一オリジンとCloud Run TLS終端を使う。APIキーはSecret Manager参照等でサーバだけへ渡し、VITE変数へ入れない。必須設定の不足/型不正は起動失敗。事故/位置/検索履歴のDBは作らない。
 
 外部提供元の運用ログ許容は反映済み。GeoapifyもAPI要求の技術情報を保持する旨を公表しており、位置/住所を送る提供元として明示する。アプリ側ログはルート名・status・時間・匿名エラーだけに限定し、Cloud Runの自動URLログは実入力前に除外設定する。他sink/組織転送・HTTPクライアントのエラーURLも確認する。これで提供元の一時処理や運用ログまで消せるとは説明しない。[Geoapifyの保持方針](https://www.geoapify.com/privacy-policy/)
 
-実演前はデータreadyと固定検索、IAM拒否/許可、各上流、共有制御、ログ除外を確認する。終了後に継続するなら最小0へ戻し、終了ならサービス/不要イメージ/運用レコード・秘密の参照を整理して請求を確認する。最小0や予算通知だけを費用上限と扱わない。契約/鍵発行/配備作業は今回行わない。
+実演前はデータreadyと固定検索、IAPでの許可/拒否（許可外アカウント・未ログイン）、各上流、共有制御、ログ除外を確認する。終了後に継続するなら最小0へ戻し、終了ならサービス/不要イメージ/運用レコード・秘密の参照を整理して請求を確認する。最小0や予算通知だけを費用上限と扱わない。契約/鍵発行/配備作業は今回行わない。
 
 ## 9. PR #1・旧仕様との差分、別検証との接続
 
@@ -119,9 +115,9 @@ gcloud run services proxy tkb-api --project=PROJECT_ID --region=asia-northeast1 
 |---|---|
 | `api/openapi.yaml` | PR #1のAPI2.0/conditions/day_type/5時間帯を取り込み、全天候集計とweather_match/null、非緩和、住所提供元・帰属、HTTP説明・例を更新する。選定スコアは別検証の定義で確定する。 |
 | `api/behavior.md` | 天候hard filterと条件の自動緩和を除き、事故全体の人数、前処理失敗/監査、0件、共有上流制御へ整合する。旧デモ完全互換・旧テスト件数を必須条件にしない。 |
-| `architecture.md` | Cloud Run IAM実演・Geoapify・Firestore運用状態・外部運用ログ許容へ更新する。提供元の無保存契約が必須という旧案を除く。アプリ内保存とプラットフォームログは別に扱う。 |
-| 契約検証 | schema/DTO/生成TS/fixtureを同時更新し、全天候/一致0/all/null、非緩和、時間/祝日、前処理失敗、期限キャンセル、ID参照、ログとIAMを確認する。実上流・性能は別の受け入れとして記録する。 |
+| `architecture.md` | Cloud Run＋IAP実演・Geoapify・Firestore運用状態・外部運用ログ許容へ更新する。提供元の無保存契約が必須という旧案を除く。アプリ内保存とプラットフォームログは別に扱う。 |
+| 契約検証 | schema/DTO/生成TS/fixtureを同時更新し、全天候/一致0/all/null、非緩和、時間/祝日、前処理失敗、期限キャンセル、ID参照、ログとIAPを確認する。実上流・性能は別の受け入れとして記録する。 |
 
-**経路側への依存**は、経路提供元・必要資源・候補取得/生成/選定・空間条件・天候一致を含む評価式・高リスク区間・0件時の選定と説明。**フロント側への依存**は、更新APIの型/fixture、全天候と一致集計の区別、all時null、非緩和、帰属リンク、非JSONのプラットフォーム失敗、IAM実演経路での動作。旧仕様の式やUIを依存先の結論として捏造しない。
+**経路側への依存**は、経路提供元・必要資源・候補取得/生成/選定・空間条件・天候一致を含む評価式・高リスク区間・0件時の選定と説明。**フロント側への依存**は、更新APIの型/fixture、全天候と一致集計の区別、all時null、非緩和、帰属リンク、非JSONのプラットフォーム失敗（IAPの再ログインを含む）、IAP配下での動作。旧仕様の式やUIを依存先の結論として捏造しない。
 
-独立して確定できる範囲は本書で完了とする。原本/コード表の実検証、完成実装のサイズ・RAM/CPU・起動/応答時間・同時利用、提供元の鍵/枠/日本語住所品質、共有ゲート、実端末、IAMとログの実効性は**未実施の配備前検証**として残す。
+独立して確定できる範囲は本書で完了とする。原本/コード表の実検証、完成実装のサイズ・RAM/CPU・起動/応答時間・同時利用、提供元の鍵/枠/日本語住所品質、共有ゲート、実端末、IAPとログの実効性は**未実施の配備前検証**として残す。

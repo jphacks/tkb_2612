@@ -136,7 +136,7 @@ GET /api/conditions?datetime=<ISO8601, +09:00>[&lat=..&lon=..]
 
 APIは同一オリジンの相対 `/api/...` を使い、Accept application/json、routeはContent-Type application/json。UIタイムアウトはroute/geocode/healthが現行同様45秒、conditionsが10秒。自動リトライ、自動ポーリング、入力ごとの住所補完は行わない。health失敗は手動再確認、経路失敗は明示的再検索とする。
 
-応答がJSONでない、必須フィールド/参照IDが壊れている場合は「応答を読み取れない」と表示し、部分的な成功として描画しない。未知のerror.codeはmessageと再試行案内で扱う。codeで状態を判断し、日本語messageの部分一致で処理を分岐しない。AbortControllerによる期限超過、ネットワーク不通、HTTPエラーを区別して利用者に伝える。提供元ラベル・API説明・エラーはテキストとして描画し、HTMLとして挿入しない。
+応答がJSONでない、必須フィールド/参照IDが壊れている場合は「応答を読み取れない」と表示し、部分的な成功として描画しない。IAPのセッション切れなどでAPIがログインへリダイレクトされた場合も非JSONの失敗として扱い、ページの再読込（再ログイン）を案内する。未知のerror.codeはmessageと再試行案内で扱う。codeで状態を判断し、日本語messageの部分一致で処理を分岐しない。AbortControllerによる期限超過、ネットワーク不通、HTTPエラーを区別して利用者に伝える。提供元ラベル・API説明・エラーはテキストとして描画し、HTMLとして挿入しない。
 
 healthが503 data_unavailableなら経路検索を無効化し、データ準備中と再確認操作を示す。healthのネットワークエラーだけなら「状態未確認」として入力・手動経路検索を許す。healthは上流サービスが利用可能という保証ではない。
 
@@ -209,7 +209,7 @@ dateはYYYYMMDD整数から年月日へ表示変換し、source_yearと混同し
 
 ## 7. GPSによる出発地設定（移行追加）
 
-「現在地を出発地に設定」の明示操作で、`navigator.geolocation.getCurrentPosition` を1回呼ぶ。位置情報は利用者の許可とsecure contextが必要である（[W3C Geolocation](https://www.w3.org/TR/geolocation/)）。本番はHTTPS必須。localhost例外に依存する構成を本番へ持ち込まない。
+「現在地を出発地に設定」の明示操作で、`navigator.geolocation.getCurrentPosition` を1回呼ぶ。位置情報は利用者の許可とsecure contextが必要である（[W3C Geolocation](https://www.w3.org/TR/geolocation/)）。本番はHTTPS必須。localhost例外に依存する構成を本番へ持ち込まない。実演はCloud RunのHTTPS URL（IAP配下）で行う。
 
 初期契約の取得オプションはenableHighAccuracy=true、timeout=10000ms、maximumAge=0。これは取得要求でありGPSセンサー使用や精度を保証しない。現在地は緯度経度WGS84、accuracyはmとして扱う。
 
@@ -221,7 +221,7 @@ dateはYYYYMMDD整数から年月日へ表示変換し、source_yearと混同し
 
 ## 8. PWA（移行追加）
 
-- `/manifest.webmanifest` にname/short_name、start_url=/、scope=/、display=standalone、192×192と512×512のインストール用アイコンを設ける。アイコンの見た目・名称の最終文言はデザイン工程で決める。アイコンは内容ハッシュ付き `/assets/` に置く。
+- `/manifest.webmanifest` にname/short_name、start_url=/、scope=/、display=standalone、192×192と512×512のインストール用アイコンを設ける。アイコンの見た目・名称の最終文言はデザイン工程で決める。アイコンは内容ハッシュ付き `/assets/` に置く。IAP配下でcookieを送るため、manifestは `crossorigin="use-credentials"` で読み込む。
 - `/sw.js` をscope=/で登録し、version付きアプリシェルのキャッシュだけを管理する。初回オンライン読込後にHTML・JS・CSS・自アプリの必要アセットをオフライン表示できること。
 - `/api/*`（`/api/conditions` を含む）は成功/失敗ともService Worker・Cache Storageの対象外とする。住所入力、GPS位置、出発日時、条件取得結果、経路、事故点レスポンスをIndexedDB/localStorage/sessionStorage/URL履歴へ保存しない。Background Syncで再送しない。
 - 地図タイル/スタイル/外部フォント等の外部リソースを一括保存・先読みしない。PWA化はオフライン地図/検索を意味しない。契約済み自己配信タイルのオフライン化は別要件。

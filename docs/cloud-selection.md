@@ -20,7 +20,7 @@
 - 通常は最小0台。実演前に最小1台へ変更し、データ読込完了と実検索を確認する。最小1でも再起動は起こり得るため、初回起動や応答時間を保証しない。[最小台数](https://docs.cloud.google.com/run/docs/configuring/min-instances)
 - 事故原本約420 MiBはRAM使用量の実測ではない。前処理を配備前に済ませ、必要な読み取り用成果物だけをイメージへ同梱する。原本・前処理の作業領域を実行環境に持ち込まず、成果物の版とハッシュを記録する。起動時に索引を読み込み、準備完了をstartup probeで確認する。Cloud Runは起動4分以内に待受・正常化する必要があり、起動後にファイルへ書くデータはメモリを消費して再起動で消える。[実行契約](https://docs.cloud.google.com/run/docs/container-contract)
 - 事故・位置・検索履歴のDB、書き込み用永続ディスク、独自ドメインは置かない。共有レート制御にはFirestoreの小さな運用状態だけを使い、提供元識別子・時刻・件数・制御用世代番号以外を保存しない。事故データは引き続き読み取り専用ファイルとする。詳細は[バックエンド仕様](backend-spec.md)に従う。
-- 初期アクセスはCloud RunのIAM認証を必須とし、開発者のGoogleアカウントだけへ`roles/run.invoker`を与える。未認証公開や`allUsers`付与は行わない。開発者は`gcloud run services proxy`をlocalhostで使い、ブラウザから実演する。ingressは開発者端末から到達できるallを使い、IAMで制限する。審査員各自の端末対応は初期の必須条件にしない。[認証付き実演](https://docs.cloud.google.com/run/docs/authenticating/developers)、[ローカルプロキシ](https://docs.cloud.google.com/sdk/gcloud/reference/run/services/proxy)
+- **実演はCloud RunのURL（`https://…run.app`）へブラウザから直接アクセスして行う（利用者決定、2026-10-24）。アクセスはIdentity-Aware Proxy（IAP）で許可したGoogleアカウントに限定する。** Cloud RunサービスでIAPを有効にし、開発者・審査員のアカウントへ`roles/iap.httpsResourceAccessor`を与え、IAPのサービスエージェントへ`roles/run.invoker`を与える。未認証公開や`allUsers`付与は行わない。ingressはall。HTTPSで配信されるため、スマートフォンでもGPS・PWAを利用できる。組織外のGoogleアカウント（審査員の個人アカウント等）を許可する場合にOAuthクライアントの追加設定が必要かは配備前に確認する。[Cloud RunのIAP](https://cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run)
 - 実演後に継続利用するなら最小0台へ戻す。利用終了ならサービスを削除し、イメージ・ビルド成果物・残るログ等の保持設定と請求を確認する。最小0台だけでは再アクセスによる起動や保存領域の料金は止まらない。
 
 ## 外部API制限とログ
@@ -49,4 +49,4 @@ logName="projects/PROJECT_ID/logs/run.googleapis.com%2Frequests"
 
 無料枠は請求アカウント内で共有され、適用可否・消費状況は未確認。無料や費用上限を保証しない。実測後に利用時間・回数・データ量から見積もり、配備時にプロジェクト単位の予算通知を設定する。通知だけの予算は支出を停止しない。[予算通知](https://docs.cloud.google.com/billing/docs/how-to/budgets)
 
-配備前の検証残件：前処理成果物のサイズ、起動時/検索中のピークRAM、CPU時間、起動・検索待ち時間、同時利用、イメージサイズ、外部提供元の上限と共有制御、アクセス制限、自動ログ除外の実効性。経路エンジンの自己ホストが必要と確定した場合は、道路データ・RAM・常時稼働の要件を別途測定し、その部分のホスティングを再選定する。
+配備前の検証残件：IAPでの許可/拒否と組織外アカウントの扱い、前処理成果物のサイズ、起動時/検索中のピークRAM、CPU時間、起動・検索待ち時間、同時利用、イメージサイズ、外部提供元の上限と共有制御、アクセス制限、自動ログ除外の実効性。経路エンジンの自己ホストが必要と確定した場合は、道路データ・RAM・常時稼働の要件を別途測定し、その部分のホスティングを再選定する。
