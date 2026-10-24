@@ -3782,7 +3782,7 @@
     },
     {
       "name": "overlapping_round_trip",
-      "description": "同一直線のA(0m)→B(200m)→A(0m)→C(100m)。折返し時刻と測位が一致する50秒の往復。方向別仮説を保持する共通判定器の試験。",
+      "description": "同一直線のA(0m)→B(200m)→A(0m)→C(100m)、L=500m、50秒の往復。照合はnavigation-matching-cases.mdの入力と出力条件で検証する。",
       "route_id": "route-1",
       "geometry": {
         "type": "LineString",
@@ -3878,28 +3878,14 @@
           8
         ],
         "expected": {
-          "arrival_by_virtual_s": 56,
-          "terminal_raw_candidates_m": [
-            100,
-            300,
-            500
+          "arrival_virtual_s_range": [
+            50,
+            56
           ],
-          "stops_as_arrived": true,
-          "arrival_virtual_s": 53,
-          "unique_hypothesis_from_virtual_s": 41,
-          "at_virtual_s_20": {
-            "hypotheses": [
-              {
-                "p_m": 200,
-                "direction": -1
-              },
-              {
-                "p_m": 200,
-                "direction": 1
-              }
-            ],
-            "matching_pending": true
-          }
+          "arrival_by_virtual_s": 56,
+          "max_confirmed_progress_error_m": 20,
+          "confirmed_by_virtual_s": 51,
+          "stops_as_arrived": true
         },
         "unresolved_probe": {
           "description": "試験入力だけを仮想0〜60秒の間C(100m)に固定し、複数候補が解消しない場合を注入する。UIの基準進行/終点時刻は通常どおり。",
@@ -3915,12 +3901,14 @@
           "expected_stop_virtual_s": 65,
           "expected_reason": "照合保留",
           "stops_as_arrived": false
-        }
+        },
+        "seed": 1,
+        "acceptance_cases": "../../navigation-matching-cases.md#入力と期待"
       }
     },
     {
       "name": "overlapping_round_trip_between_fixes",
-      "description": "同じ500m往復を51秒で進む。20.4秒/40.8秒の折返しを1秒測位間に通過し、前接線による誤候補確定を防ぐ。",
+      "description": "同一直線のA(0m)→B(200m)→A(0m)→C(100m)、L=500m、51秒の往復。照合はnavigation-matching-cases.mdの入力と出力条件で検証する。",
       "route_id": "route-1",
       "geometry": {
         "type": "LineString",
@@ -4016,28 +4004,14 @@
           8
         ],
         "expected": {
-          "arrival_by_virtual_s": 57,
-          "terminal_raw_candidates_m": [
-            100,
-            300,
-            500
+          "arrival_virtual_s_range": [
+            51,
+            57
           ],
-          "stops_as_arrived": true,
-          "arrival_virtual_s": 54,
-          "unique_hypothesis_from_virtual_s": 42,
-          "at_virtual_s_21": {
-            "hypotheses": [
-              {
-                "p_m": 194.11764705882354,
-                "direction": -1
-              },
-              {
-                "p_m": 205.88235294117646,
-                "direction": 1
-              }
-            ],
-            "matching_pending": true
-          }
+          "arrival_by_virtual_s": 57,
+          "max_confirmed_progress_error_m": 20,
+          "confirmed_by_virtual_s": 52,
+          "stops_as_arrived": true
         },
         "unresolved_probe": {
           "description": "試験入力だけを仮想0〜60秒の間C(100m)に固定し、複数候補が解消しない場合を注入する。UIの基準進行/終点時刻は通常どおり。",
@@ -4053,7 +4027,9 @@
           "expected_stop_virtual_s": 66,
           "expected_reason": "照合保留",
           "stops_as_arrived": false
-        }
+        },
+        "seed": 1,
+        "acceptance_cases": "../../navigation-matching-cases.md#入力と期待"
       }
     }
   ]
