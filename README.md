@@ -1,5 +1,9 @@
 # サンプル（プロダクト名）
 
+## フロントエンドの起動
+
+AcciLessNaviのフロント実装は [`frontend/`](frontend/README.md) にあります。`cd frontend` → `npm ci` → `npm run dev` でデモを起動できます。画面・実API接続・検証手順は同ディレクトリのREADMEを参照してください。
+
 [![IMAGE ALT TEXT HERE](https://jphacks.com/wp-content/uploads/2026/07/IMG_5316.png)](https://www.youtube.com/watch?v=piaNsc6ilBI)
 
 ## 製品概要
