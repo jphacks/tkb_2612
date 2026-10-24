@@ -10,6 +10,7 @@ use axum::http::header::CONTENT_TYPE;
 use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Number, Value};
 
+use crate::api::route_response::MAX_SAFE_INTEGER;
 use crate::contract::engine::{DEFAULT_MAX_DETOUR_MIN, validate_endpoints, validate_max_detour};
 use crate::contract::{
     ConditionFilter, DayType, LatLon, Mode, Period, QueryError, RouteQuery, Weather,
@@ -137,7 +138,8 @@ fn number(v: &Value) -> Option<f64> {
     }
 }
 
-/// 数学的な整数（`12.0` を含む）。
+/// 数学的な整数（`12.0` を含む）。小数表記は、浮動小数点で整数を正確に表せる
+/// JSONの安全整数の範囲（絶対値2^53−1以下）だけを受け付ける。範囲の検査は呼出し側で行う。
 fn integer(v: &Value) -> Option<i64> {
     let Value::Number(n) = v else {
         return None;
@@ -146,7 +148,7 @@ fn integer(v: &Value) -> Option<i64> {
         return Some(i);
     }
     let f = n.as_f64()?;
-    (f.is_finite() && f.fract() == 0.0 && f.abs() < 1.0e15).then_some(f as i64)
+    (f.is_finite() && f.fract() == 0.0 && f.abs() <= MAX_SAFE_INTEGER as f64).then_some(f as i64)
 }
 
 /// 日本語ラベル・`all`・整数コード・null。外側の `None` は不正、内側の `None` はall。

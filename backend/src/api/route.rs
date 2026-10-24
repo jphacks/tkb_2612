@@ -20,7 +20,7 @@ use crate::api::error::{ApiError, insert_api_headers};
 use crate::api::route_request::{
     BODY_SIZE, CONTENT_TYPE_MESSAGE, MAX_BODY_BYTES, is_json_content_type, parse_route_request,
 };
-use crate::api::route_response::render_route_response;
+use crate::api::route_response::{check_detour, render_route_response};
 use crate::api::transfer::{ConnectionKill, TransferBody};
 use crate::contract::CancelToken;
 
@@ -90,10 +90,12 @@ async fn prepare(
         tokio::task::spawn_blocking(move || -> Result<Vec<u8>, ApiError> {
             let _permit = permit;
             let outcome = engine.evaluate(&query, candidates, &cancel)?;
-            let body = render_route_response(&outcome).map_err(|e| {
-                tracing::error!(problem = %e.0, "route応答の検査に失敗しました");
-                ApiError::Internal
-            })?;
+            let body = check_detour(&outcome, query.max_detour_min())
+                .and_then(|()| render_route_response(&outcome))
+                .map_err(|e| {
+                    tracing::error!(problem = %e.0, "route応答の検査に失敗しました");
+                    ApiError::Internal
+                })?;
             if gzip_requested {
                 Ok(gzip(&body, &cancel)?)
             } else {

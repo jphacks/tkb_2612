@@ -539,6 +539,62 @@ async fn ttl_boundary_and_failures_are_not_cached() {
     assert_eq!(weather.calls().len(), 3, "TTLちょうどで取り直す");
 }
 
+/// 再アクセスが無くても、保存からTTLで座標キーと応答を消す（architecture.md 8章「最大10分保持」）。
+#[tokio::test(start_paused = true)]
+async fn entries_are_removed_after_the_ttl_without_access() {
+    let clock = ManualClock::new(common::fixed_now());
+    let weather = FakeWeather::new([Ok(report()), Ok(report()), Ok(report())]);
+    let ttl = Duration::from_secs(600);
+    let cache = WeatherCache::new(weather.clone(), clock.clone(), ttl);
+    let point = RoundedPoint::round(35.68, 139.76);
+    let cancel = CancelToken::unbounded();
+    cache.get(point, &cancel).await.unwrap();
+    assert_eq!(cache.len(), 1);
+    tokio::time::sleep(ttl - Duration::from_millis(1)).await;
+    assert_eq!(cache.len(), 1, "TTL未満は残す");
+    tokio::time::sleep(Duration::from_millis(2)).await;
+    assert!(cache.is_empty(), "TTLで消す");
+
+    // 保存し直した応答は、前の保存の期限では消さない
+    cache.get(point, &cancel).await.unwrap();
+    tokio::time::sleep(ttl / 2).await;
+    clock.advance(ttl);
+    cache.get(point, &cancel).await.unwrap();
+    assert_eq!(weather.calls().len(), 3);
+    tokio::time::sleep(ttl / 2 + Duration::from_millis(1)).await;
+    assert_eq!(cache.len(), 1, "前の保存の期限では消さない");
+    tokio::time::sleep(ttl / 2).await;
+    assert!(cache.is_empty());
+}
+
+/// 期限切れのキーは、取り直しに失敗しても残さない。
+#[tokio::test]
+async fn expired_entry_is_removed_even_if_refetching_fails() {
+    let clock = ManualClock::new(common::fixed_now());
+    let weather = FakeWeather::new([Ok(report()), Err(WeatherError::Failed)]);
+    let cache = WeatherCache::new(weather.clone(), clock.clone(), Duration::from_secs(600));
+    let point = RoundedPoint::round(35.68, 139.76);
+    let cancel = CancelToken::unbounded();
+    cache.get(point, &cancel).await.unwrap();
+    clock.advance(Duration::from_secs(600));
+    assert_eq!(cache.get(point, &cancel).await, Err(WeatherError::Failed));
+    assert!(cache.is_empty());
+}
+
+/// TTLが0なら保存しない。
+#[tokio::test]
+async fn zero_ttl_does_not_store() {
+    let clock = ManualClock::new(common::fixed_now());
+    let weather = FakeWeather::new([Ok(report()), Ok(report())]);
+    let cache = WeatherCache::new(weather.clone(), clock, Duration::ZERO);
+    let point = RoundedPoint::round(35.68, 139.76);
+    let cancel = CancelToken::unbounded();
+    cache.get(point, &cancel).await.unwrap();
+    assert!(cache.is_empty());
+    cache.get(point, &cancel).await.unwrap();
+    assert_eq!(weather.calls().len(), 2);
+}
+
 #[tokio::test]
 async fn oldest_key_is_evicted_beyond_1024_keys() {
     assert_eq!(MAX_ENTRIES, 1024);

@@ -25,8 +25,8 @@ pub const MAX_ROUTE_TRANSFER_TIMEOUT_MS: u64 = 3_600_000;
 pub const MAX_UPSTREAM_BYTES: u64 = 1 << 32;
 /// `UPSTREAM_QUEUE_CAPACITY` の上限。
 pub const MAX_UPSTREAM_QUEUE_CAPACITY: u64 = 10_000;
-/// `WEATHER_CACHE_TTL_SEC` の上限：1日。
-pub const MAX_WEATHER_CACHE_TTL_SEC: u64 = 86_400;
+/// `WEATHER_CACHE_TTL_SEC` の上限：10分（architecture.md 8章「プロセスメモリに最大10分保持」）。
+pub const MAX_WEATHER_CACHE_TTL_SEC: u64 = 600;
 /// `WEATHER_FORECAST_DAYS` の範囲（6章：1〜16）。
 pub const MAX_WEATHER_FORECAST_DAYS: u64 = 16;
 /// `CONDITIONS_TIMEOUT_MS` の上限（6章：クライアントの10秒より短くする）。

@@ -7,6 +7,7 @@
 //! 変換の前に相関制約・OpenAPIの値の範囲・JSONの安全整数範囲・有限値・navigationのサイズ
 //! （5,000,000バイト）を検査し、違反は内部契約違反（500）にする。間引いた200は返さない。
 
+use std::collections::HashSet;
 use std::io;
 
 use serde::ser::{Serialize, SerializeSeq, SerializeTuple, Serializer};
@@ -37,6 +38,10 @@ pub const ROUTE_MAX_DISTANCE_M: f64 = 80_000.0;
 pub const ACCIDENT_MAX_PEOPLE: u16 = 999;
 pub const MIN_SOURCE_YEAR: u16 = 1900;
 pub const ACCIDENT_DATE_RANGE: std::ops::RangeInclusive<u32> = 19_000_101..=99_991_231;
+/// 丸めた値（小数3桁）と、その式の値との差の許容幅。frontendの応答検証（`close`）と同じ（暫定。未決）。
+pub const ROUNDING_TOLERANCE: f64 = 0.0011;
+/// `within_detour` の判定に足す誤差（behavior.md・openapi.yaml：`+1e-6`）。
+pub const DETOUR_EPSILON_S: f64 = 1e-6;
 
 /// 変換できない結果（内部契約違反）。内容は内部の説明で、応答には出さない。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +84,29 @@ impl io::Write for ByteCounter {
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
+}
+
+/// `within_detour` が `duration <= fastest.duration + max_detour_min*60 + 1e-6` と一致するか。
+/// 要求の `max_detour_min` が要るので、[`render_route_response`] とは別に呼ぶ。
+pub fn check_detour(outcome: &RouteOutcome, max_detour_min: f64) -> Result<(), InvalidOutcome> {
+    let fastest = outcome
+        .candidates
+        .get(outcome.fastest)
+        .ok_or_else(|| InvalidOutcome("fastestが候補にない".to_owned()))?;
+    let limit = fastest.path.duration_s + max_detour_min * 60.0 + DETOUR_EPSILON_S;
+    for (i, c) in outcome.candidates.iter().enumerate() {
+        if c.within_detour != (c.path.duration_s <= limit) {
+            return violation(format!(
+                "{}: within_detourが許容追加時間と一致しない",
+                route_id(i)
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn close(a: f64, b: f64) -> bool {
+    (a - b).abs() < ROUNDING_TOLERANCE
 }
 
 fn route_id(index: usize) -> String {
@@ -186,6 +214,31 @@ pub fn check_outcome(outcome: &RouteOutcome) -> Result<(), InvalidOutcome> {
     {
         return violation("data_yearsが1900以上の昇順・重複なしでない");
     }
+    if outcome
+        .candidates
+        .windows(2)
+        .any(|w| w[0].path.duration_s > w[1].path.duration_s)
+    {
+        return violation("候補がduration昇順でない");
+    }
+    let fastest = &outcome.candidates[outcome.fastest];
+    if let Some(safest) = outcome.safest.map(|s| &outcome.candidates[s]) {
+        if !safest.within_detour {
+            return violation("safestがwithin_detourでない");
+        }
+        if !outcome
+            .extra_minutes
+            .is_some_and(|m| close(m, safest.extra_minutes))
+        {
+            return violation("extra_minutesがsafestの値と一致しない");
+        }
+        if fastest.weighted_risk > 0.0 && outcome.risk_reduction_percent.is_none() {
+            return violation("fastestのリスクが正なのにrisk_reduction_percentがnull");
+        }
+    }
+    if fastest.weighted_risk == 0.0 && outcome.risk_reduction_percent.is_some() {
+        return violation("fastestのリスクが0なのにrisk_reduction_percentがある");
+    }
     for (i, c) in outcome.candidates.iter().enumerate() {
         check_candidate(outcome, i, c)?;
     }
@@ -218,19 +271,52 @@ fn check_candidate(
     }
     if let Some(w) = &c.weather_match {
         check_totals(w, &id)?;
-        if w.accident_count > c.totals.accident_count {
-            return violation(format!("{id}: weather_matchの件数が不正"));
+        let t = &c.totals;
+        if w.accident_count > t.accident_count
+            || w.fatal_accidents > t.fatal_accidents
+            || w.injury_accidents > t.injury_accidents
+            || w.deaths > t.deaths
+            || w.injuries > t.injuries
+        {
+            return violation(format!("{id}: weather_matchが候補の集計を超えている"));
         }
     }
     finite_non_negative(c.weighted_risk, &id)?;
     finite_non_negative(c.risk_per_km, &id)?;
     finite_non_negative(c.extra_minutes, &id)?;
+    let fastest = &outcome.candidates[outcome.fastest];
+    if !close(
+        c.extra_minutes,
+        (c.path.duration_s - fastest.path.duration_s) / 60.0,
+    ) {
+        return violation(format!("{id}: extra_minutesがdurationの差と一致しない"));
+    }
+    if !close(
+        c.risk_per_km,
+        c.weighted_risk / (c.path.distance_m / 1000.0).max(0.001),
+    ) {
+        return violation(format!("{id}: risk_per_kmがweighted_risk/距離と一致しない"));
+    }
+    if c.totals.accident_count == 0
+        && (c.weighted_risk != 0.0
+            || c.high_risk_total != 0
+            || c.totals.deaths != 0
+            || c.totals.injuries != 0)
+    {
+        return violation(format!(
+            "{id}: 事故0件なのにリスク・死傷者・高リスク区間がある"
+        ));
+    }
     let points = (c.totals.accident_count as usize).min(MAX_ACCIDENT_POINTS);
     if c.accident_points.len() != points {
         return violation(format!("{id}: 事故点数がmin(accident_count,250)と異なる"));
     }
+    let mut point_ids = HashSet::with_capacity(c.accident_points.len());
     for p in &c.accident_points {
         safe(p.id, &id)?;
+        if !point_ids.insert(p.id) {
+            return violation(format!("{id}: 事故点のidが重複している"));
+        }
         check_position(p.position, &id)?;
         if p.deaths > ACCIDENT_MAX_PEOPLE
             || p.injuries > ACCIDENT_MAX_PEOPLE
@@ -249,7 +335,19 @@ fn check_candidate(
             "{id}: 表示区間数がmin(high_risk_total,100)と異なる"
         ));
     }
-    for s in &c.high_risk_sections {
+    let mut segment_ids = HashSet::with_capacity(c.high_risk_sections.len());
+    for (k, s) in c.high_risk_sections.iter().enumerate() {
+        if !segment_ids.insert(s.segment_index) {
+            return violation(format!("{id}: 表示区間のsegment_indexが重複している"));
+        }
+        // 重み降順、同じ重みはsegment_index昇順
+        if let Some(prev) = k.checked_sub(1).map(|k| &c.high_risk_sections[k])
+            && (prev.severity_weight < s.severity_weight
+                || (prev.severity_weight == s.severity_weight
+                    && prev.segment_index > s.segment_index))
+        {
+            return violation(format!("{id}: 表示区間の順序が不正"));
+        }
         safe(s.severity_weight, &id)?;
         check_position(s.start, &id)?;
         check_position(s.end, &id)?;

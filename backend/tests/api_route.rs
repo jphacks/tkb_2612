@@ -412,9 +412,9 @@ mod common_large {
                 c.high_risk_sections = (0..100)
                     .map(|j| HighRiskSegment {
                         segment_index: j * 2,
-                        source_vertex_start_index: j,
-                        start: c.path.coordinates[j as usize],
-                        end: c.path.coordinates[j as usize + 1],
+                        source_vertex_start_index: j * 2,
+                        start: c.path.coordinates[j as usize * 2],
+                        end: c.path.coordinates[j as usize * 2 + 1],
                         severity_weight: 3,
                     })
                     .collect();
@@ -442,6 +442,8 @@ mod common_large {
             .collect();
         outcome.fastest = 0;
         outcome.safest = Some(1);
+        // 全候補が候補0の複製なので、safestの追加時間も候補0と同じ（0分）
+        outcome.extra_minutes = Some(outcome.candidates[1].extra_minutes);
         outcome
     }
 }

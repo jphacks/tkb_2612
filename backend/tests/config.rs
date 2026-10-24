@@ -232,7 +232,7 @@ fn invalid_values_are_rejected_with_the_variable_name() {
         ("UPSTREAM_GATE", "redis"),
         ("WEATHER_FORECAST_DAYS", "0"),
         ("WEATHER_FORECAST_DAYS", "17"),
-        ("WEATHER_CACHE_TTL_SEC", "86401"),
+        ("WEATHER_CACHE_TTL_SEC", "601"),
         ("CONDITIONS_TIMEOUT_MS", "10000"),
         ("RUST_LOG", ""),
     ];

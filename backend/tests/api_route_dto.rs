@@ -9,11 +9,11 @@ use std::sync::Arc;
 
 use accident_route_backend::api::route_response::{
     ACCIDENT_MAX_PEOPLE, MAX_NAVIGATION_BYTES, MAX_SAFE_INTEGER, MIN_SOURCE_YEAR, NAV_MAX_SECTIONS,
-    NAV_MAX_VERTICES, ROUTE_MAX_DISTANCE_M, render_route_response,
+    NAV_MAX_VERTICES, ROUTE_MAX_DISTANCE_M, check_detour, render_route_response,
 };
 use accident_route_backend::contract::{
-    AccidentPoint, EvaluatedRoute, HighRiskSegment, LonLat, NavigationData, NavigationSection,
-    RouteOutcome,
+    AccidentPoint, AccidentTotals, EvaluatedRoute, HighRiskSegment, LonLat, NavigationData,
+    NavigationSection, RouteOutcome,
 };
 use accident_route_backend::testing::fixtures::{
     check_outcome_invariants, expected_route_outcome, fixture_dataset_info, route_example,
@@ -192,6 +192,7 @@ fn navigation_sections_must_advance_in_distance() {
     c.high_risk_total = 2;
     c.high_risk_sections = [0u32, 2]
         .map(|sid| HighRiskSegment {
+            segment_index: sid,
             source_vertex_start_index: sid,
             start: c.path.coordinates[sid as usize],
             end: c.path.coordinates[sid as usize + 1],
@@ -332,6 +333,92 @@ fn broken_correlations_are_rejected() {
     let mut nan = expected_route_outcome("singleRoute");
     nan.candidates[0].weighted_risk = f64::NAN;
     assert!(render_route_response(&nan).is_err());
+}
+
+type OutcomeEdit = dyn Fn(&mut RouteOutcome);
+
+/// 選定・丸め・包含の相関（frontendの応答検証と同じ条件）。値は再計算せず、整合だけを見る。
+#[test]
+fn selection_and_rounding_correlations_are_checked() {
+    let base = expected_route_outcome("twoSelected");
+    assert_eq!((base.fastest, base.safest), (0, Some(1)));
+    assert!(render_route_response(&base).is_ok());
+    let cases: [(&str, &OutcomeEdit); 12] = [
+        ("extra_minutesがsafest", &|o| o.extra_minutes = Some(3.0)),
+        ("within_detourでない", &|o| {
+            o.candidates[1].within_detour = false
+        }),
+        ("risk_reduction_percentがnull", &|o| {
+            o.risk_reduction_percent = None
+        }),
+        ("リスクが0なのに", &|o| {
+            o.candidates[0].weighted_risk = 0.0;
+            o.candidates[0].risk_per_km = 0.0;
+        }),
+        ("weather_matchが候補の集計を超え", &|o| {
+            let c = &mut o.candidates[1];
+            c.weather_match.as_mut().unwrap().injuries = c.totals.injuries + 1;
+        }),
+        ("durationの差", &|o| o.candidates[2].extra_minutes = 4.0),
+        ("risk_per_km", &|o| o.candidates[2].risk_per_km += 0.01),
+        ("duration昇順", &|o| {
+            let c = &mut o.candidates[2];
+            c.path.duration_s = 700.0;
+            c.extra_minutes = (700.0 - 600.0) / 60.0;
+        }),
+        ("事故点のidが重複", &|o| {
+            let points = &mut o.candidates[0].accident_points;
+            points[1].id = points[0].id;
+        }),
+        ("segment_indexが重複", &|o| {
+            let sections = &mut o.candidates[0].high_risk_sections;
+            sections[1].segment_index = sections[0].segment_index;
+        }),
+        ("表示区間の順序", &|o| {
+            o.candidates[0].high_risk_sections.swap(0, 1)
+        }),
+        ("事故0件なのに", &|o| {
+            let c = &mut o.candidates[2];
+            c.totals = AccidentTotals::default();
+            c.weather_match = Some(AccidentTotals::default());
+            c.accident_points.clear();
+            c.high_risk_total = 0;
+            c.high_risk_sections.clear();
+        }),
+    ];
+    for (expected, edit) in cases {
+        let mut outcome = base.clone();
+        edit(&mut outcome);
+        let message = rejection(&outcome);
+        assert!(message.contains(expected), "{expected}: {message}");
+    }
+}
+
+/// `within_detour` は要求の `max_detour_min` で判定した値と一致する（ハンドラでは500）。
+#[tokio::test]
+async fn within_detour_must_match_the_requested_detour() {
+    let base = expected_route_outcome("twoSelected");
+    assert!(check_detour(&base, 10.0).is_ok());
+    // 2分なら750秒の候補は許容外になるはず
+    let message = check_detour(&base, 2.0).expect_err("不一致").0;
+    assert!(message.contains("within_detour"), "{message}");
+    let router = Arc::new(ScriptedRouter::new([valid_routes(
+        &route_example("singleRoute").routes,
+    )]));
+    let app = TestAppBuilder {
+        engine: Some(Arc::new(StubEngine::new(
+            fixture_dataset_info(),
+            StubEvaluation::Fixed(Box::new(base)),
+        ))),
+        router,
+        ..Default::default()
+    }
+    .build();
+    let mut body = common::valid_route_body();
+    body["max_detour_min"] = 2.into();
+    let response = app.post_json("/api/route", body.to_string()).await;
+    assert_eq!(response.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(response.error_code(), "internal_error");
 }
 
 /// 内部契約違反はハンドラで500 internal_error（間引いた200を返さない）。
