@@ -227,7 +227,7 @@ cargo run --release --manifest-path backend/Cargo.toml --bin prepare_release -- 
 
 ### 追加したテスト
 
-`calendar`（時間帯・曜日区分・祝日表）、`preprocess_rows`・`preprocess_files`・`preprocess_release`（前処理・コード表）、`release_load`（起動時検証）、`test_release`（人工release）、`candidates`・`corridor`・`scoring`・`navigation`（`navigation-cases.json` の全ケース）・`selection`、`engine_fixtures`（人工release＋実エンジン＋固定経路がopenapi.yamlの全応答例と一致。比較規則は共通前提のC3と同じ）、`engine_cancel`（中断）。実コード表・実祝日表の試験は `accident/` がなければ省略を表示します（合格ではありません）。実releaseの確認は `real_release`（`ACCIDENT_REAL_RELEASE_DIR` を指定したときだけ動く）です。
+`calendar`（時間帯・曜日区分・祝日表）、`preprocess_rows`・`preprocess_files`・`preprocess_release`（前処理・コード表）、`release_load`（起動時検証）、`test_release`（人工release）、`candidates`・`corridor`・`scoring`・`navigation`（`navigation-cases.json` の全ケース）・`selection`、`engine_fixtures`（人工release＋実エンジン＋固定経路がopenapi.yamlの全応答例と一致。比較規則は共通前提のC3と同じ）、`engine_cancel`（中断）。実コード表・実祝日表の試験はリポジトリの `accident/` を使い、なければ失敗します（省略しません）。実releaseの確認は `real_release` で、既定では `ignored` と数えます。`ACCIDENT_REAL_RELEASE_DIR` を指定し、`-- --ignored` を付けて実行します。
 
 ## 範囲外
 

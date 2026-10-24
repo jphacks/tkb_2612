@@ -1,8 +1,9 @@
-//! 実データのreleaseの確認（#8 ステップ16）。`ACCIDENT_REAL_RELEASE_DIR` を指定したときだけ動く。
+//! 実データのreleaseの確認（#8 ステップ16）。既定では `ignored` として数え、
+//! `ACCIDENT_REAL_RELEASE_DIR` を指定して `--ignored` で実行する。
 //!
 //! ```sh
 //! ACCIDENT_REAL_RELEASE_DIR=backend/data/releases/<release_id> \
-//!     cargo test --release --manifest-path backend/Cargo.toml --test real_release -- --nocapture
+//!     cargo test --release --manifest-path backend/Cargo.toml --test real_release -- --ignored --nocapture
 //! ```
 //!
 //! ロード時間と固定検索（東京駅付近の人工の固定経路）の結果を表示する。合否の基準は
@@ -18,13 +19,10 @@ use accident_route_backend::testing::fixtures::check_outcome_invariants;
 use accident_route_backend::testing::{ScriptedRouter, valid_routes};
 
 #[tokio::test]
+#[ignore = "実releaseが必要（ACCIDENT_REAL_RELEASE_DIR を指定して --ignored で実行）"]
 async fn real_release_loads_and_answers_a_fixed_search() {
-    let Ok(dir) = std::env::var("ACCIDENT_REAL_RELEASE_DIR") else {
-        eprintln!(
-            "SKIP: ACCIDENT_REAL_RELEASE_DIR が未設定のため実releaseの確認を省略（合格ではない）"
-        );
-        return;
-    };
+    let dir = std::env::var("ACCIDENT_REAL_RELEASE_DIR")
+        .expect("ACCIDENT_REAL_RELEASE_DIR に実releaseのディレクトリを指定してください");
     let dir = std::fs::canonicalize(dir).expect("releaseディレクトリ");
     let started = Instant::now();
     let calendar = data::load_calendar(&dir).expect("祝日表");

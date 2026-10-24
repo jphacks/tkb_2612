@@ -181,14 +181,9 @@ fn invalid_holiday_tables_fail() {
 
 #[test]
 fn real_holiday_table_from_cabinet_office() {
+    // 祝日表はリポジトリの accident/ にあるので、なければ省略せず失敗にする
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../accident/syukujitsu.csv");
-    let Ok(bytes) = std::fs::read(&path) else {
-        eprintln!(
-            "SKIP: {} がないため実祝日表の試験を省略（合格ではない）",
-            path.display()
-        );
-        return;
-    };
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let c = parse_holiday_csv(&bytes).expect("内閣府の祝日表");
     assert_eq!(
         c.classify_date(date("2025-11-24")).reason,
