@@ -134,7 +134,9 @@ async function requestJson<T>(
     return parsed;
   } catch (error) {
     if (signal?.aborted) throw abortError();
-    if (timedOut)
+    // The timer cannot fire during synchronous parsing and checks, so the
+    // elapsed time is checked here too when those steps throw past the deadline.
+    if (timedOut || performance.now() > deadline)
       throw new ApiError(
         "通信がタイムアウトしました。時間をおいて再試行してください。",
         "timeout",

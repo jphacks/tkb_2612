@@ -108,6 +108,13 @@ export function validateRouteResponse(
     invalid();
   if (fastest.weighted_risk === 0 && response.risk_reduction_percent !== null)
     invalid();
+  // The value is computed by the backend; only its null/non-null invariant is checked (behavior.md 8).
+  if (
+    safest &&
+    fastest.weighted_risk > 0 &&
+    response.risk_reduction_percent === null
+  )
+    invalid();
   let navigationBytes = 0;
   for (const route of candidates) {
     const selected = route.id === fastest.id || route.id === safest?.id;

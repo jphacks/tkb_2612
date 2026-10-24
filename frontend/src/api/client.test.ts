@@ -3,6 +3,7 @@ import { createDemoConditions } from "./demo";
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   vi.resetModules();
@@ -130,5 +131,40 @@ describe("API client cancellation and live separation", () => {
     const assertion = expect(result).rejects.toMatchObject({ code: "timeout" });
     await vi.advanceTimersByTimeAsync(10_000);
     await assertion;
+  });
+
+  it("reports a timeout when synchronous contract checks fail after the deadline", async () => {
+    vi.stubEnv("VITE_API_MODE", "live");
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        // The body arrives just before the deadline; parsing and checks then run past it.
+        now = 10_001;
+        return new Response(JSON.stringify({ invalid: true }), {
+          status: 200,
+        });
+      }),
+    );
+    const { getConditions } = await import("./client");
+    await expect(
+      getConditions("2026-10-24T12:00+09:00"),
+    ).rejects.toMatchObject({ code: "timeout" });
+  });
+
+  it("keeps an invalid response that completes within the deadline as invalid_response", async () => {
+    vi.stubEnv("VITE_API_MODE", "live");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ invalid: true }), { status: 200 }),
+      ),
+    );
+    const { getConditions } = await import("./client");
+    await expect(
+      getConditions("2026-10-24T12:00+09:00"),
+    ).rejects.toMatchObject({ code: "invalid_response" });
   });
 });

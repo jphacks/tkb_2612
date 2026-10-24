@@ -21,6 +21,7 @@ import type {
   ConditionsResponse,
   LatLon,
   RouteRequest,
+  RouteResponse,
   Scenario,
 } from "./lib/types";
 
@@ -30,10 +31,13 @@ const api = vi.hoisted(() => ({
   searchPlaces: vi.fn(),
   searchRoutes: vi.fn(),
 }));
+const mode = vi.hoisted(() => ({ demo: true }));
 
 vi.mock("./api/client", async () => ({
   ApiError: (await import("./api/errors")).ApiError,
-  isDemo: true,
+  get isDemo() {
+    return mode.demo;
+  },
   ...api,
 }));
 vi.mock("./components/LogoIntro", () => ({
@@ -53,6 +57,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  mode.demo = true;
   api.getHealth.mockReset().mockResolvedValue(demoHealth);
   api.searchPlaces
     .mockReset()
@@ -95,7 +100,11 @@ beforeEach(() => {
     );
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  Reflect.deleteProperty(navigator, "geolocation");
+});
 
 async function openConditions() {
   const user = userEvent.setup();
@@ -331,5 +340,104 @@ describe("App search flow and condition ownership", () => {
     expect(
       within(group).getByRole("button", { name: /最短時間.*過去事故 0 件/ }),
     ).toBeInTheDocument();
+  });
+
+  it("ignores a pending GPS result that arrives after a route search has started", async () => {
+    mode.demo = false;
+    vi.stubGlobal("isSecureContext", true);
+    let onPosition!: PositionCallback;
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: {
+        getCurrentPosition: vi.fn((success: PositionCallback) => {
+          onPosition = success;
+        }),
+      },
+    });
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      screen.getByRole("button", { name: "動画をスキップして開始" }),
+    );
+    for (const [name, query, index] of [
+      ["出発地", "東京", 0],
+      ["目的地", "上野", 1],
+    ] as const) {
+      fireEvent.change(screen.getByRole("combobox", { name }), {
+        target: { value: query },
+      });
+      await user.click(screen.getByRole("button", { name: `${name}の候補を検索` }));
+      await user.click(
+        await screen.findByRole("option", { name: DEMO_PLACES[index].label }),
+      );
+    }
+    await user.click(screen.getByRole("button", { name: "現在地を使う" }));
+    expect(onPosition).toBeDefined();
+    await user.click(screen.getByRole("button", { name: "条件を選ぶ" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "ルートを比較する" }),
+      ).toBeEnabled(),
+    );
+    const pending = deferred<RouteResponse>();
+    api.searchRoutes.mockImplementationOnce(() => pending.promise);
+    await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
+    await screen.findByRole("heading", { name: "ルートを検索しています" });
+    const signal = api.searchRoutes.mock.calls[0][1] as AbortSignal;
+
+    act(() =>
+      onPosition({
+        coords: { latitude: 35.0, longitude: 139.0, accuracy: 10 },
+      } as GeolocationPosition),
+    );
+    expect(signal.aborted).toBe(false);
+    expect(
+      screen.getByRole("heading", { name: "ルートを検索しています" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "出発地" })).toHaveValue(
+      DEMO_PLACES[0].label,
+    );
+    expect(screen.queryByText(/現在地を出発地に設定しました/)).toBeNull();
+    await act(async () =>
+      pending.resolve(
+        createDemoRouteResponse(api.searchRoutes.mock.calls[0][0]),
+      ),
+    );
+    await screen.findByRole("group", { name: "表示する経路" });
+    expect(api.searchRoutes).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-checks health once when the route result arrives before the first health response", async () => {
+    const health = deferred<typeof demoHealth>();
+    api.getHealth.mockImplementationOnce(() => health.promise);
+    api.searchRoutes.mockImplementation((request: RouteRequest) =>
+      Promise.resolve({
+        ...createDemoRouteResponse(request),
+        dataset_id: "route-dataset",
+      }),
+    );
+    await openResults();
+    expect(api.getHealth).toHaveBeenCalledTimes(1);
+    await act(async () => health.resolve(demoHealth));
+    await waitFor(() => expect(api.getHealth).toHaveBeenCalledTimes(2));
+    // The refreshed health still differs, but the same mismatch is not checked again.
+    await act(async () => {});
+    expect(api.getHealth).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-checks health once when the route result differs from an already fetched health", async () => {
+    const user = await openConditions();
+    await waitFor(() => expect(api.getHealth).toHaveBeenCalledTimes(1));
+    api.searchRoutes.mockImplementation((request: RouteRequest) =>
+      Promise.resolve({
+        ...createDemoRouteResponse(request),
+        dataset_id: "route-dataset",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
+    await screen.findByRole("group", { name: "表示する経路" });
+    await waitFor(() => expect(api.getHealth).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(api.getHealth).toHaveBeenCalledTimes(2);
   });
 });

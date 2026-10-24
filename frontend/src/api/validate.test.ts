@@ -148,9 +148,16 @@ describe("API 2.0 contract and cross-field validation", () => {
       },
     ],
     [
+      "missing reduction percentage while a safest route exists and the baseline risk is positive",
+      (result) => {
+        result.risk_reduction_percent = null;
+      },
+    ],
+    [
       "cumulative distances not matching geometry vertices",
       (result) => {
-        result.candidates[0].navigation!.vertex_distances_m.pop();
+        // Drop an inner element so the start 0, monotonicity and the end length_m still hold.
+        result.candidates[0].navigation!.vertex_distances_m.splice(1, 1);
       },
     ],
     [

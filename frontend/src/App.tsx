@@ -85,7 +85,10 @@ export default function App() {
   const [healthWarning, setHealthWarning] = useState("");
   const [dataBlocked, setDataBlocked] = useState(false);
   const [healthRevision, setHealthRevision] = useState(0);
+  // dataset_id of the last fetched /api/health and of the latest route result.
   const healthDataset = useRef<string | null>(null);
+  const routeDataset = useRef<string | null>(null);
+  const datasetRechecked = useRef<string | null>(null);
   const [result, setResult] = useState<RouteResponse | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
@@ -115,6 +118,7 @@ export default function App() {
     getHealth(abort.signal)
       .then((health) => {
         healthDataset.current = health.dataset_id;
+        checkDatasetMismatch();
         setDataBlocked(false);
       })
       .catch((failure) => {
@@ -130,6 +134,21 @@ export default function App() {
       });
     return () => abort.abort();
   }, [healthRevision]);
+
+  // frontend-spec 3: a route dataset_id differing from health re-checks /api/health once,
+  // whichever of the two responses completes first.
+  function checkDatasetMismatch() {
+    const route = routeDataset.current;
+    if (
+      route === null ||
+      healthDataset.current === null ||
+      route === healthDataset.current ||
+      datasetRechecked.current === route
+    )
+      return;
+    datasetRechecked.current = route;
+    setHealthRevision((count) => count + 1);
+  }
 
   function invalidate() {
     ++requestVersion.current;
@@ -279,6 +298,15 @@ export default function App() {
         return;
       }
     }
+    // Inputs are locked while searching, so a pending GPS request must not
+    // overwrite the origin and abort this search when it completes later.
+    ++locationRequest.current;
+    if (locating) {
+      setLocating(false);
+      setLocationMessage(
+        "検索を開始したため、現在地の取得を中止しました。出発地は変更されません。",
+      );
+    }
     routeRequest.current?.abort();
     const abort = new AbortController();
     routeRequest.current = abort;
@@ -310,14 +338,8 @@ export default function App() {
       if (version !== requestVersion.current || abort.signal.aborted) return;
       setResult(response);
       setSelectedRoute(response.safest_id ?? response.fastest_id);
-      // frontend-spec 3: a different data generation re-checks /api/health once.
-      if (
-        healthDataset.current !== null &&
-        response.dataset_id !== healthDataset.current
-      ) {
-        healthDataset.current = response.dataset_id;
-        setHealthRevision((count) => count + 1);
-      }
+      routeDataset.current = response.dataset_id;
+      checkDatasetMismatch();
     } catch (failure) {
       if (abort.signal.aborted || version !== requestVersion.current) return;
       setError(
