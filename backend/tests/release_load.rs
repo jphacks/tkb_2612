@@ -176,11 +176,45 @@ fn malformed_accident_csv_stops_loading() {
             ),
             1,
         ),
+        (
+            "source_year=0",
+            format!(
+                "{header}\n{}\n",
+                row("1", "0").replace(",2025,20250106,", ",0,20250106,")
+            ),
+            1,
+        ),
+        (
+            "1900年より前の発生日",
+            format!(
+                "{header}\n{}\n",
+                row("1", "0").replace(",20250106,", ",18991231,")
+            ),
+            1,
+        ),
+        (
+            "source_yearより後の発生年",
+            format!(
+                "{header}\n{}\n",
+                row("1", "0").replace(",20250106,", ",20260101,")
+            ),
+            1,
+        ),
     ] {
         let (_r, dir) = copy_release();
         replace_accidents(dir.path(), &text, rows);
         assert_invalid(dir.path(), case);
     }
+
+    // 発生年がsource_yearより前の事故（前年の事故を翌年度の原本に収録）は受け付ける
+    let (_r, dir) = copy_release();
+    let text = format!(
+        "{header}\n{}\n",
+        row("1", "0").replace(",20250106,", ",20241231,")
+    );
+    replace_accidents(dir.path(), &text, 1);
+    let engine = data::load_engine(dir.path()).expect("発生年がsource_yearより前の事故");
+    assert_eq!(engine.dataset().data_years, vec![2025]);
 }
 
 #[test]

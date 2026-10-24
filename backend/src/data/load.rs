@@ -119,9 +119,11 @@ pub fn parse_accidents(gzip: &[u8]) -> Result<AccidentColumns, LoadError> {
         check(DayType::from_code(day_type).is_some())?;
         // 人数は各0〜999で合計1以上（behavior.md 2章）
         check(deaths <= 999 && injuries <= 999 && deaths + injuries >= 1)?;
+        // 発生日は実在し、1900 <= 発生年 <= source_year（behavior.md 2章）
+        let year = date / 10_000;
         check(
-            NaiveDate::from_ymd_opt((date / 10_000) as i32, (date / 100) % 100, date % 100)
-                .is_some(),
+            (1900..=u32::from(source_year)).contains(&year)
+                && NaiveDate::from_ymd_opt(year as i32, (date / 100) % 100, date % 100).is_some(),
         )?;
         c.lat.push(lat);
         c.lon.push(lon);
