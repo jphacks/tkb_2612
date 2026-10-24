@@ -4,6 +4,12 @@
 //! テストごとに使う部品が違うので、使わないものの警告を抑える。
 #![allow(dead_code)]
 
+mod accidents;
+pub mod source;
+
+#[allow(unused_imports)]
+pub use accidents::*;
+
 use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::net::SocketAddr;
