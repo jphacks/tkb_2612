@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { describeError } from "./errorMessage";
+import { describeError, ROUTE_INPUT_HINT } from "./errorMessage";
 import { ApiError } from "./errors";
 
 const fallback = "ルートを検索できませんでした。";
 const text = (code: string, message = "サーバーの説明", status?: number) =>
-  describeError(new ApiError(message, code, status), fallback);
+  describeError(
+    new ApiError(message, code, status),
+    fallback,
+    ROUTE_INPUT_HINT,
+  );
 
 describe("describeError (frontend-spec 5 error table)", () => {
   it("keeps the 400 message and separates the 30km straight-line limit from the 80km route limit", () => {
@@ -19,6 +23,20 @@ describe("describeError (frontend-spec 5 error table)", () => {
     expect(shown).toContain("入力を見直してください");
     expect(shown).toMatch(
       /直線距離の上限30km.*候補経路の長さの上限80km.*別の制限/,
+    );
+  });
+
+  it("does not add the route distance limits to other operations' input errors", () => {
+    const shown = describeError(
+      new ApiError(
+        "住所や地点名は2〜200文字で入力してください。",
+        "invalid_request",
+        400,
+      ),
+      fallback,
+    );
+    expect(shown).toBe(
+      "住所や地点名は2〜200文字で入力してください。 入力を見直してください。",
     );
   });
 

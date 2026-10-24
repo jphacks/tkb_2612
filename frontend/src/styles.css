@@ -553,13 +553,14 @@ svg {
 }
 .result-page {
   --sidebar-space: 392px;
+  --attribution-space: 88px;
   position: relative;
   height: calc(100dvh - 72px);
   min-height: 400px;
 }
 .map-stage {
   position: absolute;
-  inset: 0;
+  inset: 0 0 var(--attribution-space);
   background: #f1f5f9;
 }
 .sidebar-open .map-stage {
@@ -585,7 +586,7 @@ svg {
   position: absolute;
   top: 16px;
   left: 16px;
-  bottom: 16px;
+  bottom: calc(var(--attribution-space) + 16px);
   width: 360px;
   background: #fff;
   border: 1px solid var(--border);
@@ -829,6 +830,7 @@ svg {
   }
   .result-page {
     --sidebar-space: 0px;
+    --attribution-space: 120px;
   }
   .route-panel {
     width: min(340px, calc(100% - 72px));
@@ -881,6 +883,30 @@ svg {
 .data-attribution ul {
   margin: 4px 0 0;
   padding-left: 16px;
+}
+.result-page > .data-attribution {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--attribution-space);
+  overflow-y: auto;
+  padding: 8px 16px;
+  background: #fff;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.result-page > .data-attribution p {
+  margin: 0;
+}
+.result-page > .data-attribution ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 16px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
 }
 .form-page .data-attribution {
   margin-top: 40px;

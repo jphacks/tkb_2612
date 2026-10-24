@@ -454,7 +454,7 @@ describe("App search flow and condition ownership", () => {
     await waitFor(() => expect(api.getHealth).toHaveBeenCalledTimes(1));
     api.getHealth
       .mockRejectedValueOnce(
-        new ApiError("データを利用できません。", "data_unavailable", 503),
+        new ApiError("サーバーの説明文", "data_unavailable", 503),
       )
       .mockResolvedValueOnce(demoHealth);
     api.searchRoutes.mockImplementation((request: RouteRequest) =>
@@ -465,21 +465,33 @@ describe("App search flow and condition ownership", () => {
     );
     await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
     await screen.findByRole("group", { name: "表示する経路" });
-    expect(await screen.findByText("データを利用できません。")).toBeVisible();
+    expect(
+      await screen.findByText(
+        "事故データを準備しています。時間をおいて再試行してください。",
+      ),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "再検索" })).toBeDisabled();
 
     await user.click(screen.getByRole("radio", { name: "雨" }));
     expect(
       screen.queryByRole("group", { name: "表示する経路" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("データを利用できません。")).toBeVisible();
+    expect(
+      screen.getByText(
+        "事故データを準備しています。時間をおいて再試行してください。",
+      ),
+    ).toBeVisible();
     expect(
       screen.getByRole("button", { name: "変更した条件で再検索" }),
     ).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "準備状況を再確認" }));
     await waitFor(() =>
-      expect(screen.queryByText("データを利用できません。")).toBeNull(),
+      expect(
+        screen.queryByText(
+          "事故データを準備しています。時間をおいて再試行してください。",
+        ),
+      ).toBeNull(),
     );
     expect(api.getHealth).toHaveBeenCalledTimes(3);
     expect(screen.getByRole("button", { name: "再検索" })).toBeEnabled();
@@ -602,5 +614,36 @@ describe("App result comparison and failures (frontend-spec 5, 10)", () => {
         within(footer).getByRole("link", { name: "Powered by Geoapify" }),
       ).toHaveAttribute("href", "https://www.geoapify.com/"),
     );
+  });
+
+  it("keeps live attribution visible on the result page when the sidebar is closed", async () => {
+    const user = await openResults();
+    // The helper uses the demo origin; the next render reads live mode.
+    mode.demo = false;
+    await user.click(
+      screen.getByRole("button", { name: "条件サイドバーを閉じる" }),
+    );
+    const footer = screen.getByRole("contentinfo", { name: "データの出典" });
+    expect(footer).toBeVisible();
+    expect(
+      within(footer).getByText(/過去の事故記録に基づく参考指標/),
+    ).toBeVisible();
+    expect(
+      within(footer).getByRole("link", {
+        name: "Weather data by Open-Meteo.com",
+      }),
+    ).toBeVisible();
+  });
+
+  it("explains a health network failure with the possible expired login", async () => {
+    api.getHealth
+      .mockReset()
+      .mockRejectedValue(
+        new ApiError("サーバーに接続できません。", "network_error"),
+      );
+    await openConditions();
+    expect(
+      await screen.findByText(/ログインの有効期限が切れた可能性があります/),
+    ).toBeInTheDocument();
   });
 });

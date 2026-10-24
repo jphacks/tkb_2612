@@ -11,7 +11,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { isDemo, searchRoutes } from "./api/client";
-import { describeError } from "./api/errorMessage";
+import { describeError, ROUTE_INPUT_HINT } from "./api/errorMessage";
 import type { Scenario } from "./lib/types";
 import { toTokyoInput, toTokyoIso } from "./lib/format";
 import LocationInput, {
@@ -68,7 +68,11 @@ export default function App() {
     changePlace("origin", { text: place.label, place }),
   );
   const error = route.error
-    ? describeError(route.error, "ルートを検索できませんでした。")
+    ? describeError(
+        route.error,
+        "ルートを検索できませんでした。",
+        ROUTE_INPUT_HINT,
+      )
     : "";
 
   useEffect(() => {
@@ -412,8 +416,9 @@ export default function App() {
                   条件選択に戻る
                 </button>
               </fieldset>
-              {attribution}
             </aside>
+            {/* Outside the collapsible sidebar: attribution stays visible with the map. */}
+            {attribution}
           </main>
         )}
         {isDemo && (

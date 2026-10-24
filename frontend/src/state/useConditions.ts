@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getConditions } from "../api/client";
+import { describeError } from "../api/errorMessage";
 import type { AutoFields } from "../components/ConditionFields";
 import { toTokyoInput, toTokyoIso } from "../lib/format";
 import type {
@@ -113,7 +114,7 @@ export function useConditions({ origin, dest, scenario, onEdit }: Options) {
           message = weatherReasons[data.weather_status];
       } catch (failure) {
         if (signal.aborted) throw failure;
-        message = `${failure instanceof Error ? failure.message : "条件を取得できませんでした。"} 自動項目は指定なしに戻しました。手動でも設定できます。`;
+        message = `${describeError(failure, "条件を取得できませんでした。")} 自動項目は指定なしに戻しました。手動でも設定できます。`;
       }
       if (signal.aborted || current !== generation.current)
         throw new DOMException("キャンセル", "AbortError");

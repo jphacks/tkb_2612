@@ -175,15 +175,42 @@ describe("API client failure classification (frontend-spec 5)", () => {
     return getHealth();
   }
 
-  it("classifies an HTML login page as an authentication failure", async () => {
+  it("keeps an HTML error page without a redirect as a non-JSON failure", async () => {
     await expect(
       failWith(
-        new Response("<html>login</html>", {
-          status: 200,
+        new Response("<html>Bad Gateway</html>", {
+          status: 502,
           headers: { "Content-Type": "text/html; charset=utf-8" },
         }),
       ),
-    ).rejects.toMatchObject({ code: "auth_required" });
+    ).rejects.toMatchObject({ code: "invalid_response", status: 502 });
+  });
+
+  it("preserves the code and message of an error code unknown to this build", async () => {
+    await expect(
+      failWith(
+        new Response(
+          JSON.stringify({
+            error: { code: "brand_new_code", message: "新しい失敗です。" },
+          }),
+          { status: 500 },
+        ),
+      ),
+    ).rejects.toMatchObject({
+      code: "brand_new_code",
+      message: "新しい失敗です。",
+      status: 500,
+    });
+  });
+
+  it("rejects an error body without a usable code or message as invalid_response", async () => {
+    await expect(
+      failWith(
+        new Response(JSON.stringify({ error: { code: "", message: "x" } }), {
+          status: 500,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "invalid_response" });
   });
 
   it("classifies a redirected API response as an authentication failure", async () => {

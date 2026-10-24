@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError, getHealth } from "../api/client";
+import { describeError } from "../api/errorMessage";
 import type { HealthResponse } from "../lib/types";
 
 /** frontend-spec 3: one /api/health on first display, manual re-check, dataset_id comparison. */
@@ -29,9 +30,7 @@ export function useHealth() {
           failure instanceof ApiError && failure.code === "data_unavailable",
         );
         setWarning(
-          failure instanceof Error
-            ? failure.message
-            : "データの準備状況を確認できませんでした。",
+          describeError(failure, "データの準備状況を確認できませんでした。"),
         );
       });
     return () => abort.abort();

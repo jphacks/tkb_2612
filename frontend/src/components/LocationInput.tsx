@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, LoaderCircle, MapPin, Search, X } from "lucide-react";
 import { isDemo, searchPlaces } from "../api/client";
+import { describeError } from "../api/errorMessage";
 import type { GeocodeResponse, Place, Scenario } from "../lib/types";
 
 export type LocationValue = { text: string; place: Place | null };
@@ -84,11 +85,7 @@ export default function LocationInput({
           );
         } catch (error) {
           if (abort.signal.aborted || generation.current !== token) return;
-          setMessage(
-            error instanceof Error
-              ? error.message
-              : "住所候補を取得できませんでした。",
-          );
+          setMessage(describeError(error, "住所候補を取得できませんでした。"));
         } finally {
           if (generation.current === token) setBusy(false);
         }

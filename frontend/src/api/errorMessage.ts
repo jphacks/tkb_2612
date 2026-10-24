@@ -1,5 +1,9 @@
 import { ApiError } from "./errors";
 
+/** Route-search hint for 400: the 30km straight-line limit is not the 80km route limit. */
+export const ROUTE_INPUT_HINT =
+  "入力を見直してください。出発地と目的地の直線距離の上限30kmは、候補経路の長さの上限80kmとは別の制限です。";
+
 const RELOAD =
   "安全な場所で止まってから、ページを再読み込みしてログインし直してください。";
 
@@ -29,13 +33,18 @@ const messages: Record<string, string> = {
  * Text for a failed request. Branches on error.code only, never on message contents;
  * unknown codes show the server message with a retry hint.
  */
-export function describeError(failure: unknown, fallback: string): string {
+export function describeError(
+  failure: unknown,
+  fallback: string,
+  /** Operation-specific guidance appended to 400 invalid_request. */
+  inputHint = "入力を見直してください。",
+): string {
   if (!(failure instanceof ApiError))
     return failure instanceof Error && failure.message
       ? failure.message
       : fallback;
   if (failure.code === "invalid_request")
-    return `${failure.message} 入力を見直してください。出発地と目的地の直線距離の上限30kmは、候補経路の長さの上限80kmとは別の制限です。`;
+    return `${failure.message} ${inputHint}`;
   return (
     messages[failure.code] ??
     `${failure.message} 時間をおいて再試行してください。`
