@@ -2,14 +2,16 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: 事故履歴を考慮したルート検索 API
-  version: 1.0.0
+  version: 2.0.0
   description: |
     PythonプロトタイプからRust/Axumへの移行契約。集計の正本はbehavior.md。
     現行の事故点配列と高リスク区間配列をFeatureCollectionへ変更するため旧UIとは非互換。
     経路geometryはWGS84 LineStringを維持し、全GeoJSON座標は[lon,lat]（十進度）。
     origin/destと住所候補だけは名前付きlat/lon。標高次元は使用しない。
-    period/weatherの正規入力は現行UIに合わせた日本語またはall。
-    コードは互換入力として受理するが、新フロントは送らない。
+    period/weather/day_typeの正規入力は日本語またはall。
+    period/weatherのコードは互換入力として受理するが、新フロントは送らない。
+    2.0で時間帯を5区分（夜19〜23時と深夜0〜3時を分割）にし、曜日区分day_typeと
+    条件の自動判定/api/conditionsを追加した。periodの整数3の意味は1.0から変わる。
     リスクは死者数×10+負傷者数であり事故確率ではない。
     本文の「移行追加」は現行Pythonにない契約を示す。
     認証・GPS追跡・経路の永続保存APIは設けない。
@@ -19,6 +21,7 @@ servers:
 tags:
   - name: 経路
   - name: 住所
+  - name: 条件
   - name: 稼働情報
   - name: 静的配信
 paths:
@@ -33,6 +36,8 @@ paths:
         リクエストはUTF-8 JSON、1〜16384バイト。大きすぎる場合も400。
         Content-Type不正・JSON不正・値不正は外部呼出し前に400。
         unknownキーは無視。hour/period整合と距離等の相関制約はbehavior.mdを参照。
+        出発日時は受け取らない。period/day_type/weatherの自動値は/api/conditionsで得る。
+        全候補で指定条件の事故が0件なら天候→曜日区分→時間帯の順に解除する。
         全体期限内の追加候補のみの失敗は200のwarningsに残す。
         受付からJSON準備完了までの全体期限35秒を超えたら、段階によらず503 service_busy。
         候補が取得済みでも全体期限後に200を返さない。
@@ -50,6 +55,7 @@ paths:
                   dest: {lat: 35.7138, lon: 139.7773}
                   mode: walk
                   period: 昼
+                  day_type: 平日
                   weather: 晴
                   max_detour_min: 10
               byHour:
@@ -111,6 +117,7 @@ paths:
                             date: 20250101
                             weather: 晴
                             period: 昼
+                            day_type: 休日
                       points_shown: 1
                       high_risk_sections:
                         type: FeatureCollection
@@ -143,13 +150,14 @@ paths:
                     effective_conditions:
                       mode: walk
                       period: 昼
+                      day_type: 休日
                       weather: 晴
                     radius_m: 50.0
                     aggregation_ms: 0
                     data_years:
                     - 2025
                     risk_note: 過去の事故件数に基づく参考指標です。交通量や通行回数で補正した事故確率ではありません。
-                    api_version: '1.0'
+                    api_version: '2.0'
                     dataset_id: '0000000000000000000000000000000000000000000000000000000000000000'
                 noAccidents:
                   summary: 条件緩和後も事故0件
@@ -190,21 +198,23 @@ paths:
                     reason: 取得した1候補のうち、最短時間経路から+10分以内で、重大度重み付きリスク（死者数×10＋負傷者数）が最小の経路を選びました。 今回は最短時間経路が事故考慮経路と同じです。 最短時間経路の集計リスクが0のため、削減率は算出できません。
                     warnings:
                     - 経路候補が1本のみのため、経路間の比較はできません。
-                    - 全候補で指定条件の事故が0件のため、天候・時間帯を解除して全候補を再集計しました（移動手段は維持）。
+                    - 全候補で指定条件の事故が0件のため、天候・曜日区分・時間帯を解除して全候補を再集計しました（移動手段は維持）。
                     - 条件緩和後も該当事故がありません。事故0件は安全の証明ではありません。
                     relaxed_conditions:
                     - 天候
+                    - 曜日区分
                     - 時間帯
                     effective_conditions:
                       mode: walk
                       period: 全時間帯
+                      day_type: 全曜日
                       weather: 全天候
                     radius_m: 50.0
                     aggregation_ms: 0
                     data_years:
                     - 2025
                     risk_note: 過去の事故件数に基づく参考指標です。交通量や通行回数で補正した事故確率ではありません。
-                    api_version: '1.0'
+                    api_version: '2.0'
                     dataset_id: '0000000000000000000000000000000000000000000000000000000000000000'
         '400': {$ref: '#/components/responses/InvalidRequest'}
         '405': {$ref: '#/components/responses/MethodNotAllowed'}
@@ -246,6 +256,79 @@ paths:
         '500': {$ref: '#/components/responses/InternalError'}
         '502': {$ref: '#/components/responses/UpstreamError'}
         '503': {$ref: '#/components/responses/Unavailable'}
+  /api/conditions:
+    get:
+      operationId: getConditions
+      tags: [条件]
+      summary: 出発日時と地域から時間帯・曜日区分・天候の自動値を返す（移行追加）
+      description: |
+        判定はbehavior.md 9章。時間帯・曜日区分は事故記録の前処理と同じ境界・祝日表で判定する。
+        lat/lonは両方指定か両方省略。フロントは2地点の中点を小数2桁に丸めて送り、
+        サーバも小数2桁に丸め直してから気象提供元へ送る。
+        天候が取得できないことはエラーではなく200のweather_statusで示す。
+        事故データを参照しないためdata_unavailableを返さない。
+        要求全体の期限は8秒（CONDITIONS_TIMEOUT_MS）。期限内に天候が得られなければweather_status=unavailable。
+      parameters:
+        - name: datetime
+          in: query
+          required: true
+          description: |
+            出発日時。ISO 8601拡張形式でオフセット必須（Zまたは±hh:mm）。
+            Asia/Tokyoへ変換し分単位に切り捨てる。範囲2000-01-01T00:00+09:00〜2100-12-31T23:59+09:00。
+          schema: {type: string, format: date-time}
+          example: '2026-11-03T14:30+09:00'
+        - name: lat
+          in: query
+          required: false
+          description: 地域代表点の緯度。lonと同時に指定する。
+          schema: {$ref: '#/components/schemas/Latitude'}
+          example: 35.7
+        - name: lon
+          in: query
+          required: false
+          description: 地域代表点の経度。latと同時に指定する。
+          schema: {$ref: '#/components/schemas/Longitude'}
+          example: 139.77
+      responses:
+        '200':
+          description: 自動値。period/day_typeは常に具体値、weatherは取得できた場合だけ値を持つ。
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ConditionsResponse'}
+              examples:
+                holidayForecast:
+                  summary: 祝日・予報あり
+                  value:
+                    api_version: '2.0'
+                    datetime: '2026-11-03T14:30:00+09:00'
+                    period: 昼
+                    day_type: 休日
+                    day_type_reason: 祝日：文化の日
+                    holiday_table_covered: true
+                    weather: 雨
+                    weather_status: ok
+                    weather_source:
+                      provider: Open-Meteo
+                      target_time: '2026-11-03T14:00:00+09:00'
+                      kind: forecast
+                noLocation:
+                  summary: 地点未確定の深夜
+                  value:
+                    api_version: '2.0'
+                    datetime: '2026-10-24T01:10:00+09:00'
+                    period: 深夜
+                    day_type: 休日
+                    day_type_reason: 土曜
+                    holiday_table_covered: true
+                    weather: null
+                    weather_status: no_location
+                    weather_source: null
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '500': {$ref: '#/components/responses/InternalError'}
   /api/health:
     get:
       operationId: getHealth
@@ -467,17 +550,26 @@ components:
       description: 徒歩 / 自転車 / 自動車
     Period:
       type: string
-      enum: [早朝, 昼, 夕, 夜]
-      description: 4〜8時 / 9〜15時 / 16〜18時 / 19〜3時
+      enum: [早朝, 昼, 夕, 夜, 深夜]
+      description: 4:00〜8:59 / 9:00〜15:59 / 16:00〜18:59 / 19:00〜23:59 / 0:00〜3:59。内部コード0/1/2/3/4。
     Weather:
       type: string
       enum: [晴, 曇, 雨, 霧, 雪]
       description: 内部コード1/2/3/4/5。霧と雪のコード順に注意。
+    DayType:
+      type: string
+      enum: [平日, 休日]
+      description: 休日は土曜・日曜・国民の祝日・振替休日・国民の休日（移行追加）。判定はbehavior.md 2章。内部コード0/1。
     PeriodInput:
-      description: 正規入力は日本語またはall。0〜3/nullは互換入力。
+      description: 正規入力は日本語またはall。0〜4/nullは互換入力。整数3は19〜23時のみ（1.0の19〜3時から変更）。
       oneOf:
-        - {type: string, enum: [早朝, 昼, 夕, 夜, all]}
-        - {type: integer, enum: [0, 1, 2, 3]}
+        - {type: string, enum: [早朝, 昼, 夕, 夜, 深夜, all]}
+        - {type: integer, enum: [0, 1, 2, 3, 4]}
+        - {type: 'null'}
+    DayTypeInput:
+      description: 日本語またはall。nullはallと同じ。整数コードは受理しない（移行追加）。
+      oneOf:
+        - {type: string, enum: [平日, 休日, all]}
         - {type: 'null'}
     WeatherInput:
       description: 正規入力は日本語またはall。1〜5/nullは互換入力。
@@ -552,10 +644,14 @@ components:
           type: [integer, 'null']
           minimum: 0
           maximum: 23
-          description: 日本の時、指定した時間帯全体を対象にする。periodと矛盾すると400。
+          description: 日本の時、指定した時間帯全体を対象にする（0〜3は深夜、19〜23は夜）。periodと矛盾すると400。
         weather:
           $ref: '#/components/schemas/WeatherInput'
           default: all
+        day_type:
+          $ref: '#/components/schemas/DayTypeInput'
+          default: all
+          description: 曜日区分（移行追加）。出発日時からの判定は/api/conditionsで行う。
         max_detour_min:
           type: number
           minimum: 0
@@ -593,7 +689,7 @@ components:
         geometry: {$ref: '#/components/schemas/Point'}
         properties:
           type: object
-          required: [deaths, injuries, source_year, date, weather, period]
+          required: [deaths, injuries, source_year, date, weather, period, day_type]
           additionalProperties: false
           properties:
             deaths: {type: integer, minimum: 0, maximum: 999, description: 事故全体の死者数、人}
@@ -607,6 +703,9 @@ components:
               example: 20211231
             weather: {$ref: '#/components/schemas/Weather'}
             period: {$ref: '#/components/schemas/Period'}
+            day_type:
+              $ref: '#/components/schemas/DayType'
+              description: 発生年月日から前処理で判定した曜日区分。フロントで再判定しない。
     AccidentCollection:
       type: object
       required: [type, features]
@@ -728,18 +827,19 @@ components:
           description: duration<=fastest.duration+max_detour_min*60+1e-6。丸め前で判定。
     EffectiveConditions:
       type: object
-      required: [mode, period, weather]
+      required: [mode, period, day_type, weather]
       additionalProperties: false
       properties:
         mode: {$ref: '#/components/schemas/Mode'}
-        period: {type: string, enum: [早朝, 昼, 夕, 夜, 全時間帯]}
+        period: {type: string, enum: [早朝, 昼, 夕, 夜, 深夜, 全時間帯]}
+        day_type: {type: string, enum: [平日, 休日, 全曜日]}
         weather: {type: string, enum: [晴, 曇, 雨, 霧, 雪, 全天候]}
     RouteResponse:
       type: object
       required: [api_version, dataset_id, fastest_id, safest_id, candidates, extra_minutes, risk_reduction_percent, reason, warnings, relaxed_conditions, effective_conditions, radius_m, aggregation_ms, data_years, risk_note]
       additionalProperties: false
       properties:
-        api_version: {type: string, const: '1.0', description: GeoJSON包装を含む移行APIの契約版}
+        api_version: {type: string, const: '2.0', description: GeoJSON包装・5区分の時間帯・曜日区分を含む移行APIの契約版}
         dataset_id: {$ref: '#/components/schemas/DatasetId'}
         fastest_id: {$ref: '#/components/schemas/RouteId'}
         safest_id: {$ref: '#/components/schemas/RouteId'}
@@ -762,10 +862,10 @@ components:
           description: 追加候補失敗、比較不可、条件緩和、全0件等。なしは空配列。
         relaxed_conditions:
           type: array
-          maxItems: 2
+          maxItems: 3
           uniqueItems: true
-          items: {type: string, enum: [天候, 時間帯]}
-          description: 解除した条件。両方なら天候→時間帯の順。移動手段は解除しない。
+          items: {type: string, enum: [天候, 曜日区分, 時間帯]}
+          description: 解除した条件。常に天候→曜日区分→時間帯の順で、未指定の条件は含めない。移動手段は解除しない。
         effective_conditions: {$ref: '#/components/schemas/EffectiveConditions'}
         radius_m: {type: number, const: 50, description: 事故集計の経路周辺半径、メートル}
         aggregation_ms: {type: number, minimum: 0, description: 候補取得後の集計・選定時間、ミリ秒、小数2桁。外部通信と転送を除く。}
@@ -790,12 +890,62 @@ components:
           items: {$ref: '#/components/schemas/GeocodeResult'}
           description: 提供元順の先頭5件。並べ替えない。
         attribution: {type: string, description: 住所データ提供元の表示義務を満たす文字列}
+    WeatherSource:
+      type: object
+      required: [provider, target_time, kind]
+      additionalProperties: false
+      properties:
+        provider: {type: string, const: Open-Meteo, description: 気象データ提供元。帰属表示に使う。}
+        target_time:
+          type: string
+          format: date-time
+          description: 値が対象とする時刻（+09:00）。現況は提供元の観測・解析時刻、予報は時単位のhourly時刻。
+        kind:
+          type: string
+          enum: [current, forecast]
+          description: 現況値か毎時予報か
+    ConditionsResponse:
+      type: object
+      required: [api_version, datetime, period, day_type, day_type_reason, holiday_table_covered, weather, weather_status, weather_source]
+      additionalProperties: false
+      properties:
+        api_version: {type: string, const: '2.0'}
+        datetime:
+          type: string
+          format: date-time
+          description: 判定に使った基準時刻。Asia/Tokyoへ変換し分単位に切り捨てた値（秒は00、+09:00）。
+        period: {$ref: '#/components/schemas/Period'}
+        day_type: {$ref: '#/components/schemas/DayType'}
+        day_type_reason:
+          type: string
+          minLength: 1
+          description: 平日 / 土曜 / 日曜 / 祝日：<名称> / 振替休日 / 国民の休日。UIは文字列として表示する。
+          examples: [平日, 土曜, 日曜, 祝日：文化の日, 振替休日, 国民の休日]
+        holiday_table_covered:
+          type: boolean
+          description: falseなら祝日表の収録範囲外で、土日だけで判定した。
+        weather:
+          oneOf:
+            - {$ref: '#/components/schemas/Weather'}
+            - {type: 'null'}
+          description: weather_status=okのときだけ値を持つ。気象モデルの推定値で、事故記録の現場判定とは尺度が異なる。
+        weather_status:
+          type: string
+          enum: [ok, no_location, out_of_range, past, unavailable]
+          description: |
+            ok=取得済み、no_location=lat/lonなし、out_of_range=予報範囲外、
+            past=基準時刻が現在より15分超前、unavailable=上流失敗・期限超過・形式不正・未知コード。
+        weather_source:
+          oneOf:
+            - {$ref: '#/components/schemas/WeatherSource'}
+            - {type: 'null'}
+          description: weather_status=okのときだけ値を持つ。
     HealthResponse:
       type: object
       required: [api_version, status, dataset_id, accidents, grid_cells, load_seconds, data_years]
       additionalProperties: false
       properties:
-        api_version: {type: string, const: '1.0'}
+        api_version: {type: string, const: '2.0'}
         status: {type: string, const: ok}
         dataset_id: {$ref: '#/components/schemas/DatasetId'}
         accidents:
