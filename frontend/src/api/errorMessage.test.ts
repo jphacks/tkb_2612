@@ -77,6 +77,18 @@ describe("describeError (frontend-spec 5 error table)", () => {
     );
   });
 
+  it("treats inherited property names as unknown codes", () => {
+    for (const code of [
+      "__proto__",
+      "constructor",
+      "toString",
+      "hasOwnProperty",
+    ])
+      expect(text(code, "新しい失敗です。")).toBe(
+        "新しい失敗です。 時間をおいて再試行してください。",
+      );
+  });
+
   it("uses the message of plain errors and the fallback otherwise", () => {
     expect(
       describeError(new Error("出発日時を入力してください。"), fallback),

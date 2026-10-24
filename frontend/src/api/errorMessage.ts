@@ -45,8 +45,8 @@ export function describeError(
       : fallback;
   if (failure.code === "invalid_request")
     return `${failure.message} ${inputHint}`;
-  return (
-    messages[failure.code] ??
-    `${failure.message} 時間をおいて再試行してください。`
-  );
+  // Codes come from the server: only own entries, never inherited properties.
+  return Object.hasOwn(messages, failure.code)
+    ? messages[failure.code]
+    : `${failure.message} 時間をおいて再試行してください。`;
 }
