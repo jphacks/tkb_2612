@@ -156,7 +156,7 @@ fn check_correlation(nav: &NavigationData, high_risk_total: u64, subdivision: &S
 #[test]
 fn more_than_100_targets_are_all_navigation_sections() {
     // 300mごとに対象と非対象が交互：表示は100件で切るが、ナビは全対象
-    let kx = METERS_PER_DEGREE * 35f64.to_radians().cos();
+    let kx = METERS_PER_DEGREE * (35f64 * std::f64::consts::PI / 180.0).cos();
     let route = [
         LonLat::new(139.0, 35.0),
         LonLat::new(139.0 + 30_000.0 / kx, 35.0),
@@ -192,7 +192,7 @@ fn more_than_100_targets_are_all_navigation_sections() {
 #[test]
 fn large_routes_are_not_truncated() {
     // 15,000頂点・約80km・0長辺多数。対象と非対象を交互にして区間数を最大にする
-    let kx = METERS_PER_DEGREE * 35f64.to_radians().cos();
+    let kx = METERS_PER_DEGREE * (35f64 * std::f64::consts::PI / 180.0).cos();
     let mut route = Vec::with_capacity(15_000);
     for i in 0..15_000 {
         // 2頂点ずつ同じ座標（0長辺）にする
@@ -240,7 +240,7 @@ fn maximum_section_count_at_the_schema_bound() {
     // 関数単体の上限試験：behavior.md 7章の保守的な上限（元辺14,999本、小線分16,466本、
     // 結合後8,233区間）に届く入力。1,467本の辺は100m（2分割）、残りは0長辺（1本）にする。
     // 有効な経路（80km以下）ではここまで届かないため、経路の検証を通さずに関数へ渡す
-    let kx = METERS_PER_DEGREE * 35f64.to_radians().cos();
+    let kx = METERS_PER_DEGREE * (35f64 * std::f64::consts::PI / 180.0).cos();
     let mut route = vec![LonLat::new(139.0, 35.0)];
     let mut lon = 139.0;
     for edge in 0..14_999 {

@@ -181,14 +181,21 @@ impl Drop for TestRelease {
     }
 }
 
-/// 例ごとの `ScriptedRouter`。初回は固定経路を返し、初回が3本未満の例では追加の2回にも
-/// 初回と同じ経路を返す（重複排除で候補は増えず、追加取得エラーの警告も出ない）。
+/// 例ごとの `ScriptedRouter`。初回は固定経路を返し、初回の先頭6本を重複排除して3本未満の例では
+/// 追加の2回にも初回と同じ経路を返す（重複排除で候補は増えず、追加取得エラーの警告も出ない）。
+/// 本数はエンジンと同じ基準（5桁fingerprintでの重複排除後）で数える。
 ///
 /// ②のエンジン試験と③のC3が同じものを使う（#7〜#9 共通前提2章「C3の固定経路」）。
 pub fn example_router(example: &RouteExample) -> ScriptedRouter {
     let initial = valid_routes(&example.routes);
     let mut responses: Vec<RouterResponse> = vec![initial];
-    if example.routes.len() < crate::domain::candidates::MIN_INITIAL_CANDIDATES {
+    let distinct: std::collections::BTreeSet<_> = example
+        .routes
+        .iter()
+        .take(crate::contract::routing::MAX_ROUTES_PER_CALL)
+        .map(crate::domain::candidates::fingerprint)
+        .collect();
+    if distinct.len() < crate::domain::candidates::MIN_INITIAL_CANDIDATES {
         responses.push(valid_routes(&example.routes));
         responses.push(valid_routes(&example.routes));
     }

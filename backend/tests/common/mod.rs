@@ -122,7 +122,7 @@ pub fn path(duration_s: f64, distance_m: f64, coordinates: &[(f64, f64)]) -> Rou
 
 /// 緯度35度の東西の直線（139.0から `length_m` だけ東へ）。
 pub fn straight_east(duration_s: f64, distance_m: f64, length_m: f64) -> RoutedPath {
-    let kx = METERS_PER_DEGREE * 35f64.to_radians().cos();
+    let kx = METERS_PER_DEGREE * (35f64 * std::f64::consts::PI / 180.0).cos();
     path(
         duration_s,
         distance_m,

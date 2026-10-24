@@ -29,7 +29,8 @@ impl Projection {
         let phi_deg = coordinates.iter().map(|p| p.lat).sum::<f64>() / coordinates.len() as f64;
         Self {
             phi_deg,
-            kx: METERS_PER_DEGREE * phi_deg.to_radians().cos(),
+            // 仕様の式 cos(φ·π/180) のとおりに計算する（`to_radians` とは1ulp違うことがある）
+            kx: METERS_PER_DEGREE * (phi_deg * std::f64::consts::PI / 180.0).cos(),
             ky: METERS_PER_DEGREE,
             origin: coordinates[0],
         }
