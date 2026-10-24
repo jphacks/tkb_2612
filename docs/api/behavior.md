@@ -4,7 +4,7 @@
 
 2026-10-24のPythonプロトタイプを出発点とし、[決定記録](../spec-decisions.md)・[バックエンド仕様](../backend-spec.md)・[経路リスク集計方式の暫定決定](../route-scoring-decision.md)で更新した。計算・候補順・集計対象の正本は本書、HTTPとJSONの正本は [openapi.yaml](openapi.yaml)。フロントの責務は [frontend-spec.md](../frontend-spec.md)、配置・運用は [architecture.md](../architecture.md) に定義する。本作業は文書のみで、`app/` と `accident/` は変更しない。
 
-根拠は [server.py](../../app/server.py) の `route_request / collect_candidates / AccidentIndex / Geocoder / Handler`、[common.py](../../app/common.py)、[prepare_data.py](../../app/prepare_data.py)、[test_server.py](../../app/test_server.py)、[test_prepare_data.py](../../app/test_prepare_data.py)、[README.md](../../app/README.md)、[VALIDATION.md](../../app/VALIDATION.md)、[codebook_notes.md](../../app/codebook_notes.md)、[app.js](../../app/static/app.js)。「現行」の記述では説明文より実コードの条件分岐を優先した。**Pythonプロトタイプとの数値同等性は要求しない**。期待値は本書の確定仕様から作るfixtureで管理する。
+「現行」と旧テスト名の記述は過去の移行検討の記録であり、今回の仕様決定の根拠は上記の決定文書とする。`app/` はデモ、`backend/`・`frontend/` は誤って作成された実装であり、仕様の根拠にせず変更しない。**Pythonプロトタイプとの数値同等性は要求しない**。期待値は本書の確定仕様から作るfixtureで管理する。
 
 本文の「現行」は確認したコードの事実、「移行契約」は今回決める新しい境界を指す。「要確認」は原本や運用方針の追加確認が必要な事項であり、並列実装の間は本書の明示した暫定契約に従う。Pythonの偶発的な例外や外部サービスの将来の応答まで再現する契約ではない。
 
@@ -27,7 +27,7 @@
 | バージョン     | なし                                                               | health/route/conditionsに `api_version: "2.0"`、health/routeに `dataset_id` を追加                                            |
 | HTTP異常処理   | 一部はhttp.server標準応答                                          | APIの未定義パス・不正メソッド・内部失敗もJSONエラーに統一                                                                     |
 
-この契約に旧 `app/static/app.js` をそのまま接続することはできない。移行フロントは生成型を使う。旧Pythonとの比較はGeoJSONの包装を外して行う。GPS継続追跡・ナビゲーション判定自体は今回の実装対象外で、区間参照だけ準備する。
+移行フロントは生成型を使う。**移行追加（利用者決定、2026-10-24）**としてGPSナビA＋B＋模擬走行を含める。ブラウザ内の照合・接近通知は frontend-spec 7章、ナビ用データは本書7章、委任判断の根拠は [navigation-delegated-decisions.md](../navigation-delegated-decisions.md) に従う。位置の定期送信API・steps・自動再検索は設けない。
 
 Pythonプロトタイプとの数値同等性は廃止した（[route-scoring-decision.md](../route-scoring-decision.md) 5章）。入力互換上の注意として、旧「夜」（19〜3時）は新「夜」と「深夜」の和に相当し、単一の新しい値では表せない。旧整数コード3の意味も変わる（旧：19〜3時、新：19〜23時）。期待値は本書の新しいtable test・fixtureで検証する（11.）。
 
@@ -224,13 +224,43 @@ Bを事故ID昇順（gzip CSVの行順）で走査して、死者ありFとそ�
 
 先にsample(F,250)、残り枠にsample(O,250−採用死亡点数)を連結する。死亡事故が250超なら死亡事故自体も間引く。ランダム・座標ソートはしない。`points_shown=min(accident_count,250)`、間引きで集計値を変更しない。移行契約は順序を保って各点をFeature化し、ID、元年度、発生日、日本語天候/時間帯/曜日区分、人数を返す。曜日区分は前処理の値をそのまま返し、応答時に再判定しない。`points_shown < accident_count` でフロントが間引きを判定する。
 
-### 高リスク区間と将来GPS用参照
+### 表示用の高リスク区間
 
 Bの各事故の深刻度 `10×deaths+injuries` を最寄り小線分1本に加算する。距離減衰と天候倍率は含めない。sid別の `severity_weight` を `(-weight,sid)` 昇順に並べ、先頭100件を取り、その中のweight>=3のみ返す（同等な先行フィルタでも順序を維持）。連続線分の結合、経路長による区間重み正規化はしない。候補の `high_risk_total` には、100件で切る前のweight>=3の小線分の総数を返す。`high_risk_sections.features.length = min(high_risk_total, 100)` を満たし、`length < high_risk_total` でフロントが切り捨てを判定する。
 
 移行契約の `high_risk_sections` はFeatureCollection。geometryはその小線分の補間済み両端を持つLineString。propertiesはroute_id、severity_weight、`segment_index`、`source_vertex_start_index` と `source_vertex_end_index`。後者2つは元geometryの隣接頂点番号jとj+1で、小線分はその内側の一部分である。geometryをそのまま描画し、元頂点範囲全体を強調しない。feature.idは `route-N:segment-S`。sidは元頂点番号ではない。
 
-これで将来のGPS点と区間geometryの距離判定、元経路への対応付けが可能。ただし返却は上位100区間だけで、すべての重み3以上の区間を網羅しない（総数は `high_risk_total`）。将来の全区間配信・接近警告閾値・進行方向・map matching・再検索頻度は**要確認**。v1では自動警告を実装しない。必要なら別バージョンで全区間を提供し、現在の表示用サブセットを完全な安全判定データに流用しない。
+これは表示用の上位集合であり、ナビの通知対象一覧には使わない。上限100・重み順・非結合・`high_risk_total` の意味は変えない。
+
+### ナビ用の全対象区間（移行追加・委任判断）
+
+既存POST `/api/route` の各 `RouteCandidate` に必須の `navigation` を追加する。8章の選定後、`id` が `fastest_id` またはnullでない `safest_id` の候補だけに `NavigationData` を返し、未選定候補は `null` とする。同じIDの2選定は1個を共用する。選定経路の対象区間0件は `sections=[]` であり、`navigation=null` とは区別する。未リリースの `api_version: "2.0"` に含め、前処理スキーマ2は変えない。
+
+別エンドポイントは、経路保存がなければgeometryと条件の再送・再集計、またはOSRM再呼出しが必要になる。route応答への同梱を採用し、ナビ開始・進行で上流呼出しを増やさない。サーバは検索要求内だけで生成・破棄し、ナビセッション・経路保存・配信用トークンは作らない。既存の気象メモリキャッシュと共有レート制御用状態は別目的の既存仕様のままとする。
+
+| フィールド | 計算と意味 |
+|---|---|
+| `projection_lat_deg` | 6章と同じ元geometry全頂点の緯度の算術平均φ。原点はgeometryの先頭、Kも4章と同じ。 |
+| `vertex_distances_m` | 元geometryの各頂点までの局所平面距離の累積値。長さは頂点数と同じ、先頭0、非減少、末尾=`length_m`。重複頂点も残す。 |
+| `length_m` | 上記末尾L。5章の各隣接頂点対の平均緯度を使う `geometry_length` やOSRMの `distance` とは別。全ナビ区間・進捗・通知の距離軸をこのLに統一する。 |
+| `sections` | 下記規則で結合した全対象区間。geometryは重複送信せず、累積距離と元の経路geometryで位置を表す。 |
+
+1. 6章の小線分と7章の `severity_weight` を一度だけ計算し、表示用とナビ用で共有する。ナビ対象も集合Bから深刻度だけを加算した **重み3以上** とする。距離減衰・天候倍率をここへ掛けず、フロントは事故から再計算しない。
+2. 上位100件へ切る**前**の対象sidを昇順に走査し、sidが連続する最大の列を1区間へ結合する。対象外sidを1本でも挟めば別区間。空間的な近さ・交差・折返しを理由に結合せず、先頭と末尾も循環結合しない。
+3. `NavigationSection` は `id=route-N:nav-S-E`、`start_segment_index=S`、`end_segment_index=E`（両端を含む）、`start_m`、`end_m`、`severity_weight` を持つ。重みは結合した対象小線分の深刻度の和（JS安全整数範囲を検証）。長い区間の重みを通知頻度や安全度の順位に使わない。
+4. 元辺jの分割数n、辺内の小線分k（0始まり）について、始点距離は `vertex_distances_m[j] + 辺長*k/n`、終点距離は `vertex_distances_m[j] + 辺長*(k+1)/n`。端では元頂点の累積値を直接使う。結合区間は最初の始点から最後の終点まで。計算はf64で、途中・JSON用に桁丸めしない。
+5. `0 <= start_m <= end_m <= L`、区間はS昇順で重複なし、前区間E+1より次のSが大きい。`Σ(E−S+1) == high_risk_total` を満たす。0長小線分も既存集計どおり対象になり得るため、0長区間を捨てない。全geometryが0長ならL=0のデータを返し、比較は可能だがフロントはナビ開始不可とする。候補採否・選定をナビ都合で変更しない。
+6. IDは当該検索応答内だけで有効。フロントは応答世代・dataset_id・経路IDと組にして扱い、別検索に通知済みIDを持ち越さない。区間の数値・結合・順序はbackendの一か所で決定する。
+
+### ナビデータの件数と応答サイズ
+
+**委任判断の上限見積り**：80km/15,000頂点でも、小線分数は単純な `ceil(80000/75)` ではない。元辺ごとに切上げ、0長辺も1本残る。さらにLは5章のgeometry_lengthと異なる。日本矩形の緯度20〜46度では、局所投影の東西倍率の比は最大 `cos(20°)/cos(46°)`。したがってLは `80000*cos(20°)/cos(46°) ≈ 108219.253m` 以下であり、保守的なスキーマ上限を **110,000m** とする（経路受付の80km制限を拡大する意味ではない）。
+
+元辺は最大14,999本なので、小線分は保守的に `14999+ceil(110000/75)=16,466` 本以下。対象/非対象が交互のとき結合後区間は最大 **8,233件/経路**、全対象なら1区間となる。切り捨てはしない。`vertex_distances_m` は最大15,000値/経路。
+
+空白なしUTF-8 JSON、f64の最短往復表記を最大24文字、累積距離1値を区切り込み25バイト、区間1件をフィールド名・安全整数・ID込み256バイト、経路ごとの外枠を1,024バイトとすると、追加量は `2*(15000*25+8233*256+1024)=4,967,344` バイト以下（約4.74 MiB）。**navigation部分は5,000,000バイトを検証用の上限**とする。同一選定なら1経路分だけ。geometry重複を避ける理由でもある。
+
+既存6候補の最大90,000頂点を約4.68MB、事故点最大1,500件と表示区間最大600件を合わせ約1.2MBと見込み、全route応答はメタデータを含め概ね11〜12MBの負荷試験ケースを用意する。これは可変長の説明文字列まで含む厳密な全体上限や実測値ではない。`UPSTREAM_MAX_BYTES=12000000` は**上流**応答制限であり本応答の制限に流用しない。実装時にサイズ・ピークRAM・35秒の全体期限・端末解析時間を測る。上限超過や相関不整合を検出したら内部契約違反として500とし、ナビ対象を黙って間引いた200は返さない。
 
 ## 8. 最短時間・事故考慮経路の決定
 
@@ -253,7 +283,7 @@ Bの各事故の深刻度 `10×deaths+injuries` を最寄り小線分1本に加�
 - warningsは追加取得エラー（呼出し順）、1候補比較不能、全候補事故0件（「該当する事故が0件でも、安全であることの証明ではありません。」）の順で蓄積する。条件緩和の警告はない。
 - effective_conditionsはmode・period・day_type・weatherの4項目。未指定の条件はそれぞれ `全時間帯`・`全曜日`・`全天候` と表す。条件の解除による置換はない。天候指定は一致集計とスコアの倍率への指定であり、全天候集計を除外したという意味ではない。
 - risk_noteは「過去の事故件数に基づく参考指標です。経路から約72m以内の事故を、近いほど重く数えています。」に、指定天候が雨・霧・雪のときだけ「雨・霧・雪を指定した場合は、同じ天候の事故をさらに重く数えます。」を続け、最後に「交通量や通行回数で補正した事故確率ではありません。」を付ける。
-- radius_m=72（集合Bの半径）、distance_weight_sigma_m=24。aggregation_msは候補取得・検証・ソート終了後から集計/選定/説明構築までのms、小数2桁。外部通信、JSON転送、描画を含まない。data_yearsはsource_year集合の昇順。
+- radius_m=72（集合Bの半径）、distance_weight_sigma_m=24。aggregation_msは候補取得・検証・ソート終了後から集計/選定/ナビデータ/説明構築までのms、小数2桁。外部通信、JSON転送、描画を含まない。data_yearsはsource_year集合の昇順。
 
 数値計算はf64とする。`round(x,n)` は二進浮動小数上のhalf-even（Python `round` と同じ規則）とし、Rustの単純なround（half-away）へ置換しない。5桁fingerprint、7桁CSV、2桁weighted_risk、3桁リスク/kmと追加分、1桁削減率の境界fixtureを用意する。72m境界・同点規則もfixtureで検証する。
 
@@ -344,7 +374,7 @@ WMO天気コードから天候への変換は次の表に固定する（**要確
 |  502 | external_api_error | 外部通信/応答形式失敗。上流429も502                                                                       |
 |  503 | data_unavailable   | データ準備前/利用不能（移行追加）。conditionsでは返さない                                                 |
 |  503 | service_busy       | 移行追加の受付上限・外部サービス待ち行列の満杯・共有上流ゲートの読取失敗/競合未解消、またはroute/geocode要求全体の35秒期限超過（集計中も含む） |
-|  500 | internal_error     | 予期しない内部失敗（移行追加）                                                                            |
+|  500 | internal_error     | 予期しない内部失敗、navigationのサイズ上限/相関違反（移行追加）                                                                            |
 
 JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-Content-Type-Options nosniff。API未定義パスへSPAのHTMLを返さない。healthはデータready時200で、件数・年度・読込秒数・release_id・dataset_idを返す。グリッド数はグリッド索引を採用した場合だけ返す。外部サービスへ疎通して判定しない。起動ロード失敗時は現行同様プロセス停止を基本とし、運用でHTTPが生きていて未readyなら503。
 
@@ -416,6 +446,14 @@ JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-
 10. route入力：period 0〜4/深夜、旧整数3の新しい意味、hour 0〜3→深夜とperiod=夜との矛盾400、day_typeの不正値・整数・bool拒否。
 11. `/api/conditions`：datetimeの書式・オフセット欠落・範囲外・重複、lat/lonの片方指定。天候のno_location/past/±15分境界の現況/予報/out_of_range/hourly行欠落/上流失敗/期限超過/未知コード/utc_offset不一致。WMOコード表の全行。座標の2桁丸めがキャッシュキーと上流URLの両方に適用されること。キャッシュTTL境界と失敗非保存。上流は固定応答の偽物で検証し、実通信しない。
 
+### GPSナビの契約fixtureと結合試験（移行追加）
+
+12. [navigation-cases.json](fixtures/navigation-cases.json) は人工geometryとsid別の深刻度から作るナビ区間の期待値。入力は集計後の小線分重みを表し、実事故・位置履歴は使わない。未記載sidの重みは0。投影・75m分割・累積距離・結合・ID・順序を検証し、距離の照合許容差は1e-6m、整数・順序・対象採否は完全一致とする。フロントにも同じ期待値を渡す。
+13. fixtureに通常、連続/非連続、重み2/3、対象0、0長、全長0、折返しを含める。追加生成ケースで100超でもナビ対象が落ちないこと、15,000頂点・80km・0長辺多数・最大8,233区間のサイズ、区間重みの整数幅を検査する。表示側は従来どおり `min(high_risk_total,100)`、ナビ側は `Σ(E−S+1)=high_risk_total`。
+14. RouteResponseで2選定別ID/同一ID/safest=null/未選定候補navigation=nullを検査する。全選定のnavigation必須、累積配列長・先頭/末尾・単調性・φ・sidと距離の対応を確認する。未選定からの開始、別応答世代の区間混入をフロントで拒否する。
+15. 固定OSRM応答でナビの有無による上流呼出し回数が同じ（最大3、steps=false）であること。再検索ボタンだけが新しい通常検索となり、1050msの全利用者共通ゲート・全体期限・503規則を通ること。ナビ中の定期API通信が0であることを模擬走行で確認する。
+16. frontend-spec 11章の共通処理を使う模擬走行結合試験と、実機GPS・音声・IAP・非表示・SW更新の実端末受け入れを分ける。本節は実装時の試験要求であり、この文書変更で実機検証を済ませたという意味ではない。
+
 ## 12. 要確認事項と暫定扱い
 
 - 高リスク区間の返却上限100件は利用者決定で確定（2026-10-24）。切り捨ての有無は `high_risk_total` で伝える。
@@ -424,6 +462,6 @@ JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-
 - PDFの自動内容検証なし、事故類型コードと死傷者/A/Bの整合検証なし。強化する場合は除外件数が変わるため別の仕様変更とする。
 - 公共ルーティング・住所提供元は位置を運用ログに残し得る。利用者はこれを許容した。アプリ内の無保存と同じ保証として説明しない（architecture参照）。
 - 現行はOSRM通信の全利用者共通レート制御がない。移行では全インスタンス共通の上流ゲートで直列化と上限を守る。正常な候補生成順は維持する。
-- 将来のGPS接近警告、背景追跡、オフライン道路検索は未設計。本契約の表示用高リスク上位100件から安全性を推定しない。
+- GPS接近通知は本書7章とfrontend-spec 7章で設計する。通知距離・精度・逸脱の暫定値、実端末の音声/Wake Lock、法的判断は**要確認**。背景追跡・オフライン道路検索は対象外。表示用上位100件・ナビ用全対象区間のいずれも安全を保証しない。
 - WMOコードから天候への変換表（とくに一部曇り=晴）は自動初期値用の近似で暫定。変更する場合は契約版の更新として扱う。
 - Open-Meteoの無料APIは非商用利用に限られる。製品化時の提供元・プランは**要確認**（architecture参照）。

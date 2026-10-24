@@ -1,0 +1,3784 @@
+{
+  "description": "人工座標・集計後の小線分重みを用いた契約fixture。未記載sidの重みは0。実事故や位置履歴ではない。",
+  "api_version": "2.0",
+  "distance_tolerance_m": 1e-06,
+  "cases": [
+    {
+      "name": "threshold_and_merge",
+      "description": "重み2は対象外、3は対象。連続sidを結合し、区間は重み順でなく経路順。",
+      "route_id": "route-1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            139,
+            35
+          ],
+          [
+            139.003,
+            35
+          ]
+        ]
+      },
+      "segment_severity_weights": [
+        {
+          "segment_index": 0,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 1,
+          "severity_weight": 4
+        },
+        {
+          "segment_index": 2,
+          "severity_weight": 2
+        },
+        {
+          "segment_index": 3,
+          "severity_weight": 8
+        }
+      ],
+      "expected": {
+        "subsegment_count": 4,
+        "high_risk_total": 3,
+        "display_segment_indices": [
+          3,
+          1,
+          0
+        ],
+        "navigation": {
+          "projection_lat_deg": 35.0,
+          "length_m": 273.2570318632468,
+          "vertex_distances_m": [
+            0.0,
+            273.2570318632468
+          ],
+          "sections": [
+            {
+              "id": "route-1:nav-0-1",
+              "start_segment_index": 0,
+              "end_segment_index": 1,
+              "start_m": 0.0,
+              "end_m": 136.6285159316234,
+              "severity_weight": 7
+            },
+            {
+              "id": "route-1:nav-3-3",
+              "start_segment_index": 3,
+              "end_segment_index": 3,
+              "start_m": 204.94277389743513,
+              "end_m": 273.2570318632468,
+              "severity_weight": 8
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "empty",
+      "description": "対象0件でもnavigationを返しsectionsは空。",
+      "route_id": "route-1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            139,
+            35
+          ],
+          [
+            139.003,
+            35
+          ]
+        ]
+      },
+      "segment_severity_weights": [
+        {
+          "segment_index": 0,
+          "severity_weight": 2
+        }
+      ],
+      "expected": {
+        "subsegment_count": 4,
+        "high_risk_total": 0,
+        "display_segment_indices": [],
+        "navigation": {
+          "projection_lat_deg": 35.0,
+          "length_m": 273.2570318632468,
+          "vertex_distances_m": [
+            0.0,
+            273.2570318632468
+          ],
+          "sections": []
+        }
+      }
+    },
+    {
+      "name": "zero_length_edge",
+      "description": "0長小線分を残し、隣の対象線分と結合する。",
+      "route_id": "route-1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            139,
+            35
+          ],
+          [
+            139,
+            35
+          ],
+          [
+            139.002,
+            35
+          ]
+        ]
+      },
+      "segment_severity_weights": [
+        {
+          "segment_index": 0,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 1,
+          "severity_weight": 4
+        },
+        {
+          "segment_index": 3,
+          "severity_weight": 3
+        }
+      ],
+      "expected": {
+        "subsegment_count": 4,
+        "high_risk_total": 3,
+        "display_segment_indices": [
+          1,
+          0,
+          3
+        ],
+        "navigation": {
+          "projection_lat_deg": 35.0,
+          "length_m": 182.17135457722375,
+          "vertex_distances_m": [
+            0.0,
+            0.0,
+            182.17135457722375
+          ],
+          "sections": [
+            {
+              "id": "route-1:nav-0-1",
+              "start_segment_index": 0,
+              "end_segment_index": 1,
+              "start_m": 0.0,
+              "end_m": 60.723784859074584,
+              "severity_weight": 7
+            },
+            {
+              "id": "route-1:nav-3-3",
+              "start_segment_index": 3,
+              "end_segment_index": 3,
+              "start_m": 121.44756971814917,
+              "end_m": 182.17135457722375,
+              "severity_weight": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "all_zero_length",
+      "description": "全長0でもデータは返す。ナビ開始不可。",
+      "route_id": "route-1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            139,
+            35
+          ],
+          [
+            139,
+            35
+          ]
+        ]
+      },
+      "segment_severity_weights": [
+        {
+          "segment_index": 0,
+          "severity_weight": 3
+        }
+      ],
+      "expected": {
+        "subsegment_count": 1,
+        "high_risk_total": 1,
+        "display_segment_indices": [
+          0
+        ],
+        "navigation": {
+          "projection_lat_deg": 35.0,
+          "length_m": 0.0,
+          "vertex_distances_m": [
+            0.0,
+            0.0
+          ],
+          "sections": [
+            {
+              "id": "route-1:nav-0-0",
+              "start_segment_index": 0,
+              "end_segment_index": 0,
+              "start_m": 0.0,
+              "end_m": 0.0,
+              "severity_weight": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "foldback",
+      "description": "近い折返しの別sidを空間距離だけで結合しない。",
+      "route_id": "route-1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            139,
+            35
+          ],
+          [
+            139.002,
+            35
+          ],
+          [
+            139.002,
+            35.0003
+          ],
+          [
+            139,
+            35.0003
+          ]
+        ]
+      },
+      "segment_severity_weights": [
+        {
+          "segment_index": 0,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 2,
+          "severity_weight": 5
+        },
+        {
+          "segment_index": 4,
+          "severity_weight": 4
+        },
+        {
+          "segment_index": 6,
+          "severity_weight": 3
+        }
+      ],
+      "expected": {
+        "subsegment_count": 7,
+        "high_risk_total": 4,
+        "display_segment_indices": [
+          2,
+          4,
+          0,
+          6
+        ],
+        "navigation": {
+          "projection_lat_deg": 35.000150000000005,
+          "length_m": 397.70056533272896,
+          "vertex_distances_m": [
+            0.0,
+            182.17102063117588,
+            215.52954470155305,
+            397.70056533272896
+          ],
+          "sections": [
+            {
+              "id": "route-1:nav-0-0",
+              "start_segment_index": 0,
+              "end_segment_index": 0,
+              "start_m": 0.0,
+              "end_m": 60.72367354372529,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-2-2",
+              "start_segment_index": 2,
+              "end_segment_index": 2,
+              "start_m": 121.44734708745058,
+              "end_m": 182.17102063117588,
+              "severity_weight": 5
+            },
+            {
+              "id": "route-1:nav-4-4",
+              "start_segment_index": 4,
+              "end_segment_index": 4,
+              "start_m": 215.52954470155305,
+              "end_m": 276.25321824527833,
+              "severity_weight": 4
+            },
+            {
+              "id": "route-1:nav-6-6",
+              "start_segment_index": 6,
+              "end_segment_index": 6,
+              "start_m": 336.9768917890036,
+              "end_m": 397.70056533272896,
+              "severity_weight": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "over_100_contiguous",
+      "description": "対象102小線分。表示100件、ナビは全対象を1区間に結合。",
+      "route_id": "route-1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            139.0,
+            35
+          ],
+          [
+            139.00001,
+            35
+          ],
+          [
+            139.00002,
+            35
+          ],
+          [
+            139.00003,
+            35
+          ],
+          [
+            139.00004,
+            35
+          ],
+          [
+            139.00005,
+            35
+          ],
+          [
+            139.00006,
+            35
+          ],
+          [
+            139.00007,
+            35
+          ],
+          [
+            139.00008,
+            35
+          ],
+          [
+            139.00009,
+            35
+          ],
+          [
+            139.0001,
+            35
+          ],
+          [
+            139.00011,
+            35
+          ],
+          [
+            139.00012,
+            35
+          ],
+          [
+            139.00013,
+            35
+          ],
+          [
+            139.00014,
+            35
+          ],
+          [
+            139.00015,
+            35
+          ],
+          [
+            139.00016,
+            35
+          ],
+          [
+            139.00017,
+            35
+          ],
+          [
+            139.00018,
+            35
+          ],
+          [
+            139.00019,
+            35
+          ],
+          [
+            139.0002,
+            35
+          ],
+          [
+            139.00021,
+            35
+          ],
+          [
+            139.00022,
+            35
+          ],
+          [
+            139.00023,
+            35
+          ],
+          [
+            139.00024,
+            35
+          ],
+          [
+            139.00025,
+            35
+          ],
+          [
+            139.00026,
+            35
+          ],
+          [
+            139.00027,
+            35
+          ],
+          [
+            139.00028,
+            35
+          ],
+          [
+            139.00029,
+            35
+          ],
+          [
+            139.0003,
+            35
+          ],
+          [
+            139.00031,
+            35
+          ],
+          [
+            139.00032,
+            35
+          ],
+          [
+            139.00033,
+            35
+          ],
+          [
+            139.00034,
+            35
+          ],
+          [
+            139.00035,
+            35
+          ],
+          [
+            139.00036,
+            35
+          ],
+          [
+            139.00037,
+            35
+          ],
+          [
+            139.00038,
+            35
+          ],
+          [
+            139.00039,
+            35
+          ],
+          [
+            139.0004,
+            35
+          ],
+          [
+            139.00041,
+            35
+          ],
+          [
+            139.00042,
+            35
+          ],
+          [
+            139.00043,
+            35
+          ],
+          [
+            139.00044,
+            35
+          ],
+          [
+            139.00045,
+            35
+          ],
+          [
+            139.00046,
+            35
+          ],
+          [
+            139.00047,
+            35
+          ],
+          [
+            139.00048,
+            35
+          ],
+          [
+            139.00049,
+            35
+          ],
+          [
+            139.0005,
+            35
+          ],
+          [
+            139.00051,
+            35
+          ],
+          [
+            139.00052,
+            35
+          ],
+          [
+            139.00053,
+            35
+          ],
+          [
+            139.00054,
+            35
+          ],
+          [
+            139.00055,
+            35
+          ],
+          [
+            139.00056,
+            35
+          ],
+          [
+            139.00057,
+            35
+          ],
+          [
+            139.00058,
+            35
+          ],
+          [
+            139.00059,
+            35
+          ],
+          [
+            139.0006,
+            35
+          ],
+          [
+            139.00061,
+            35
+          ],
+          [
+            139.00062,
+            35
+          ],
+          [
+            139.00063,
+            35
+          ],
+          [
+            139.00064,
+            35
+          ],
+          [
+            139.00065,
+            35
+          ],
+          [
+            139.00066,
+            35
+          ],
+          [
+            139.00067,
+            35
+          ],
+          [
+            139.00068,
+            35
+          ],
+          [
+            139.00069,
+            35
+          ],
+          [
+            139.0007,
+            35
+          ],
+          [
+            139.00071,
+            35
+          ],
+          [
+            139.00072,
+            35
+          ],
+          [
+            139.00073,
+            35
+          ],
+          [
+            139.00074,
+            35
+          ],
+          [
+            139.00075,
+            35
+          ],
+          [
+            139.00076,
+            35
+          ],
+          [
+            139.00077,
+            35
+          ],
+          [
+            139.00078,
+            35
+          ],
+          [
+            139.00079,
+            35
+          ],
+          [
+            139.0008,
+            35
+          ],
+          [
+            139.00081,
+            35
+          ],
+          [
+            139.00082,
+            35
+          ],
+          [
+            139.00083,
+            35
+          ],
+          [
+            139.00084,
+            35
+          ],
+          [
+            139.00085,
+            35
+          ],
+          [
+            139.00086,
+            35
+          ],
+          [
+            139.00087,
+            35
+          ],
+          [
+            139.00088,
+            35
+          ],
+          [
+            139.00089,
+            35
+          ],
+          [
+            139.0009,
+            35
+          ],
+          [
+            139.00091,
+            35
+          ],
+          [
+            139.00092,
+            35
+          ],
+          [
+            139.00093,
+            35
+          ],
+          [
+            139.00094,
+            35
+          ],
+          [
+            139.00095,
+            35
+          ],
+          [
+            139.00096,
+            35
+          ],
+          [
+            139.00097,
+            35
+          ],
+          [
+            139.00098,
+            35
+          ],
+          [
+            139.00099,
+            35
+          ],
+          [
+            139.001,
+            35
+          ],
+          [
+            139.00101,
+            35
+          ],
+          [
+            139.00102,
+            35
+          ]
+        ]
+      },
+      "segment_severity_weights": [
+        {
+          "segment_index": 0,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 1,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 2,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 3,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 4,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 5,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 6,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 7,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 8,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 9,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 10,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 11,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 12,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 13,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 14,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 15,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 16,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 17,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 18,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 19,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 20,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 21,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 22,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 23,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 24,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 25,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 26,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 27,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 28,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 29,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 30,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 31,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 32,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 33,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 34,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 35,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 36,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 37,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 38,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 39,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 40,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 41,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 42,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 43,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 44,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 45,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 46,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 47,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 48,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 49,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 50,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 51,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 52,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 53,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 54,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 55,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 56,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 57,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 58,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 59,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 60,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 61,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 62,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 63,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 64,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 65,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 66,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 67,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 68,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 69,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 70,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 71,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 72,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 73,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 74,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 75,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 76,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 77,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 78,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 79,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 80,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 81,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 82,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 83,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 84,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 85,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 86,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 87,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 88,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 89,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 90,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 91,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 92,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 93,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 94,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 95,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 96,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 97,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 98,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 99,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 100,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 101,
+          "severity_weight": 3
+        }
+      ],
+      "expected": {
+        "subsegment_count": 102,
+        "high_risk_total": 102,
+        "display_segment_indices": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79,
+          80,
+          81,
+          82,
+          83,
+          84,
+          85,
+          86,
+          87,
+          88,
+          89,
+          90,
+          91,
+          92,
+          93,
+          94,
+          95,
+          96,
+          97,
+          98,
+          99
+        ],
+        "navigation": {
+          "projection_lat_deg": 35.0,
+          "length_m": 92.90739083495365,
+          "vertex_distances_m": [
+            0.0,
+            0.910856773170888,
+            1.821713546341776,
+            2.732570319512664,
+            3.643427092683552,
+            4.5542838632656295,
+            5.465140636436518,
+            6.375997409607406,
+            7.286854182778294,
+            8.197710955949182,
+            9.10856772912007,
+            10.019424502290958,
+            10.930281275461846,
+            11.841138048632734,
+            12.751994819214811,
+            13.6628515923857,
+            14.573708365556588,
+            15.484565138727476,
+            16.395421911898364,
+            17.306278685069252,
+            18.21713545824014,
+            19.127992231411028,
+            20.038849004581916,
+            20.949705775163995,
+            21.860562548334883,
+            22.77141932150577,
+            23.68227609467666,
+            24.593132867847547,
+            25.503989641018435,
+            26.414846414189324,
+            27.32570318736021,
+            28.2365599605311,
+            29.14741673111318,
+            30.058273504284067,
+            30.969130277454955,
+            31.879987050625843,
+            32.79084382379673,
+            33.70170059696761,
+            34.6125573701385,
+            35.52341414330938,
+            36.434270916480266,
+            37.345127687062345,
+            38.25598446023323,
+            39.166841233404114,
+            40.077698006575,
+            40.98855477974588,
+            41.89941155291677,
+            42.81026832608765,
+            43.721125099258536,
+            44.63198187242942,
+            45.5428386430115,
+            46.453695416182384,
+            47.36455218935327,
+            48.27540896252415,
+            49.18626573569504,
+            50.09712250886592,
+            51.00797928203681,
+            51.91883605520769,
+            52.829692828378576,
+            53.740549598960655,
+            54.65140637213154,
+            55.562263145302424,
+            56.47311991847331,
+            57.38397669164419,
+            58.29483346481508,
+            59.20569023798596,
+            60.11654701115685,
+            61.02740378432773,
+            61.93826055490981,
+            62.849117328080695,
+            63.75997410125158,
+            64.67083087442246,
+            65.58168764759336,
+            66.49254442076425,
+            67.40340119393514,
+            68.31425796710603,
+            69.22511474027692,
+            70.135971510859,
+            71.04682828402989,
+            71.95768505720078,
+            72.86854183037167,
+            73.77939860354256,
+            74.69025537671345,
+            75.60111214988434,
+            76.51196892305524,
+            77.42282569622613,
+            78.3336824668082,
+            79.24453923997909,
+            80.15539601314998,
+            81.06625278632087,
+            81.97710955949177,
+            82.88796633266266,
+            83.79882310583355,
+            84.70967987900444,
+            85.62053665217533,
+            86.5313934227574,
+            87.4422501959283,
+            88.35310696909919,
+            89.26396374227008,
+            90.17482051544097,
+            91.08567728861186,
+            91.99653406178275,
+            92.90739083495365
+          ],
+          "sections": [
+            {
+              "id": "route-1:nav-0-101",
+              "start_segment_index": 0,
+              "end_segment_index": 101,
+              "start_m": 0.0,
+              "end_m": 92.90739083495365,
+              "severity_weight": 306
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "over_100_separate",
+      "description": "対象103区間。表示100件でもナビは103区間を保持。",
+      "route_id": "route-1",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            139.0,
+            35
+          ],
+          [
+            139.00001,
+            35
+          ],
+          [
+            139.00002,
+            35
+          ],
+          [
+            139.00003,
+            35
+          ],
+          [
+            139.00004,
+            35
+          ],
+          [
+            139.00005,
+            35
+          ],
+          [
+            139.00006,
+            35
+          ],
+          [
+            139.00007,
+            35
+          ],
+          [
+            139.00008,
+            35
+          ],
+          [
+            139.00009,
+            35
+          ],
+          [
+            139.0001,
+            35
+          ],
+          [
+            139.00011,
+            35
+          ],
+          [
+            139.00012,
+            35
+          ],
+          [
+            139.00013,
+            35
+          ],
+          [
+            139.00014,
+            35
+          ],
+          [
+            139.00015,
+            35
+          ],
+          [
+            139.00016,
+            35
+          ],
+          [
+            139.00017,
+            35
+          ],
+          [
+            139.00018,
+            35
+          ],
+          [
+            139.00019,
+            35
+          ],
+          [
+            139.0002,
+            35
+          ],
+          [
+            139.00021,
+            35
+          ],
+          [
+            139.00022,
+            35
+          ],
+          [
+            139.00023,
+            35
+          ],
+          [
+            139.00024,
+            35
+          ],
+          [
+            139.00025,
+            35
+          ],
+          [
+            139.00026,
+            35
+          ],
+          [
+            139.00027,
+            35
+          ],
+          [
+            139.00028,
+            35
+          ],
+          [
+            139.00029,
+            35
+          ],
+          [
+            139.0003,
+            35
+          ],
+          [
+            139.00031,
+            35
+          ],
+          [
+            139.00032,
+            35
+          ],
+          [
+            139.00033,
+            35
+          ],
+          [
+            139.00034,
+            35
+          ],
+          [
+            139.00035,
+            35
+          ],
+          [
+            139.00036,
+            35
+          ],
+          [
+            139.00037,
+            35
+          ],
+          [
+            139.00038,
+            35
+          ],
+          [
+            139.00039,
+            35
+          ],
+          [
+            139.0004,
+            35
+          ],
+          [
+            139.00041,
+            35
+          ],
+          [
+            139.00042,
+            35
+          ],
+          [
+            139.00043,
+            35
+          ],
+          [
+            139.00044,
+            35
+          ],
+          [
+            139.00045,
+            35
+          ],
+          [
+            139.00046,
+            35
+          ],
+          [
+            139.00047,
+            35
+          ],
+          [
+            139.00048,
+            35
+          ],
+          [
+            139.00049,
+            35
+          ],
+          [
+            139.0005,
+            35
+          ],
+          [
+            139.00051,
+            35
+          ],
+          [
+            139.00052,
+            35
+          ],
+          [
+            139.00053,
+            35
+          ],
+          [
+            139.00054,
+            35
+          ],
+          [
+            139.00055,
+            35
+          ],
+          [
+            139.00056,
+            35
+          ],
+          [
+            139.00057,
+            35
+          ],
+          [
+            139.00058,
+            35
+          ],
+          [
+            139.00059,
+            35
+          ],
+          [
+            139.0006,
+            35
+          ],
+          [
+            139.00061,
+            35
+          ],
+          [
+            139.00062,
+            35
+          ],
+          [
+            139.00063,
+            35
+          ],
+          [
+            139.00064,
+            35
+          ],
+          [
+            139.00065,
+            35
+          ],
+          [
+            139.00066,
+            35
+          ],
+          [
+            139.00067,
+            35
+          ],
+          [
+            139.00068,
+            35
+          ],
+          [
+            139.00069,
+            35
+          ],
+          [
+            139.0007,
+            35
+          ],
+          [
+            139.00071,
+            35
+          ],
+          [
+            139.00072,
+            35
+          ],
+          [
+            139.00073,
+            35
+          ],
+          [
+            139.00074,
+            35
+          ],
+          [
+            139.00075,
+            35
+          ],
+          [
+            139.00076,
+            35
+          ],
+          [
+            139.00077,
+            35
+          ],
+          [
+            139.00078,
+            35
+          ],
+          [
+            139.00079,
+            35
+          ],
+          [
+            139.0008,
+            35
+          ],
+          [
+            139.00081,
+            35
+          ],
+          [
+            139.00082,
+            35
+          ],
+          [
+            139.00083,
+            35
+          ],
+          [
+            139.00084,
+            35
+          ],
+          [
+            139.00085,
+            35
+          ],
+          [
+            139.00086,
+            35
+          ],
+          [
+            139.00087,
+            35
+          ],
+          [
+            139.00088,
+            35
+          ],
+          [
+            139.00089,
+            35
+          ],
+          [
+            139.0009,
+            35
+          ],
+          [
+            139.00091,
+            35
+          ],
+          [
+            139.00092,
+            35
+          ],
+          [
+            139.00093,
+            35
+          ],
+          [
+            139.00094,
+            35
+          ],
+          [
+            139.00095,
+            35
+          ],
+          [
+            139.00096,
+            35
+          ],
+          [
+            139.00097,
+            35
+          ],
+          [
+            139.00098,
+            35
+          ],
+          [
+            139.00099,
+            35
+          ],
+          [
+            139.001,
+            35
+          ],
+          [
+            139.00101,
+            35
+          ],
+          [
+            139.00102,
+            35
+          ],
+          [
+            139.00103,
+            35
+          ],
+          [
+            139.00104,
+            35
+          ],
+          [
+            139.00105,
+            35
+          ],
+          [
+            139.00106,
+            35
+          ],
+          [
+            139.00107,
+            35
+          ],
+          [
+            139.00108,
+            35
+          ],
+          [
+            139.00109,
+            35
+          ],
+          [
+            139.0011,
+            35
+          ],
+          [
+            139.00111,
+            35
+          ],
+          [
+            139.00112,
+            35
+          ],
+          [
+            139.00113,
+            35
+          ],
+          [
+            139.00114,
+            35
+          ],
+          [
+            139.00115,
+            35
+          ],
+          [
+            139.00116,
+            35
+          ],
+          [
+            139.00117,
+            35
+          ],
+          [
+            139.00118,
+            35
+          ],
+          [
+            139.00119,
+            35
+          ],
+          [
+            139.0012,
+            35
+          ],
+          [
+            139.00121,
+            35
+          ],
+          [
+            139.00122,
+            35
+          ],
+          [
+            139.00123,
+            35
+          ],
+          [
+            139.00124,
+            35
+          ],
+          [
+            139.00125,
+            35
+          ],
+          [
+            139.00126,
+            35
+          ],
+          [
+            139.00127,
+            35
+          ],
+          [
+            139.00128,
+            35
+          ],
+          [
+            139.00129,
+            35
+          ],
+          [
+            139.0013,
+            35
+          ],
+          [
+            139.00131,
+            35
+          ],
+          [
+            139.00132,
+            35
+          ],
+          [
+            139.00133,
+            35
+          ],
+          [
+            139.00134,
+            35
+          ],
+          [
+            139.00135,
+            35
+          ],
+          [
+            139.00136,
+            35
+          ],
+          [
+            139.00137,
+            35
+          ],
+          [
+            139.00138,
+            35
+          ],
+          [
+            139.00139,
+            35
+          ],
+          [
+            139.0014,
+            35
+          ],
+          [
+            139.00141,
+            35
+          ],
+          [
+            139.00142,
+            35
+          ],
+          [
+            139.00143,
+            35
+          ],
+          [
+            139.00144,
+            35
+          ],
+          [
+            139.00145,
+            35
+          ],
+          [
+            139.00146,
+            35
+          ],
+          [
+            139.00147,
+            35
+          ],
+          [
+            139.00148,
+            35
+          ],
+          [
+            139.00149,
+            35
+          ],
+          [
+            139.0015,
+            35
+          ],
+          [
+            139.00151,
+            35
+          ],
+          [
+            139.00152,
+            35
+          ],
+          [
+            139.00153,
+            35
+          ],
+          [
+            139.00154,
+            35
+          ],
+          [
+            139.00155,
+            35
+          ],
+          [
+            139.00156,
+            35
+          ],
+          [
+            139.00157,
+            35
+          ],
+          [
+            139.00158,
+            35
+          ],
+          [
+            139.00159,
+            35
+          ],
+          [
+            139.0016,
+            35
+          ],
+          [
+            139.00161,
+            35
+          ],
+          [
+            139.00162,
+            35
+          ],
+          [
+            139.00163,
+            35
+          ],
+          [
+            139.00164,
+            35
+          ],
+          [
+            139.00165,
+            35
+          ],
+          [
+            139.00166,
+            35
+          ],
+          [
+            139.00167,
+            35
+          ],
+          [
+            139.00168,
+            35
+          ],
+          [
+            139.00169,
+            35
+          ],
+          [
+            139.0017,
+            35
+          ],
+          [
+            139.00171,
+            35
+          ],
+          [
+            139.00172,
+            35
+          ],
+          [
+            139.00173,
+            35
+          ],
+          [
+            139.00174,
+            35
+          ],
+          [
+            139.00175,
+            35
+          ],
+          [
+            139.00176,
+            35
+          ],
+          [
+            139.00177,
+            35
+          ],
+          [
+            139.00178,
+            35
+          ],
+          [
+            139.00179,
+            35
+          ],
+          [
+            139.0018,
+            35
+          ],
+          [
+            139.00181,
+            35
+          ],
+          [
+            139.00182,
+            35
+          ],
+          [
+            139.00183,
+            35
+          ],
+          [
+            139.00184,
+            35
+          ],
+          [
+            139.00185,
+            35
+          ],
+          [
+            139.00186,
+            35
+          ],
+          [
+            139.00187,
+            35
+          ],
+          [
+            139.00188,
+            35
+          ],
+          [
+            139.00189,
+            35
+          ],
+          [
+            139.0019,
+            35
+          ],
+          [
+            139.00191,
+            35
+          ],
+          [
+            139.00192,
+            35
+          ],
+          [
+            139.00193,
+            35
+          ],
+          [
+            139.00194,
+            35
+          ],
+          [
+            139.00195,
+            35
+          ],
+          [
+            139.00196,
+            35
+          ],
+          [
+            139.00197,
+            35
+          ],
+          [
+            139.00198,
+            35
+          ],
+          [
+            139.00199,
+            35
+          ],
+          [
+            139.002,
+            35
+          ],
+          [
+            139.00201,
+            35
+          ],
+          [
+            139.00202,
+            35
+          ],
+          [
+            139.00203,
+            35
+          ],
+          [
+            139.00204,
+            35
+          ],
+          [
+            139.00205,
+            35
+          ]
+        ]
+      },
+      "segment_severity_weights": [
+        {
+          "segment_index": 0,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 2,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 4,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 6,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 8,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 10,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 12,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 14,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 16,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 18,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 20,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 22,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 24,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 26,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 28,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 30,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 32,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 34,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 36,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 38,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 40,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 42,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 44,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 46,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 48,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 50,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 52,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 54,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 56,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 58,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 60,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 62,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 64,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 66,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 68,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 70,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 72,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 74,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 76,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 78,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 80,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 82,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 84,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 86,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 88,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 90,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 92,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 94,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 96,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 98,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 100,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 102,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 104,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 106,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 108,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 110,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 112,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 114,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 116,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 118,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 120,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 122,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 124,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 126,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 128,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 130,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 132,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 134,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 136,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 138,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 140,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 142,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 144,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 146,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 148,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 150,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 152,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 154,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 156,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 158,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 160,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 162,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 164,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 166,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 168,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 170,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 172,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 174,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 176,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 178,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 180,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 182,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 184,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 186,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 188,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 190,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 192,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 194,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 196,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 198,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 200,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 202,
+          "severity_weight": 3
+        },
+        {
+          "segment_index": 204,
+          "severity_weight": 3
+        }
+      ],
+      "expected": {
+        "subsegment_count": 205,
+        "high_risk_total": 103,
+        "display_segment_indices": [
+          0,
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          20,
+          22,
+          24,
+          26,
+          28,
+          30,
+          32,
+          34,
+          36,
+          38,
+          40,
+          42,
+          44,
+          46,
+          48,
+          50,
+          52,
+          54,
+          56,
+          58,
+          60,
+          62,
+          64,
+          66,
+          68,
+          70,
+          72,
+          74,
+          76,
+          78,
+          80,
+          82,
+          84,
+          86,
+          88,
+          90,
+          92,
+          94,
+          96,
+          98,
+          100,
+          102,
+          104,
+          106,
+          108,
+          110,
+          112,
+          114,
+          116,
+          118,
+          120,
+          122,
+          124,
+          126,
+          128,
+          130,
+          132,
+          134,
+          136,
+          138,
+          140,
+          142,
+          144,
+          146,
+          148,
+          150,
+          152,
+          154,
+          156,
+          158,
+          160,
+          162,
+          164,
+          166,
+          168,
+          170,
+          172,
+          174,
+          176,
+          178,
+          180,
+          182,
+          184,
+          186,
+          188,
+          190,
+          192,
+          194,
+          196,
+          198
+        ],
+        "navigation": {
+          "projection_lat_deg": 35.0,
+          "length_m": 186.72563844048892,
+          "vertex_distances_m": [
+            0.0,
+            0.910856773170888,
+            1.821713546341776,
+            2.732570319512664,
+            3.643427092683552,
+            4.5542838632656295,
+            5.465140636436518,
+            6.375997409607406,
+            7.286854182778294,
+            8.197710955949182,
+            9.10856772912007,
+            10.019424502290958,
+            10.930281275461846,
+            11.841138048632734,
+            12.751994819214811,
+            13.6628515923857,
+            14.573708365556588,
+            15.484565138727476,
+            16.395421911898364,
+            17.306278685069252,
+            18.21713545824014,
+            19.127992231411028,
+            20.038849004581916,
+            20.949705775163995,
+            21.860562548334883,
+            22.77141932150577,
+            23.68227609467666,
+            24.593132867847547,
+            25.503989641018435,
+            26.414846414189324,
+            27.32570318736021,
+            28.2365599605311,
+            29.14741673111318,
+            30.058273504284067,
+            30.969130277454955,
+            31.879987050625843,
+            32.79084382379673,
+            33.70170059696761,
+            34.6125573701385,
+            35.52341414330938,
+            36.434270916480266,
+            37.345127687062345,
+            38.25598446023323,
+            39.166841233404114,
+            40.077698006575,
+            40.98855477974588,
+            41.89941155291677,
+            42.81026832608765,
+            43.721125099258536,
+            44.63198187242942,
+            45.5428386430115,
+            46.453695416182384,
+            47.36455218935327,
+            48.27540896252415,
+            49.18626573569504,
+            50.09712250886592,
+            51.00797928203681,
+            51.91883605520769,
+            52.829692828378576,
+            53.740549598960655,
+            54.65140637213154,
+            55.562263145302424,
+            56.47311991847331,
+            57.38397669164419,
+            58.29483346481508,
+            59.20569023798596,
+            60.11654701115685,
+            61.02740378432773,
+            61.93826055490981,
+            62.849117328080695,
+            63.75997410125158,
+            64.67083087442246,
+            65.58168764759336,
+            66.49254442076425,
+            67.40340119393514,
+            68.31425796710603,
+            69.22511474027692,
+            70.135971510859,
+            71.04682828402989,
+            71.95768505720078,
+            72.86854183037167,
+            73.77939860354256,
+            74.69025537671345,
+            75.60111214988434,
+            76.51196892305524,
+            77.42282569622613,
+            78.3336824668082,
+            79.24453923997909,
+            80.15539601314998,
+            81.06625278632087,
+            81.97710955949177,
+            82.88796633266266,
+            83.79882310583355,
+            84.70967987900444,
+            85.62053665217533,
+            86.5313934227574,
+            87.4422501959283,
+            88.35310696909919,
+            89.26396374227008,
+            90.17482051544097,
+            91.08567728861186,
+            91.99653406178275,
+            92.90739083495365,
+            93.81824760553572,
+            94.72910437870661,
+            95.6399611518775,
+            96.55081792504839,
+            97.46167469821928,
+            98.37253147139018,
+            99.28338824456107,
+            100.19424501773196,
+            101.10510179090285,
+            102.01595856148492,
+            102.92681533465581,
+            103.8376721078267,
+            104.7485288809976,
+            105.65938565416849,
+            106.57024242733938,
+            107.48109920051027,
+            108.39195597368116,
+            109.30281274685206,
+            110.21366951743413,
+            111.12452629060502,
+            112.03538306377591,
+            112.9462398369468,
+            113.8570966101177,
+            114.76795338328859,
+            115.67881015645948,
+            116.58966692963037,
+            117.50052370280126,
+            118.41138047338333,
+            119.32223724655422,
+            120.23309401972512,
+            121.143950792896,
+            122.0548075660669,
+            122.96566433923779,
+            123.87652111240868,
+            124.78737788557957,
+            125.69823465875047,
+            126.60909142933254,
+            127.51994820250343,
+            128.4308049756743,
+            129.34166174884518,
+            130.25251852201606,
+            131.16337529518694,
+            132.07423206835782,
+            132.9850888415287,
+            133.89594561469957,
+            134.80680238528166,
+            135.71765915845253,
+            136.6285159316234,
+            137.5393727047943,
+            138.45022947796517,
+            139.36108625113604,
+            140.27194302430692,
+            141.1827997974778,
+            142.09365657064868,
+            143.00451334123076,
+            143.91537011440164,
+            144.82622688757252,
+            145.7370836607434,
+            146.64794043391427,
+            147.55879720708515,
+            148.46965398025603,
+            149.3805107534269,
+            150.29136752659778,
+            151.20222429717987,
+            152.11308107035074,
+            153.02393784352162,
+            153.9347946166925,
+            154.84565138986338,
+            155.75650816303425,
+            156.66736493620513,
+            157.578221709376,
+            158.4890784825469,
+            159.39993525312897,
+            160.31079202629985,
+            161.22164879947073,
+            162.1325055726416,
+            163.04336234581248,
+            163.95421911898336,
+            164.86507589215424,
+            165.77593266532512,
+            166.686789438496,
+            167.59764620907808,
+            168.50850298224896,
+            169.41935975541983,
+            170.3302165285907,
+            171.2410733017616,
+            172.15193007493247,
+            173.06278684810334,
+            173.97364362127422,
+            174.8845003944451,
+            175.79535716502718,
+            176.70621393819806,
+            177.61707071136894,
+            178.52792748453982,
+            179.4387842577107,
+            180.34964103088157,
+            181.26049780405245,
+            182.17135457722333,
+            183.0822113503942,
+            183.9930681209763,
+            184.90392489414717,
+            185.81478166731804,
+            186.72563844048892
+          ],
+          "sections": [
+            {
+              "id": "route-1:nav-0-0",
+              "start_segment_index": 0,
+              "end_segment_index": 0,
+              "start_m": 0.0,
+              "end_m": 0.910856773170888,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-2-2",
+              "start_segment_index": 2,
+              "end_segment_index": 2,
+              "start_m": 1.821713546341776,
+              "end_m": 2.732570319512664,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-4-4",
+              "start_segment_index": 4,
+              "end_segment_index": 4,
+              "start_m": 3.643427092683552,
+              "end_m": 4.5542838632656295,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-6-6",
+              "start_segment_index": 6,
+              "end_segment_index": 6,
+              "start_m": 5.465140636436518,
+              "end_m": 6.375997409607406,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-8-8",
+              "start_segment_index": 8,
+              "end_segment_index": 8,
+              "start_m": 7.286854182778294,
+              "end_m": 8.197710955949182,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-10-10",
+              "start_segment_index": 10,
+              "end_segment_index": 10,
+              "start_m": 9.10856772912007,
+              "end_m": 10.019424502290958,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-12-12",
+              "start_segment_index": 12,
+              "end_segment_index": 12,
+              "start_m": 10.930281275461846,
+              "end_m": 11.841138048632734,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-14-14",
+              "start_segment_index": 14,
+              "end_segment_index": 14,
+              "start_m": 12.751994819214811,
+              "end_m": 13.6628515923857,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-16-16",
+              "start_segment_index": 16,
+              "end_segment_index": 16,
+              "start_m": 14.573708365556588,
+              "end_m": 15.484565138727476,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-18-18",
+              "start_segment_index": 18,
+              "end_segment_index": 18,
+              "start_m": 16.395421911898364,
+              "end_m": 17.306278685069252,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-20-20",
+              "start_segment_index": 20,
+              "end_segment_index": 20,
+              "start_m": 18.21713545824014,
+              "end_m": 19.127992231411028,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-22-22",
+              "start_segment_index": 22,
+              "end_segment_index": 22,
+              "start_m": 20.038849004581916,
+              "end_m": 20.949705775163995,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-24-24",
+              "start_segment_index": 24,
+              "end_segment_index": 24,
+              "start_m": 21.860562548334883,
+              "end_m": 22.77141932150577,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-26-26",
+              "start_segment_index": 26,
+              "end_segment_index": 26,
+              "start_m": 23.68227609467666,
+              "end_m": 24.593132867847547,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-28-28",
+              "start_segment_index": 28,
+              "end_segment_index": 28,
+              "start_m": 25.503989641018435,
+              "end_m": 26.414846414189324,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-30-30",
+              "start_segment_index": 30,
+              "end_segment_index": 30,
+              "start_m": 27.32570318736021,
+              "end_m": 28.2365599605311,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-32-32",
+              "start_segment_index": 32,
+              "end_segment_index": 32,
+              "start_m": 29.14741673111318,
+              "end_m": 30.058273504284067,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-34-34",
+              "start_segment_index": 34,
+              "end_segment_index": 34,
+              "start_m": 30.969130277454955,
+              "end_m": 31.879987050625843,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-36-36",
+              "start_segment_index": 36,
+              "end_segment_index": 36,
+              "start_m": 32.79084382379673,
+              "end_m": 33.70170059696761,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-38-38",
+              "start_segment_index": 38,
+              "end_segment_index": 38,
+              "start_m": 34.6125573701385,
+              "end_m": 35.52341414330938,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-40-40",
+              "start_segment_index": 40,
+              "end_segment_index": 40,
+              "start_m": 36.434270916480266,
+              "end_m": 37.345127687062345,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-42-42",
+              "start_segment_index": 42,
+              "end_segment_index": 42,
+              "start_m": 38.25598446023323,
+              "end_m": 39.166841233404114,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-44-44",
+              "start_segment_index": 44,
+              "end_segment_index": 44,
+              "start_m": 40.077698006575,
+              "end_m": 40.98855477974588,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-46-46",
+              "start_segment_index": 46,
+              "end_segment_index": 46,
+              "start_m": 41.89941155291677,
+              "end_m": 42.81026832608765,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-48-48",
+              "start_segment_index": 48,
+              "end_segment_index": 48,
+              "start_m": 43.721125099258536,
+              "end_m": 44.63198187242942,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-50-50",
+              "start_segment_index": 50,
+              "end_segment_index": 50,
+              "start_m": 45.5428386430115,
+              "end_m": 46.453695416182384,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-52-52",
+              "start_segment_index": 52,
+              "end_segment_index": 52,
+              "start_m": 47.36455218935327,
+              "end_m": 48.27540896252415,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-54-54",
+              "start_segment_index": 54,
+              "end_segment_index": 54,
+              "start_m": 49.18626573569504,
+              "end_m": 50.09712250886592,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-56-56",
+              "start_segment_index": 56,
+              "end_segment_index": 56,
+              "start_m": 51.00797928203681,
+              "end_m": 51.91883605520769,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-58-58",
+              "start_segment_index": 58,
+              "end_segment_index": 58,
+              "start_m": 52.829692828378576,
+              "end_m": 53.740549598960655,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-60-60",
+              "start_segment_index": 60,
+              "end_segment_index": 60,
+              "start_m": 54.65140637213154,
+              "end_m": 55.562263145302424,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-62-62",
+              "start_segment_index": 62,
+              "end_segment_index": 62,
+              "start_m": 56.47311991847331,
+              "end_m": 57.38397669164419,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-64-64",
+              "start_segment_index": 64,
+              "end_segment_index": 64,
+              "start_m": 58.29483346481508,
+              "end_m": 59.20569023798596,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-66-66",
+              "start_segment_index": 66,
+              "end_segment_index": 66,
+              "start_m": 60.11654701115685,
+              "end_m": 61.02740378432773,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-68-68",
+              "start_segment_index": 68,
+              "end_segment_index": 68,
+              "start_m": 61.93826055490981,
+              "end_m": 62.849117328080695,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-70-70",
+              "start_segment_index": 70,
+              "end_segment_index": 70,
+              "start_m": 63.75997410125158,
+              "end_m": 64.67083087442246,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-72-72",
+              "start_segment_index": 72,
+              "end_segment_index": 72,
+              "start_m": 65.58168764759336,
+              "end_m": 66.49254442076425,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-74-74",
+              "start_segment_index": 74,
+              "end_segment_index": 74,
+              "start_m": 67.40340119393514,
+              "end_m": 68.31425796710603,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-76-76",
+              "start_segment_index": 76,
+              "end_segment_index": 76,
+              "start_m": 69.22511474027692,
+              "end_m": 70.135971510859,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-78-78",
+              "start_segment_index": 78,
+              "end_segment_index": 78,
+              "start_m": 71.04682828402989,
+              "end_m": 71.95768505720078,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-80-80",
+              "start_segment_index": 80,
+              "end_segment_index": 80,
+              "start_m": 72.86854183037167,
+              "end_m": 73.77939860354256,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-82-82",
+              "start_segment_index": 82,
+              "end_segment_index": 82,
+              "start_m": 74.69025537671345,
+              "end_m": 75.60111214988434,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-84-84",
+              "start_segment_index": 84,
+              "end_segment_index": 84,
+              "start_m": 76.51196892305524,
+              "end_m": 77.42282569622613,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-86-86",
+              "start_segment_index": 86,
+              "end_segment_index": 86,
+              "start_m": 78.3336824668082,
+              "end_m": 79.24453923997909,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-88-88",
+              "start_segment_index": 88,
+              "end_segment_index": 88,
+              "start_m": 80.15539601314998,
+              "end_m": 81.06625278632087,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-90-90",
+              "start_segment_index": 90,
+              "end_segment_index": 90,
+              "start_m": 81.97710955949177,
+              "end_m": 82.88796633266266,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-92-92",
+              "start_segment_index": 92,
+              "end_segment_index": 92,
+              "start_m": 83.79882310583355,
+              "end_m": 84.70967987900444,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-94-94",
+              "start_segment_index": 94,
+              "end_segment_index": 94,
+              "start_m": 85.62053665217533,
+              "end_m": 86.5313934227574,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-96-96",
+              "start_segment_index": 96,
+              "end_segment_index": 96,
+              "start_m": 87.4422501959283,
+              "end_m": 88.35310696909919,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-98-98",
+              "start_segment_index": 98,
+              "end_segment_index": 98,
+              "start_m": 89.26396374227008,
+              "end_m": 90.17482051544097,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-100-100",
+              "start_segment_index": 100,
+              "end_segment_index": 100,
+              "start_m": 91.08567728861186,
+              "end_m": 91.99653406178275,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-102-102",
+              "start_segment_index": 102,
+              "end_segment_index": 102,
+              "start_m": 92.90739083495365,
+              "end_m": 93.81824760553572,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-104-104",
+              "start_segment_index": 104,
+              "end_segment_index": 104,
+              "start_m": 94.72910437870661,
+              "end_m": 95.6399611518775,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-106-106",
+              "start_segment_index": 106,
+              "end_segment_index": 106,
+              "start_m": 96.55081792504839,
+              "end_m": 97.46167469821928,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-108-108",
+              "start_segment_index": 108,
+              "end_segment_index": 108,
+              "start_m": 98.37253147139018,
+              "end_m": 99.28338824456107,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-110-110",
+              "start_segment_index": 110,
+              "end_segment_index": 110,
+              "start_m": 100.19424501773196,
+              "end_m": 101.10510179090285,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-112-112",
+              "start_segment_index": 112,
+              "end_segment_index": 112,
+              "start_m": 102.01595856148492,
+              "end_m": 102.92681533465581,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-114-114",
+              "start_segment_index": 114,
+              "end_segment_index": 114,
+              "start_m": 103.8376721078267,
+              "end_m": 104.7485288809976,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-116-116",
+              "start_segment_index": 116,
+              "end_segment_index": 116,
+              "start_m": 105.65938565416849,
+              "end_m": 106.57024242733938,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-118-118",
+              "start_segment_index": 118,
+              "end_segment_index": 118,
+              "start_m": 107.48109920051027,
+              "end_m": 108.39195597368116,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-120-120",
+              "start_segment_index": 120,
+              "end_segment_index": 120,
+              "start_m": 109.30281274685206,
+              "end_m": 110.21366951743413,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-122-122",
+              "start_segment_index": 122,
+              "end_segment_index": 122,
+              "start_m": 111.12452629060502,
+              "end_m": 112.03538306377591,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-124-124",
+              "start_segment_index": 124,
+              "end_segment_index": 124,
+              "start_m": 112.9462398369468,
+              "end_m": 113.8570966101177,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-126-126",
+              "start_segment_index": 126,
+              "end_segment_index": 126,
+              "start_m": 114.76795338328859,
+              "end_m": 115.67881015645948,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-128-128",
+              "start_segment_index": 128,
+              "end_segment_index": 128,
+              "start_m": 116.58966692963037,
+              "end_m": 117.50052370280126,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-130-130",
+              "start_segment_index": 130,
+              "end_segment_index": 130,
+              "start_m": 118.41138047338333,
+              "end_m": 119.32223724655422,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-132-132",
+              "start_segment_index": 132,
+              "end_segment_index": 132,
+              "start_m": 120.23309401972512,
+              "end_m": 121.143950792896,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-134-134",
+              "start_segment_index": 134,
+              "end_segment_index": 134,
+              "start_m": 122.0548075660669,
+              "end_m": 122.96566433923779,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-136-136",
+              "start_segment_index": 136,
+              "end_segment_index": 136,
+              "start_m": 123.87652111240868,
+              "end_m": 124.78737788557957,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-138-138",
+              "start_segment_index": 138,
+              "end_segment_index": 138,
+              "start_m": 125.69823465875047,
+              "end_m": 126.60909142933254,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-140-140",
+              "start_segment_index": 140,
+              "end_segment_index": 140,
+              "start_m": 127.51994820250343,
+              "end_m": 128.4308049756743,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-142-142",
+              "start_segment_index": 142,
+              "end_segment_index": 142,
+              "start_m": 129.34166174884518,
+              "end_m": 130.25251852201606,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-144-144",
+              "start_segment_index": 144,
+              "end_segment_index": 144,
+              "start_m": 131.16337529518694,
+              "end_m": 132.07423206835782,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-146-146",
+              "start_segment_index": 146,
+              "end_segment_index": 146,
+              "start_m": 132.9850888415287,
+              "end_m": 133.89594561469957,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-148-148",
+              "start_segment_index": 148,
+              "end_segment_index": 148,
+              "start_m": 134.80680238528166,
+              "end_m": 135.71765915845253,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-150-150",
+              "start_segment_index": 150,
+              "end_segment_index": 150,
+              "start_m": 136.6285159316234,
+              "end_m": 137.5393727047943,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-152-152",
+              "start_segment_index": 152,
+              "end_segment_index": 152,
+              "start_m": 138.45022947796517,
+              "end_m": 139.36108625113604,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-154-154",
+              "start_segment_index": 154,
+              "end_segment_index": 154,
+              "start_m": 140.27194302430692,
+              "end_m": 141.1827997974778,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-156-156",
+              "start_segment_index": 156,
+              "end_segment_index": 156,
+              "start_m": 142.09365657064868,
+              "end_m": 143.00451334123076,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-158-158",
+              "start_segment_index": 158,
+              "end_segment_index": 158,
+              "start_m": 143.91537011440164,
+              "end_m": 144.82622688757252,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-160-160",
+              "start_segment_index": 160,
+              "end_segment_index": 160,
+              "start_m": 145.7370836607434,
+              "end_m": 146.64794043391427,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-162-162",
+              "start_segment_index": 162,
+              "end_segment_index": 162,
+              "start_m": 147.55879720708515,
+              "end_m": 148.46965398025603,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-164-164",
+              "start_segment_index": 164,
+              "end_segment_index": 164,
+              "start_m": 149.3805107534269,
+              "end_m": 150.29136752659778,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-166-166",
+              "start_segment_index": 166,
+              "end_segment_index": 166,
+              "start_m": 151.20222429717987,
+              "end_m": 152.11308107035074,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-168-168",
+              "start_segment_index": 168,
+              "end_segment_index": 168,
+              "start_m": 153.02393784352162,
+              "end_m": 153.9347946166925,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-170-170",
+              "start_segment_index": 170,
+              "end_segment_index": 170,
+              "start_m": 154.84565138986338,
+              "end_m": 155.75650816303425,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-172-172",
+              "start_segment_index": 172,
+              "end_segment_index": 172,
+              "start_m": 156.66736493620513,
+              "end_m": 157.578221709376,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-174-174",
+              "start_segment_index": 174,
+              "end_segment_index": 174,
+              "start_m": 158.4890784825469,
+              "end_m": 159.39993525312897,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-176-176",
+              "start_segment_index": 176,
+              "end_segment_index": 176,
+              "start_m": 160.31079202629985,
+              "end_m": 161.22164879947073,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-178-178",
+              "start_segment_index": 178,
+              "end_segment_index": 178,
+              "start_m": 162.1325055726416,
+              "end_m": 163.04336234581248,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-180-180",
+              "start_segment_index": 180,
+              "end_segment_index": 180,
+              "start_m": 163.95421911898336,
+              "end_m": 164.86507589215424,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-182-182",
+              "start_segment_index": 182,
+              "end_segment_index": 182,
+              "start_m": 165.77593266532512,
+              "end_m": 166.686789438496,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-184-184",
+              "start_segment_index": 184,
+              "end_segment_index": 184,
+              "start_m": 167.59764620907808,
+              "end_m": 168.50850298224896,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-186-186",
+              "start_segment_index": 186,
+              "end_segment_index": 186,
+              "start_m": 169.41935975541983,
+              "end_m": 170.3302165285907,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-188-188",
+              "start_segment_index": 188,
+              "end_segment_index": 188,
+              "start_m": 171.2410733017616,
+              "end_m": 172.15193007493247,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-190-190",
+              "start_segment_index": 190,
+              "end_segment_index": 190,
+              "start_m": 173.06278684810334,
+              "end_m": 173.97364362127422,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-192-192",
+              "start_segment_index": 192,
+              "end_segment_index": 192,
+              "start_m": 174.8845003944451,
+              "end_m": 175.79535716502718,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-194-194",
+              "start_segment_index": 194,
+              "end_segment_index": 194,
+              "start_m": 176.70621393819806,
+              "end_m": 177.61707071136894,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-196-196",
+              "start_segment_index": 196,
+              "end_segment_index": 196,
+              "start_m": 178.52792748453982,
+              "end_m": 179.4387842577107,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-198-198",
+              "start_segment_index": 198,
+              "end_segment_index": 198,
+              "start_m": 180.34964103088157,
+              "end_m": 181.26049780405245,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-200-200",
+              "start_segment_index": 200,
+              "end_segment_index": 200,
+              "start_m": 182.17135457722333,
+              "end_m": 183.0822113503942,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-202-202",
+              "start_segment_index": 202,
+              "end_segment_index": 202,
+              "start_m": 183.9930681209763,
+              "end_m": 184.90392489414717,
+              "severity_weight": 3
+            },
+            {
+              "id": "route-1:nav-204-204",
+              "start_segment_index": 204,
+              "end_segment_index": 204,
+              "start_m": 185.81478166731804,
+              "end_m": 186.72563844048892,
+              "severity_weight": 3
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
