@@ -1,0 +1,14 @@
+[package]
+name = "accident-route-backend"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+
+# 依存の追加・更新とCargo.lockの統合は③（API・外部通信・基盤）が担当する。
+# 手順はREADME.mdの「Cargo設定とlockfile」を参照。
+
+[dependencies]
+chrono = "0.4"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
