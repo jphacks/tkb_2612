@@ -5,7 +5,6 @@ import {
   Cloud,
   CloudFog,
   CloudRain,
-  CloudSnow,
   Footprints,
   Moon,
   MoonStar,
@@ -21,6 +20,7 @@ import type {
   Period,
   Weather,
 } from "../lib/types";
+import { Snowman } from "./icons/Snowman";
 
 export type AutoFields = {
   period: boolean;
@@ -51,7 +51,7 @@ const weathers: { value: Weather; Icon: LucideIcon }[] = [
   { value: "曇", Icon: Cloud },
   { value: "雨", Icon: CloudRain },
   { value: "霧", Icon: CloudFog },
-  { value: "雪", Icon: CloudSnow },
+  { value: "雪", Icon: Snowman },
 ];
 const modes = [
   { value: "walk", label: "徒歩", Icon: Footprints },
