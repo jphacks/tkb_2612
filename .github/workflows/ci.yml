@@ -1,0 +1,99 @@
+# PRごとに基本4点（backend/README.md「検証コマンド」）とC0-a〜C0-dを実行する（担当：③）。
+# コマンドの内容は①（frontend）・②③（backend）が決め、ここでは呼ぶだけにする。
+# 実通信・秘密・GCP認証は使わない（テストはループバックの偽上流だけを使う）。
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  backend:
+    name: backend (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # stable と Cargo.toml の rust-version
+        toolchain: [stable, "1.88"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 原本 accident/（約420MB）はCIで使わない
+          sparse-checkout: |
+            backend
+            docs
+            frontend
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+          key: ${{ matrix.toolchain }}
+      - name: cargo fmt --check
+        if: matrix.toolchain == 'stable'
+        run: cargo fmt --manifest-path backend/Cargo.toml --check
+      - name: cargo clippy
+        if: matrix.toolchain == 'stable'
+        run: cargo clippy --manifest-path backend/Cargo.toml --all-targets --locked -- -D warnings
+      - name: cargo test
+        run: cargo test --manifest-path backend/Cargo.toml --locked
+
+  fixtures:
+    name: fixtures (C0-a)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 原本 accident/（約420MB）はCIで使わない
+          sparse-checkout: |
+            backend
+            docs
+            frontend
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 -m pip install PyYAML
+      - name: openapi.yamlの応答例とfixtureの一致
+        run: python3 -B backend/scripts/extract_route_examples.py --check
+
+  frontend:
+    name: frontend (C0-b, C0-c)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 原本 accident/（約420MB）はCIで使わない
+          sparse-checkout: |
+            backend
+            docs
+            frontend
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: 生成型が最新のOpenAPIと一致する
+        run: |
+          npm run generate:api
+          git diff --exit-code -- src/api/generated
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

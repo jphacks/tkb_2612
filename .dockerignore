@@ -1,0 +1,17 @@
+# イメージへ入れないもの。原本・前処理の作業領域・ローカルの生成物・秘密。
+**
+!Dockerfile
+!backend/Cargo.toml
+!backend/Cargo.lock
+!backend/src/
+!backend/data/releases/
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/index.html
+!frontend/tsconfig.json
+!frontend/vite.config.ts
+!frontend/public/
+!frontend/src/
+!frontend/scripts/
+**/.env*
+**/*.key
