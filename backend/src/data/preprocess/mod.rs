@@ -44,8 +44,10 @@ pub enum PreprocessError {
         file: String,
         message: String,
     },
-    /// 保持行が0件。
-    NoRetainedRows,
+    /// ある年度のファイルで保持行が0件（全行除外）。
+    NoRetainedRows {
+        file: String,
+    },
     Holidays(String),
 }
 
@@ -55,7 +57,9 @@ impl std::fmt::Display for PreprocessError {
             PreprocessError::Io { file, error } => write!(f, "{file} を読めません: {error}"),
             PreprocessError::Codebook(e) => write!(f, "{e}"),
             PreprocessError::File { file, message } => write!(f, "{file}: {message}"),
-            PreprocessError::NoRetainedRows => write!(f, "保持する行が1件もありません"),
+            PreprocessError::NoRetainedRows { file } => {
+                write!(f, "{file}: 保持する行が1件もありません（全行除外）")
+            }
             PreprocessError::Holidays(m) => write!(f, "{m}"),
         }
     }
@@ -201,10 +205,12 @@ pub fn prepare_release(
                 file: file.clone(),
                 error,
             })?;
-        files.push(process_file(&file, &bytes, year, &calendar, &mut writer)?);
-    }
-    if writer.rows() == 0 {
-        return Err(PreprocessError::NoRetainedRows);
+        let audit = process_file(&file, &bytes, year, &calendar, &mut writer)?;
+        // 年度ごとに確かめる（その年度を欠いたreleaseを成功扱いにしない）
+        if audit.retained_rows == 0 {
+            return Err(PreprocessError::NoRetainedRows { file });
+        }
+        files.push(audit);
     }
     let input: u64 = files.iter().map(|f| f.input_rows).sum();
     let retained: u64 = files.iter().map(|f| f.retained_rows).sum();

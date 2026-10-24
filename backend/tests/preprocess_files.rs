@@ -177,7 +177,28 @@ fn whole_run_fails_on_missing_year_or_no_retained_rows() {
     let error = prepare_release(dir.path(), HOLIDAYS.as_bytes().to_vec(), &AcceptAll, "t")
         .err()
         .unwrap();
-    assert!(matches!(error, PreprocessError::NoRetainedRows), "{error}");
+    assert!(
+        matches!(error, PreprocessError::NoRetainedRows { .. }),
+        "{error}"
+    );
+
+    // 1年度だけ全行除外でも、残りの年度で成功扱いにしない
+    let dir = tempfile::tempdir().unwrap();
+    write_source_dir(dir.path(), |year| {
+        let row = SourceRow::valid(year, 1, 6, 12);
+        vec![if year == 2022 {
+            row.set("天候", "9")
+        } else {
+            row
+        }]
+    });
+    let error = prepare_release(dir.path(), HOLIDAYS.as_bytes().to_vec(), &AcceptAll, "t")
+        .err()
+        .unwrap();
+    assert!(
+        matches!(&error, PreprocessError::NoRetainedRows { file } if *file == source_file_name(2022)),
+        "{error}"
+    );
 }
 
 fn matching_sheets(year: u16) -> CodeSheets {
@@ -294,17 +315,16 @@ fn xlsx_sheets_are_read_through_workbook_relationships() {
     assert!(sheets.injury.is_empty());
 }
 
-/// 実コード表の照合と各年度の先頭行。`accident/` がなければ省略を明示する（合格と混同しない）。
+/// 実コード表の照合と各年度の先頭行。原本はリポジトリの `accident/` にあるので、
+/// なければ省略せず失敗にする（省略を合格と混同しない）。
 #[test]
 fn test_real_codebooks_and_row_from_each_year() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../accident");
-    if !dir.join(source_file_name(2025)).exists() {
-        eprintln!(
-            "SKIP: {} に原本がないため実データの試験を省略（合格ではない）",
-            dir.display()
-        );
-        return;
-    }
+    assert!(
+        dir.join(source_file_name(2025)).exists(),
+        "{} に原本がありません（リポジトリの accident/ が必要）",
+        dir.display()
+    );
     let (xlsx, pdf) = FileCodebooks.verify(&dir).expect("実コード表の照合");
     assert_eq!(
         xlsx.iter().map(|c| c.source_year).collect::<Vec<_>>(),
