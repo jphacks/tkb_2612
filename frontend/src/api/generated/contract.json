@@ -1,0 +1,1162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://accilessnavi.local/api-contract",
+  "$defs": {
+    "Mode": {
+      "type": "string",
+      "enum": [
+        "walk",
+        "bike",
+        "car"
+      ],
+      "description": "徒歩 / 自転車 / 自動車"
+    },
+    "Period": {
+      "type": "string",
+      "enum": [
+        "早朝",
+        "昼",
+        "夕",
+        "夜",
+        "深夜"
+      ],
+      "description": "4:00〜8:59 / 9:00〜15:59 / 16:00〜18:59 / 19:00〜23:59 / 0:00〜3:59。内部コード0/1/2/3/4。"
+    },
+    "Weather": {
+      "type": "string",
+      "enum": [
+        "晴",
+        "曇",
+        "雨",
+        "霧",
+        "雪"
+      ],
+      "description": "内部コード1/2/3/4/5。霧と雪のコード順に注意。"
+    },
+    "DayType": {
+      "type": "string",
+      "enum": [
+        "平日",
+        "休日"
+      ],
+      "description": "休日は土曜・日曜・国民の祝日・振替休日・国民の休日・年末年始（12/29〜1/3）（移行追加）。判定はbehavior.md 2章。内部コード0/1。"
+    },
+    "PeriodInput": {
+      "description": "正規入力は日本語またはall。0〜4/nullは互換入力。整数3は19〜23時のみ（1.0の19〜3時から変更）。",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "早朝",
+            "昼",
+            "夕",
+            "夜",
+            "深夜",
+            "all"
+          ]
+        },
+        {
+          "type": "integer",
+          "enum": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "DayTypeInput": {
+      "description": "日本語またはall。nullはallと同じ。整数コードは受理しない（移行追加）。",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "平日",
+            "休日",
+            "all"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "WeatherInput": {
+      "description": "正規入力は日本語またはall。1〜5/nullは互換入力。",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "晴",
+            "曇",
+            "雨",
+            "霧",
+            "雪",
+            "all"
+          ]
+        },
+        {
+          "type": "integer",
+          "enum": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "Latitude": {
+      "type": "number",
+      "minimum": 20,
+      "maximum": 46,
+      "description": "WGS84北緯、十進度。有限数値。"
+    },
+    "Longitude": {
+      "type": "number",
+      "minimum": 122,
+      "maximum": 154,
+      "description": "WGS84東経、十進度。有限数値。"
+    },
+    "LatLon": {
+      "type": "object",
+      "required": [
+        "lat",
+        "lon"
+      ],
+      "properties": {
+        "lat": {
+          "$ref": "#/$defs/Latitude"
+        },
+        "lon": {
+          "$ref": "#/$defs/Longitude"
+        }
+      },
+      "additionalProperties": true
+    },
+    "Position": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/Longitude"
+        },
+        {
+          "$ref": "#/$defs/Latitude"
+        }
+      ],
+      "items": false,
+      "description": "WGS84の[lon,lat]。順序固定、標高なし。",
+      "example": [
+        139.7671,
+        35.6812
+      ]
+    },
+    "LineString": {
+      "type": "object",
+      "required": [
+        "type",
+        "coordinates"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "LineString"
+        },
+        "coordinates": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 15000,
+          "items": {
+            "$ref": "#/$defs/Position"
+          }
+        }
+      },
+      "description": "GeoJSON geometry。MapLibre GeoJSON sourceへ直接設定可能。"
+    },
+    "Point": {
+      "type": "object",
+      "required": [
+        "type",
+        "coordinates"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "Point"
+        },
+        "coordinates": {
+          "$ref": "#/$defs/Position"
+        }
+      }
+    },
+    "RouteRequest": {
+      "type": "object",
+      "required": [
+        "origin",
+        "dest"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "origin": {
+          "$ref": "#/$defs/LatLon"
+        },
+        "dest": {
+          "$ref": "#/$defs/LatLon"
+        },
+        "mode": {
+          "$ref": "#/$defs/Mode",
+          "default": "walk"
+        },
+        "period": {
+          "$ref": "#/$defs/PeriodInput",
+          "default": "all"
+        },
+        "時間帯": {
+          "$ref": "#/$defs/PeriodInput",
+          "deprecated": true,
+          "description": "periodキーが存在しないときだけ使う互換エイリアス。"
+        },
+        "hour": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 23,
+          "description": "日本の時、指定した時間帯全体を対象にする（0〜3は深夜、19〜23は夜）。periodと矛盾すると400。"
+        },
+        "weather": {
+          "$ref": "#/$defs/WeatherInput",
+          "default": "all"
+        },
+        "day_type": {
+          "$ref": "#/$defs/DayTypeInput",
+          "default": "all",
+          "description": "曜日区分（移行追加）。出発日時からの判定は/api/conditionsで行う。"
+        },
+        "max_detour_min": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 30,
+          "default": 10,
+          "description": "最短時間経路からの追加許容時間、分。小数可。"
+        }
+      }
+    },
+    "RouteId": {
+      "type": "string",
+      "pattern": "^route-[1-6]$",
+      "description": "duration安定ソート後の候補順。この検索応答の中だけで有効。"
+    },
+    "DatasetId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "ロードしたgzip CSVバイト列のSHA-256。事故IDの名前空間。"
+    },
+    "Years": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "integer",
+        "minimum": 1900
+      },
+      "description": "ロードしたsource_yearの昇順集合。実発生年ではない。",
+      "example": [
+        2019,
+        2020,
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ]
+    },
+    "Count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "件数、人数または非負整数。具体的な単位は各フィールドを参照。"
+    },
+    "AccidentFeature": {
+      "type": "object",
+      "required": [
+        "type",
+        "id",
+        "geometry",
+        "properties"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "Feature"
+        },
+        "id": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "gzip CSVのデータ行0始まり。dataset_idと組にして識別。"
+        },
+        "geometry": {
+          "$ref": "#/$defs/Point"
+        },
+        "properties": {
+          "type": "object",
+          "required": [
+            "deaths",
+            "injuries",
+            "source_year",
+            "date",
+            "weather",
+            "period",
+            "day_type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "deaths": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999,
+              "description": "事故全体の死者数、人"
+            },
+            "injuries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 999,
+              "description": "事故全体の負傷者数、人"
+            },
+            "source_year": {
+              "type": "integer",
+              "minimum": 1900,
+              "description": "原本CSVの年度"
+            },
+            "date": {
+              "type": "integer",
+              "minimum": 19000101,
+              "maximum": 99991231,
+              "description": "発生日YYYYMMDD。実在日でsource_year以下の年。日付文字列への変更はしない。",
+              "example": 20211231
+            },
+            "weather": {
+              "$ref": "#/$defs/Weather"
+            },
+            "period": {
+              "$ref": "#/$defs/Period"
+            },
+            "day_type": {
+              "$ref": "#/$defs/DayType",
+              "description": "発生年月日から前処理で判定した曜日区分。フロントで再判定しない。"
+            }
+          }
+        }
+      }
+    },
+    "AccidentCollection": {
+      "type": "object",
+      "required": [
+        "type",
+        "features"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "FeatureCollection"
+        },
+        "features": {
+          "type": "array",
+          "maxItems": 250,
+          "items": {
+            "$ref": "#/$defs/AccidentFeature"
+          }
+        }
+      },
+      "description": "間引き後の事故点。死亡事故を先に最大250件、残り枠を負傷事故へ。\n各群は元順を保ちN>limitならfloor(i*N/limit)の等間隔抽出。\n集計は間引き前全件。0件ならfeatures=[]。MapLibreへ直接設定可能。\n"
+    },
+    "HighRiskFeature": {
+      "type": "object",
+      "required": [
+        "type",
+        "id",
+        "geometry",
+        "properties"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "Feature"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^route-[1-6]:segment-[0-9]+$",
+          "description": "route_idと分割後segment_indexから作る応答内ID。"
+        },
+        "geometry": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/LineString"
+            },
+            {
+              "properties": {
+                "coordinates": {
+                  "maxItems": 2
+                }
+              }
+            }
+          ],
+          "description": "最大75mへの分割後小線分の両端。元頂点区間の全体とは限らない。"
+        },
+        "properties": {
+          "type": "object",
+          "required": [
+            "route_id",
+            "severity_weight",
+            "segment_index",
+            "source_vertex_start_index",
+            "source_vertex_end_index"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "route_id": {
+              "$ref": "#/$defs/RouteId"
+            },
+            "severity_weight": {
+              "type": "integer",
+              "minimum": 3,
+              "description": "この最寄り小線分へ割り当てた72m以内の事故の死者×10+負傷者の合計、重み点。距離減衰・天候倍率を含まない。"
+            },
+            "segment_index": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "75m分割後の小線分の0始まりindex。元geometryの頂点indexではない。"
+            },
+            "source_vertex_start_index": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 14998,
+              "description": "分割元のgeometry.coordinatesの始点index j。"
+            },
+            "source_vertex_end_index": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 14999,
+              "description": "分割元の終点index。必ずj+1、coordinates長未満。"
+            }
+          }
+        }
+      },
+      "description": "表示用の小線分。index/IDは当該検索応答内限定。\nナビ通知には選定候補のnavigation.sectionsを使い、この表示用Featureを流用しない。\n"
+    },
+    "HighRiskCollection": {
+      "type": "object",
+      "required": [
+        "type",
+        "features"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "FeatureCollection"
+        },
+        "features": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/HighRiskFeature"
+          }
+        }
+      },
+      "description": "重み降順、同値はsegment_index昇順の最大100区間、重み3以上。\n切り捨ての有無は候補のhigh_risk_totalとの比較で判定する。\n連結しない。全高リスク区間の網羅ではなく表示用の上位集合。空ならfeatures=[]。\nGPS接近通知に流用しない。全対象区間は別フィールドnavigation.sectionsで配信する。\n"
+    },
+    "NavigationSection": {
+      "type": "object",
+      "required": [
+        "id",
+        "start_segment_index",
+        "end_segment_index",
+        "start_m",
+        "end_m",
+        "severity_weight"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^route-[1-6]:nav-[0-9]{1,5}-[0-9]{1,5}$",
+          "description": "route-N:nav-S-E。応答内の経路IDと最初/最後の小線分sid。検索世代を越えて使わない。"
+        },
+        "start_segment_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16465,
+          "description": "結合した最初のsid（75m分割後、0始まり）。"
+        },
+        "end_segment_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16465,
+          "description": "結合した最後のsid、両端を含む。start_segment_index以上。"
+        },
+        "start_m": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 110000,
+          "description": "経路先頭から区間先頭までの局所平面累積距離、m。behavior.md 6・7章。丸めなし。"
+        },
+        "end_m": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 110000,
+          "description": "区間末尾までの同じ累積距離、m。start_m以上、navigation.length_m以下。0長も残す。"
+        },
+        "severity_weight": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 9007199254740991,
+          "description": "結合した対象小線分の深刻度の和。距離減衰・天候倍率なし。通知頻度や安全度の順位に使わない。"
+        }
+      },
+      "description": "重み3以上の小線分でsidが連続する最大列を結合した区間。元geometryは重複送信しない。\n元geometryとnavigation.vertex_distances_mから表示位置を補間する。区間の計算・順序はbackendだけで決める。\n"
+    },
+    "NavigationData": {
+      "type": "object",
+      "required": [
+        "projection_lat_deg",
+        "length_m",
+        "vertex_distances_m",
+        "sections"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "projection_lat_deg": {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 46,
+          "description": "元geometry全頂点の緯度の算術平均φ、度。behavior.md 6章の局所平面投影に使用。"
+        },
+        "length_m": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 110000,
+          "description": "局所平面での経路全長L、m。OSRM distance・geometry_lengthと異なる。0ならナビ開始不可、候補は保持。"
+        },
+        "vertex_distances_m": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 15000,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 110000
+          },
+          "description": "元geometryの各頂点までの累積距離、m。頂点数と同数、先頭0、非減少、末尾length_m。重複頂点を残しf64値を丸めず返す。"
+        },
+        "sections": {
+          "type": "array",
+          "maxItems": 8233,
+          "items": {
+            "$ref": "#/$defs/NavigationSection"
+          },
+          "description": "全対象区間をstart_segment_index昇順で返し、切り捨てない。対象なしは[]。\n区間のsid範囲は重複せず、隣接区間の間には対象外sidが1本以上ある。\nsum(end_segment_index-start_segment_index+1)=候補のhigh_risk_total。\n"
+        }
+      },
+      "description": "移行追加。選定1〜2経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。\n距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。\n110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。\n選定経路分のnavigation合計は空白なしUTF-8 JSONで5000000バイト以下を検証する。\n"
+    },
+    "WeatherMatch": {
+      "type": "object",
+      "required": [
+        "accident_count",
+        "fatal_accidents",
+        "injury_accidents",
+        "deaths",
+        "injuries"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "accident_count": {
+          "$ref": "#/$defs/Count"
+        },
+        "fatal_accidents": {
+          "$ref": "#/$defs/Count"
+        },
+        "injury_accidents": {
+          "$ref": "#/$defs/Count"
+        },
+        "deaths": {
+          "$ref": "#/$defs/Count"
+        },
+        "injuries": {
+          "$ref": "#/$defs/Count"
+        }
+      },
+      "description": "集合Bのうち事故の天候が指定天候と一致する事故の集計。該当なしは全項目0。"
+    },
+    "RouteCandidate": {
+      "type": "object",
+      "required": [
+        "id",
+        "duration",
+        "distance",
+        "geometry",
+        "accident_count",
+        "fatal_accidents",
+        "injury_accidents",
+        "deaths",
+        "injuries",
+        "weather_match",
+        "weighted_risk",
+        "risk_per_km",
+        "accident_points",
+        "points_shown",
+        "high_risk_sections",
+        "high_risk_total",
+        "navigation",
+        "exact_condition_count",
+        "extra_minutes",
+        "within_detour"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/RouteId"
+        },
+        "duration": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "OSRM等の推定所要時間、秒"
+        },
+        "distance": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 80000,
+          "description": "OSRM等の経路距離、メートル"
+        },
+        "geometry": {
+          "$ref": "#/$defs/LineString"
+        },
+        "accident_count": {
+          "$ref": "#/$defs/Count",
+          "description": "集合B（72m以内・移動手段・時間帯・曜日区分。天候では絞らない）の事故件数、間引き前"
+        },
+        "fatal_accidents": {
+          "$ref": "#/$defs/Count",
+          "description": "死者1人以上の事故件数"
+        },
+        "injury_accidents": {
+          "$ref": "#/$defs/Count",
+          "description": "死者0人の事故件数。fatal_accidentsとの和がaccident_count。"
+        },
+        "deaths": {
+          "$ref": "#/$defs/Count",
+          "description": "該当事故全体の死者合計、人"
+        },
+        "injuries": {
+          "$ref": "#/$defs/Count",
+          "description": "該当事故全体の負傷者合計、人"
+        },
+        "weather_match": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WeatherMatch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "天候指定時は指定天候に一致する事故の集計。天候allならnull。キーは常に返す。"
+        },
+        "weighted_risk": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Σ exp(-d²/(2·24²)) × 天候倍率 × (10×死者+負傷者)、小数2桁に丸め。重み点。\n天候倍率は指定天候が雨で一致なら2、霧/雪で一致なら4、それ以外1。候補の選定に使用。\n"
+        },
+        "risk_per_km": {
+          "type": "number",
+          "minimum": 0,
+          "description": "丸めたweighted_risk/max(distance/1000,0.001)、重み点/km、小数3桁に丸め。選定に使わない。"
+        },
+        "accident_points": {
+          "$ref": "#/$defs/AccidentCollection"
+        },
+        "points_shown": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 250,
+          "description": "accident_points.features.length=min(accident_count,250)。表示点数。"
+        },
+        "high_risk_sections": {
+          "$ref": "#/$defs/HighRiskCollection"
+        },
+        "high_risk_total": {
+          "$ref": "#/$defs/Count",
+          "description": "severity_weightが3以上の小線分の総数（100件で切る前）。high_risk_sections.features.length=min(high_risk_total,100)。"
+        },
+        "navigation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NavigationData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "必須。idがfastest_idまたはnullでないsafest_idならNavigationData、それ以外はnull。対象0件はsections=[]。"
+        },
+        "exact_condition_count": {
+          "$ref": "#/$defs/Count",
+          "deprecated": true,
+          "description": "非推奨の互換値。天候指定時はweather_match.accident_count、all時はaccident_count。"
+        },
+        "extra_minutes": {
+          "type": "number",
+          "minimum": 0,
+          "description": "(duration-fastest.duration)/60、分、小数3桁に丸め。"
+        },
+        "within_detour": {
+          "type": "boolean",
+          "description": "duration<=fastest.duration+max_detour_min*60+1e-6。丸め前で判定。"
+        }
+      }
+    },
+    "EffectiveConditions": {
+      "type": "object",
+      "required": [
+        "mode",
+        "period",
+        "day_type",
+        "weather"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/Mode"
+        },
+        "period": {
+          "type": "string",
+          "enum": [
+            "早朝",
+            "昼",
+            "夕",
+            "夜",
+            "深夜",
+            "全時間帯"
+          ]
+        },
+        "day_type": {
+          "type": "string",
+          "enum": [
+            "平日",
+            "休日",
+            "全曜日"
+          ]
+        },
+        "weather": {
+          "type": "string",
+          "enum": [
+            "晴",
+            "曇",
+            "雨",
+            "霧",
+            "雪",
+            "全天候"
+          ]
+        }
+      }
+    },
+    "RouteResponse": {
+      "type": "object",
+      "required": [
+        "api_version",
+        "dataset_id",
+        "fastest_id",
+        "safest_id",
+        "candidates",
+        "extra_minutes",
+        "risk_reduction_percent",
+        "reason",
+        "warnings",
+        "relaxed_conditions",
+        "effective_conditions",
+        "radius_m",
+        "distance_weight_sigma_m",
+        "aggregation_ms",
+        "data_years",
+        "risk_note"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "const": "2.0",
+          "description": "GeoJSON包装・5区分の時間帯・曜日区分・選定経路のnavigationを含む未リリースの統合契約版"
+        },
+        "dataset_id": {
+          "$ref": "#/$defs/DatasetId"
+        },
+        "fastest_id": {
+          "$ref": "#/$defs/RouteId"
+        },
+        "safest_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RouteId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "事故考慮経路。全候補で該当事故（集合B）が0件ならnull。"
+        },
+        "candidates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/RouteCandidate"
+          },
+          "description": "durationの安定昇順。fastest_idとnullでないsafest_idは必ずこの中に存在し、その候補だけnavigationが非null。同一IDの2選定は1個を共用。"
+        },
+        "extra_minutes": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "safestの追加所要時間、分、小数3桁。safest_idがnullならnull。"
+        },
+        "risk_reduction_percent": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "最短時間経路比の重み減少率、%、小数1桁。丸めたweighted_riskから計算。基準リスク0またはsafest_idがnullならnull。"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "候補内選定の理由。UIは文字列として表示する。"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "追加候補失敗、比較不可、全候補0件等。なしは空配列。"
+        },
+        "relaxed_conditions": {
+          "type": "array",
+          "maxItems": 0,
+          "items": {
+            "type": "string"
+          },
+          "deprecated": true,
+          "description": "互換フィールド。条件の自動緩和は行わないため常に空配列。"
+        },
+        "effective_conditions": {
+          "$ref": "#/$defs/EffectiveConditions"
+        },
+        "radius_m": {
+          "type": "number",
+          "const": 72,
+          "description": "事故集計（集合B）の経路周辺半径、メートル"
+        },
+        "distance_weight_sigma_m": {
+          "type": "number",
+          "const": 24,
+          "description": "距離重みのガウスσ、メートル"
+        },
+        "aggregation_ms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "候補取得後の集計・選定・ナビデータ構築時間、ミリ秒、小数2桁。外部通信と転送を除く。"
+        },
+        "data_years": {
+          "$ref": "#/$defs/Years"
+        },
+        "risk_note": {
+          "type": "string",
+          "minLength": 1,
+          "description": "参考指標であり曝露補正した事故確率ではない旨"
+        }
+      }
+    },
+    "GeocodeResult": {
+      "type": "object",
+      "required": [
+        "lat",
+        "lon",
+        "label"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "lat": {
+          "$ref": "#/$defs/Latitude"
+        },
+        "lon": {
+          "$ref": "#/$defs/Longitude"
+        },
+        "label": {
+          "type": "string",
+          "description": "提供元の表示名。HTMLとして解釈しない。"
+        }
+      }
+    },
+    "GeocodeResponse": {
+      "type": "object",
+      "required": [
+        "results",
+        "attribution"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "results": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/GeocodeResult"
+          },
+          "description": "提供元順の先頭5件。並べ替えない。"
+        },
+        "attribution": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "text",
+              "url"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "description": "表示する帰属文字列。HTMLとして解釈しない。"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^https://",
+                "description": "帰属のリンク先"
+              }
+            }
+          },
+          "description": "住所データ提供元の表示義務を満たす帰属。表示順に並ぶ。"
+        }
+      }
+    },
+    "WeatherSource": {
+      "type": "object",
+      "required": [
+        "provider",
+        "target_time",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "const": "Open-Meteo",
+          "description": "気象データ提供元。帰属表示に使う。"
+        },
+        "target_time": {
+          "type": "string",
+          "format": "date-time",
+          "description": "値が対象とする時刻（+09:00）。現況は提供元の観測・解析時刻、予報は時単位のhourly時刻。"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "current",
+            "forecast"
+          ],
+          "description": "現況値か毎時予報か"
+        }
+      }
+    },
+    "ConditionsResponse": {
+      "type": "object",
+      "required": [
+        "api_version",
+        "datetime",
+        "period",
+        "day_type",
+        "day_type_reason",
+        "holiday_table_covered",
+        "weather",
+        "weather_status",
+        "weather_source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "datetime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "判定に使った基準時刻。Asia/Tokyoへ変換し分単位に切り捨てた値（秒は00、+09:00）。"
+        },
+        "period": {
+          "$ref": "#/$defs/Period"
+        },
+        "day_type": {
+          "$ref": "#/$defs/DayType"
+        },
+        "day_type_reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "平日 / 土曜 / 日曜 / 祝日：<名称> / 振替休日 / 国民の休日 / 年末年始。UIは文字列として表示する。",
+          "examples": [
+            "平日",
+            "土曜",
+            "日曜",
+            "祝日：文化の日",
+            "振替休日",
+            "国民の休日",
+            "年末年始"
+          ]
+        },
+        "holiday_table_covered": {
+          "type": "boolean",
+          "description": "falseなら祝日表の収録範囲外で、土日と年末年始だけで判定した。"
+        },
+        "weather": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Weather"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "weather_status=okのときだけ値を持つ。気象モデルの推定値で、事故記録の現場判定とは尺度が異なる。"
+        },
+        "weather_status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "no_location",
+            "out_of_range",
+            "past",
+            "unavailable"
+          ],
+          "description": "ok=取得済み、no_location=lat/lonなし、out_of_range=予報範囲外、\npast=基準時刻が現在より15分超前、unavailable=上流失敗・期限超過・形式不正・未知コード。\n"
+        },
+        "weather_source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WeatherSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "weather_status=okのときだけ値を持つ。"
+        }
+      }
+    },
+    "HealthResponse": {
+      "type": "object",
+      "required": [
+        "api_version",
+        "status",
+        "release_id",
+        "dataset_id",
+        "accidents",
+        "load_seconds",
+        "data_years"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "api_version": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "status": {
+          "type": "string",
+          "const": "ok"
+        },
+        "release_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "事故CSVと同梱祝日表を合わせた配信物の識別子。sha256(dataset_id + \"\\n\" + 祝日表のSHA-256)。"
+        },
+        "dataset_id": {
+          "$ref": "#/$defs/DatasetId"
+        },
+        "accidents": {
+          "$ref": "#/$defs/Count",
+          "description": "modes=0を含むロード行数、件。実運用は空データで起動しない。"
+        },
+        "grid_cells": {
+          "$ref": "#/$defs/Count",
+          "description": "事故が存在する0.001度セル数。グリッド索引を採用した場合だけ返す。"
+        },
+        "load_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "データ読込時間、秒、小数3桁"
+        },
+        "data_years": {
+          "$ref": "#/$defs/Years"
+        }
+      }
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string",
+              "enum": [
+                "invalid_request",
+                "not_found",
+                "method_not_allowed",
+                "route_too_long",
+                "no_route",
+                "external_api_error",
+                "data_unavailable",
+                "service_busy",
+                "internal_error"
+              ],
+              "description": "HTTPとの対応はcomponents.responsesおよびbehavior.mdを参照。"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "description": "日本語の利用者向け説明。位置・住所・秘密・スタックトレースを含めない。"
+            }
+          }
+        }
+      }
+    }
+  }
+}
