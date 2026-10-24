@@ -23,10 +23,20 @@ export interface paths {
          *     出発日時は受け取らない。period/day_type/weatherの自動値は/api/conditionsで得る。
          *     天候は事故を除外せず、一致事故をweather_matchで別集計し、スコアで重く数える。
          *     全候補で該当事故が0件でも条件を解除しない。その場合safest_idはnull。
+         *     navigationはfastest_idとnullでないsafest_idの候補だけに含め、未選定はnull。
+         *     同一選定IDでは1個を共用する。ナビ用生成でOSRM呼出しを追加せず、1検索最大3呼出し・steps=falseを維持する。
          *     全体期限内の追加候補のみの個別上流通信の失敗は200のwarningsに残す。
          *     ただし共有上流ゲートの読取失敗・競合未解消と待ち行列満杯は、追加候補の取得中でも要求全体を503 service_busyにする。
-         *     受付からJSON準備完了までの全体期限35秒を超えたら、段階によらず503 service_busy。
+         *     受付からJSON準備・gzip圧縮完了までの全体期限35秒（転送を除く）を超えたら、段階によらず503 service_busy。
          *     候補が取得済みでも全体期限後に200を返さない。
+         *     gzipを許可するAccept-Encodingなら応答圧縮必須、Content-Encoding: gzipとVary: Accept-Encodingを返す。
+         *     identity要求は非圧縮。サイズ・スキーマ検査は展開後のJSONに適用する。
+         *     全応答は概ね11〜12MB、負荷基準は非圧縮12000000バイト。圧縮率は保証しない。
+         *     クライアント期限180秒はfetch開始から本文全受信・展開・解析/検査完了まで。ヘッダーで解除しない。
+         *     想定下り1Mbps以上・RTT 300ms以下。非圧縮12MBは転送96秒、サーバ等を含む見積り138秒。
+         *     サーバの転送待ちは送信開始から120秒、Cloud Run要求タイムアウトは180秒以上。
+         *     Cloud Run＋IAP経由の圧縮/ヘッダー/期限は要確認。途中切断は本文不完了として失敗扱い。
+         *     詳細と回線制限下の本文受信完了の受け入れはbehavior.md 7章。
          */
         post: operations["searchRoutes"];
         delete?: never;
@@ -350,8 +360,8 @@ export interface components {
             features: components["schemas"]["AccidentFeature"][];
         };
         /**
-         * @description 将来のGPS近接判定にgeometryと元経路の対応を使える。
-         *     index/IDは当該検索応答内限定。進捗距離・警告閾値・追跡履歴はv1に含めない。
+         * @description 表示用の小線分。index/IDは当該検索応答内限定。
+         *     ナビ通知には選定候補のnavigation.sectionsを使い、この表示用Featureを流用しない。
          */
         HighRiskFeature: {
             /** @constant */
@@ -378,12 +388,50 @@ export interface components {
          * @description 重み降順、同値はsegment_index昇順の最大100区間、重み3以上。
          *     切り捨ての有無は候補のhigh_risk_totalとの比較で判定する。
          *     連結しない。全高リスク区間の網羅ではなく表示用の上位集合。空ならfeatures=[]。
-         *     自動GPS警告に流用せず、将来の全区間配信は別契約にする。
+         *     GPS接近通知に流用しない。全対象区間は別フィールドnavigation.sectionsで配信する。
          */
         HighRiskCollection: {
             /** @constant */
             type: "FeatureCollection";
             features: components["schemas"]["HighRiskFeature"][];
+        };
+        /**
+         * @description 重み3以上の小線分でsidが連続する最大列を結合した区間。元geometryは重複送信しない。
+         *     元geometryとnavigation.vertex_distances_mから表示位置を補間する。区間の計算・順序はbackendだけで決める。
+         */
+        NavigationSection: {
+            /** @description route-N:nav-S-E。応答内の経路IDと最初/最後の小線分sid。検索世代を越えて使わない。 */
+            id: string;
+            /** @description 結合した最初のsid（75m分割後、0始まり）。 */
+            start_segment_index: number;
+            /** @description 結合した最後のsid、両端を含む。start_segment_index以上。 */
+            end_segment_index: number;
+            /** @description 経路先頭から区間先頭までの局所平面累積距離、m。behavior.md 6・7章。丸めなし。 */
+            start_m: number;
+            /** @description 区間末尾までの同じ累積距離、m。start_m以上、navigation.length_m以下。0長も残す。 */
+            end_m: number;
+            /** @description 結合した対象小線分の深刻度の和。距離減衰・天候倍率なし。通知頻度や安全度の順位に使わない。 */
+            severity_weight: number;
+        };
+        /**
+         * @description 移行追加。選定1〜2経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。
+         *     距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。
+         *     110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。
+         *     選定経路分のnavigation合計は空白なしUTF-8 JSONで5000000バイト以下を検証する。
+         */
+        NavigationData: {
+            /** @description 元geometry全頂点の緯度の算術平均φ、度。behavior.md 6章の局所平面投影に使用。 */
+            projection_lat_deg: number;
+            /** @description 局所平面での経路全長L、m。OSRM distance・geometry_lengthと異なる。0ならナビ開始不可、候補は保持。 */
+            length_m: number;
+            /** @description 元geometryの各頂点までの累積距離、m。頂点数と同数、先頭0、非減少、末尾length_m。重複頂点を残しf64値を丸めず返す。 */
+            vertex_distances_m: number[];
+            /**
+             * @description 全対象区間をstart_segment_index昇順で返し、切り捨てない。対象なしは[]。
+             *     区間のsid範囲は重複せず、隣接区間の間には対象外sidが1本以上ある。
+             *     sum(end_segment_index-start_segment_index+1)=候補のhigh_risk_total。
+             */
+            sections: components["schemas"]["NavigationSection"][];
         };
         /** @description 集合Bのうち事故の天候が指定天候と一致する事故の集計。該当なしは全項目0。 */
         WeatherMatch: {
@@ -425,6 +473,8 @@ export interface components {
             high_risk_sections: components["schemas"]["HighRiskCollection"];
             /** @description severity_weightが3以上の小線分の総数（100件で切る前）。high_risk_sections.features.length=min(high_risk_total,100)。 */
             high_risk_total: components["schemas"]["Count"];
+            /** @description 必須。idがfastest_idまたはnullでないsafest_idならNavigationData、それ以外はnull。対象0件はsections=[]。 */
+            navigation: components["schemas"]["NavigationData"] | null;
             /**
              * @deprecated
              * @description 非推奨の互換値。天候指定時はweather_match.accident_count、all時はaccident_count。
@@ -446,7 +496,7 @@ export interface components {
         };
         RouteResponse: {
             /**
-             * @description GeoJSON包装・5区分の時間帯・曜日区分を含む移行APIの契約版
+             * @description GeoJSON包装・5区分の時間帯・曜日区分・選定経路のnavigationを含む未リリースの統合契約版
              * @constant
              */
             api_version: "2.0";
@@ -454,7 +504,7 @@ export interface components {
             fastest_id: components["schemas"]["RouteId"];
             /** @description 事故考慮経路。全候補で該当事故（集合B）が0件ならnull。 */
             safest_id: components["schemas"]["RouteId"] | null;
-            /** @description durationの安定昇順。fastest_idとnullでないsafest_idは必ずこの中に存在する。 */
+            /** @description durationの安定昇順。fastest_idとnullでないsafest_idは必ずこの中に存在し、その候補だけnavigationが非null。同一IDの2選定は1個を共用。 */
             candidates: components["schemas"]["RouteCandidate"][];
             /** @description safestの追加所要時間、分、小数3桁。safest_idがnullならnull。 */
             extra_minutes: number | null;
@@ -480,7 +530,7 @@ export interface components {
              * @constant
              */
             distance_weight_sigma_m: 24;
-            /** @description 候補取得後の集計・選定時間、ミリ秒、小数2桁。外部通信と転送を除く。 */
+            /** @description 候補取得後の集計・選定・ナビデータ構築時間、ミリ秒、小数2桁。外部通信と転送を除く。 */
             aggregation_ms: number;
             data_years: components["schemas"]["Years"];
             /** @description 参考指標であり曝露補正した事故確率ではない旨 */
@@ -730,7 +780,7 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
-        /** @description 500 internal_error。予期しない内部失敗。内部詳細を返さない。 */
+        /** @description 500 internal_error。予期しない内部失敗、navigationのサイズ上限/相関違反。内部詳細を返さない。 */
         InternalError: {
             headers: {
                 "Cache-Control": components["headers"]["NoStore"];
@@ -784,9 +834,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 候補と比較結果。事故0件も正常応答。 */
+            /** @description 候補と比較結果。事故0件も正常応答。gzip/identityの圧縮表現によらず、展開後のJSONは同じスキーマ。 */
             200: {
                 headers: {
+                    /** @description gzipを許可する要求ではgzip必須。identityでは省略。 */
+                    "Content-Encoding"?: "gzip";
+                    /** @description 圧縮表現の選択を示す。identityでも返す。 */
+                    Vary?: "Accept-Encoding";
                     "Cache-Control": components["headers"]["NoStore"];
                     "X-Content-Type-Options": components["headers"]["NoSniff"];
                     [name: string]: unknown;

@@ -457,7 +457,7 @@
           }
         }
       },
-      "description": "将来のGPS近接判定にgeometryと元経路の対応を使える。\nindex/IDは当該検索応答内限定。進捗距離・警告閾値・追跡履歴はv1に含めない。\n"
+      "description": "表示用の小線分。index/IDは当該検索応答内限定。\nナビ通知には選定候補のnavigation.sectionsを使い、この表示用Featureを流用しない。\n"
     },
     "HighRiskCollection": {
       "type": "object",
@@ -479,7 +479,101 @@
           }
         }
       },
-      "description": "重み降順、同値はsegment_index昇順の最大100区間、重み3以上。\n切り捨ての有無は候補のhigh_risk_totalとの比較で判定する。\n連結しない。全高リスク区間の網羅ではなく表示用の上位集合。空ならfeatures=[]。\n自動GPS警告に流用せず、将来の全区間配信は別契約にする。\n"
+      "description": "重み降順、同値はsegment_index昇順の最大100区間、重み3以上。\n切り捨ての有無は候補のhigh_risk_totalとの比較で判定する。\n連結しない。全高リスク区間の網羅ではなく表示用の上位集合。空ならfeatures=[]。\nGPS接近通知に流用しない。全対象区間は別フィールドnavigation.sectionsで配信する。\n"
+    },
+    "NavigationSection": {
+      "type": "object",
+      "required": [
+        "id",
+        "start_segment_index",
+        "end_segment_index",
+        "start_m",
+        "end_m",
+        "severity_weight"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^route-[1-6]:nav-[0-9]{1,5}-[0-9]{1,5}$",
+          "description": "route-N:nav-S-E。応答内の経路IDと最初/最後の小線分sid。検索世代を越えて使わない。"
+        },
+        "start_segment_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16465,
+          "description": "結合した最初のsid（75m分割後、0始まり）。"
+        },
+        "end_segment_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16465,
+          "description": "結合した最後のsid、両端を含む。start_segment_index以上。"
+        },
+        "start_m": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 110000,
+          "description": "経路先頭から区間先頭までの局所平面累積距離、m。behavior.md 6・7章。丸めなし。"
+        },
+        "end_m": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 110000,
+          "description": "区間末尾までの同じ累積距離、m。start_m以上、navigation.length_m以下。0長も残す。"
+        },
+        "severity_weight": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 9007199254740991,
+          "description": "結合した対象小線分の深刻度の和。距離減衰・天候倍率なし。通知頻度や安全度の順位に使わない。"
+        }
+      },
+      "description": "重み3以上の小線分でsidが連続する最大列を結合した区間。元geometryは重複送信しない。\n元geometryとnavigation.vertex_distances_mから表示位置を補間する。区間の計算・順序はbackendだけで決める。\n"
+    },
+    "NavigationData": {
+      "type": "object",
+      "required": [
+        "projection_lat_deg",
+        "length_m",
+        "vertex_distances_m",
+        "sections"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "projection_lat_deg": {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 46,
+          "description": "元geometry全頂点の緯度の算術平均φ、度。behavior.md 6章の局所平面投影に使用。"
+        },
+        "length_m": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 110000,
+          "description": "局所平面での経路全長L、m。OSRM distance・geometry_lengthと異なる。0ならナビ開始不可、候補は保持。"
+        },
+        "vertex_distances_m": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 15000,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 110000
+          },
+          "description": "元geometryの各頂点までの累積距離、m。頂点数と同数、先頭0、非減少、末尾length_m。重複頂点を残しf64値を丸めず返す。"
+        },
+        "sections": {
+          "type": "array",
+          "maxItems": 8233,
+          "items": {
+            "$ref": "#/$defs/NavigationSection"
+          },
+          "description": "全対象区間をstart_segment_index昇順で返し、切り捨てない。対象なしは[]。\n区間のsid範囲は重複せず、隣接区間の間には対象外sidが1本以上ある。\nsum(end_segment_index-start_segment_index+1)=候補のhigh_risk_total。\n"
+        }
+      },
+      "description": "移行追加。選定1〜2経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。\n距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。\n110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。\n選定経路分のnavigation合計は空白なしUTF-8 JSONで5000000バイト以下を検証する。\n"
     },
     "WeatherMatch": {
       "type": "object",
@@ -529,6 +623,7 @@
         "points_shown",
         "high_risk_sections",
         "high_risk_total",
+        "navigation",
         "exact_condition_count",
         "extra_minutes",
         "within_detour"
@@ -608,6 +703,17 @@
         "high_risk_total": {
           "$ref": "#/$defs/Count",
           "description": "severity_weightが3以上の小線分の総数（100件で切る前）。high_risk_sections.features.length=min(high_risk_total,100)。"
+        },
+        "navigation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NavigationData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "必須。idがfastest_idまたはnullでないsafest_idならNavigationData、それ以外はnull。対象0件はsections=[]。"
         },
         "exact_condition_count": {
           "$ref": "#/$defs/Count",
@@ -695,7 +801,7 @@
         "api_version": {
           "type": "string",
           "const": "2.0",
-          "description": "GeoJSON包装・5区分の時間帯・曜日区分を含む移行APIの契約版"
+          "description": "GeoJSON包装・5区分の時間帯・曜日区分・選定経路のnavigationを含む未リリースの統合契約版"
         },
         "dataset_id": {
           "$ref": "#/$defs/DatasetId"
@@ -721,7 +827,7 @@
           "items": {
             "$ref": "#/$defs/RouteCandidate"
           },
-          "description": "durationの安定昇順。fastest_idとnullでないsafest_idは必ずこの中に存在する。"
+          "description": "durationの安定昇順。fastest_idとnullでないsafest_idは必ずこの中に存在し、その候補だけnavigationが非null。同一IDの2選定は1個を共用。"
         },
         "extra_minutes": {
           "type": [
@@ -777,7 +883,7 @@
         "aggregation_ms": {
           "type": "number",
           "minimum": 0,
-          "description": "候補取得後の集計・選定時間、ミリ秒、小数2桁。外部通信と転送を除く。"
+          "description": "候補取得後の集計・選定・ナビデータ構築時間、ミリ秒、小数2桁。外部通信と転送を除く。"
         },
         "data_years": {
           "$ref": "#/$defs/Years"

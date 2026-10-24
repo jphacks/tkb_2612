@@ -4,6 +4,7 @@ import type {
   GeocodeResponse,
   HealthResponse,
   LatLon,
+  NavigationData,
   Period,
   Place,
   RouteCandidate,
@@ -137,6 +138,23 @@ const interpolate = (
   ratio: number,
 ): Coordinate => [a[0] + (b[0] - a[0]) * ratio, a[1] + (b[1] - a[1]) * ratio];
 
+/** Local-plane projection shared with behavior.md 6–7 so demo sids and navigation agree. */
+function localPlane(coords: Coordinate[]) {
+  const K = (Math.PI * 6_371_008.8) / 180;
+  const phi = coords.reduce((sum, point) => sum + point[1], 0) / coords.length;
+  const kx = K * Math.cos((phi * Math.PI) / 180);
+  const edges = coords
+    .slice(1)
+    .map((point, i) =>
+      Math.hypot((point[0] - coords[i][0]) * kx, (point[1] - coords[i][1]) * K),
+    );
+  const vertexDistances = edges.reduce(
+    (list, edge) => [...list, list[list.length - 1] + edge],
+    [0],
+  );
+  return { phi, edges, vertexDistances };
+}
+
 function periodOf(request: RouteRequest): Period | "all" {
   const value = request.period ?? request.時間帯 ?? "all";
   const canonical =
@@ -172,6 +190,7 @@ export function createDemoRouteResponse(
     Math.round((distance(start, end) * 1.15) / speed),
   );
 
+  const navigations = new Map<string, NavigationData>();
   const candidates: RouteCandidate[] = [0, 1].map((index) => {
     const id = `route-${index + 1}`;
     const bend = index === 0 ? 0.09 : -0.2;
@@ -200,16 +219,33 @@ export function createDemoRouteResponse(
             ? 3
             : 1;
     const duration = baseTime + index * 360;
-    const precedingSegments = Math.max(
-      1,
-      Math.ceil(distance(coords[0], coords[1]) / 75),
-    );
-    const sourceSegments = Math.max(
-      1,
-      Math.ceil(distance(coords[1], coords[2]) / 75),
-    );
+    const plane = localPlane(coords);
+    const precedingSegments = Math.max(1, Math.ceil(plane.edges[0] / 75));
+    const sourceSegments = Math.max(1, Math.ceil(plane.edges[1] / 75));
     const localSegment = Math.floor(sourceSegments / 2);
     const segmentIndex = precedingSegments + localSegment;
+    const navigation: NavigationData = {
+      projection_lat_deg: plane.phi,
+      length_m: plane.vertexDistances[plane.vertexDistances.length - 1],
+      vertex_distances_m: plane.vertexDistances,
+      sections: count
+        ? [
+            {
+              id: `${id}:nav-${segmentIndex}-${segmentIndex}`,
+              start_segment_index: segmentIndex,
+              end_segment_index: segmentIndex,
+              start_m:
+                plane.vertexDistances[1] +
+                (plane.edges[1] * localSegment) / sourceSegments,
+              end_m:
+                plane.vertexDistances[1] +
+                (plane.edges[1] * (localSegment + 1)) / sourceSegments,
+              severity_weight: count * 3,
+            },
+          ]
+        : [],
+    };
+    navigations.set(id, navigation);
     const sectionStart = interpolate(
       coords[1],
       coords[2],
@@ -297,6 +333,8 @@ export function createDemoRouteResponse(
           : [],
       },
       high_risk_total: count ? 1 : 0,
+      // Filled after selection: only fastest/safest carry navigation data.
+      navigation: null,
       exact_condition_count: count,
       extra_minutes: index * 6,
       within_detour: duration <= baseTime + maxDetour * 60 + 1e-6,
@@ -314,6 +352,9 @@ export function createDemoRouteResponse(
               a.duration - b.duration ||
               a.distance - b.distance,
           )[0];
+  for (const route of candidates)
+    if (route.id === fastest.id || route.id === safest?.id)
+      route.navigation = navigations.get(route.id) ?? null;
   return {
     api_version: "2.0",
     dataset_id: DATASET_ID,

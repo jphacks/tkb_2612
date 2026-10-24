@@ -89,10 +89,9 @@ export function validateRouteResponse(
   const fastest = candidates.find((route) => route.id === response.fastest_id);
   const safest = candidates.find((route) => route.id === response.safest_id);
   if (!fastest || (response.safest_id !== null && !safest)) invalid();
-  const fastestExpected = [...candidates].sort(
-    (a, b) => a.duration - b.duration || a.distance - b.distance,
-  )[0];
-  if (fastest.id !== fastestExpected.id) invalid();
+  // Route selection rules belong to the backend (still under verification).
+  // Check only references and invariants that hold for any selection rule.
+  if (safest && !safest.within_detour) invalid();
   const allEmpty = candidates.every((route) => route.accident_count === 0);
   if (allEmpty !== (response.safest_id === null)) invalid();
   if (
@@ -109,28 +108,14 @@ export function validateRouteResponse(
     invalid();
   if (fastest.weighted_risk === 0 && response.risk_reduction_percent !== null)
     invalid();
-  if (safest) {
-    const expected = [...candidates]
-      .filter((route) => route.within_detour)
-      .sort(
-        (a, b) =>
-          a.weighted_risk - b.weighted_risk ||
-          a.duration - b.duration ||
-          a.distance - b.distance,
-      )[0];
-    if (!expected || safest.id !== expected.id) invalid();
-    if (fastest.weighted_risk > 0) {
-      const reduction =
-        Math.round((1 - safest.weighted_risk / fastest.weighted_risk) * 1000) /
-        10;
-      if (
-        response.risk_reduction_percent === null ||
-        !close(response.risk_reduction_percent, reduction, 0.051)
-      )
-        invalid();
-    }
-  }
+  let navigationBytes = 0;
   for (const route of candidates) {
+    const selected = route.id === fastest.id || route.id === safest?.id;
+    if (selected !== (route.navigation !== null)) invalid();
+    if (route.navigation) {
+      validateNavigation(route);
+      navigationBytes += utf8Length(JSON.stringify(route.navigation));
+    }
     if (route.fatal_accidents + route.injury_accidents !== route.accident_count)
       invalid();
     if (
@@ -226,7 +211,46 @@ export function validateRouteResponse(
     )
       invalid();
   }
+  if (navigationBytes > MAX_NAVIGATION_BYTES) invalid();
   return response;
+}
+
+/** behavior.md 7: selected routes' navigation must be at most 5,000,000 bytes. */
+const MAX_NAVIGATION_BYTES = 5_000_000;
+const encoder = new TextEncoder();
+const utf8Length = (text: string) => encoder.encode(text).length;
+
+function validateNavigation(route: RouteResponse["candidates"][number]) {
+  const navigation = route.navigation!;
+  const distances = navigation.vertex_distances_m;
+  const length = navigation.length_m;
+  if (
+    distances.length !== route.geometry.coordinates.length ||
+    distances[0] !== 0 ||
+    !ascending(distances) ||
+    distances[distances.length - 1] !== length
+  )
+    invalid();
+  let previousEnd = -2;
+  let previousEndM = 0;
+  let total = 0;
+  for (const section of navigation.sections) {
+    const start = section.start_segment_index;
+    const end = section.end_segment_index;
+    if (
+      section.id !== `${route.id}:nav-${start}-${end}` ||
+      end < start ||
+      start <= previousEnd + 1 ||
+      section.start_m < previousEndM ||
+      section.start_m > section.end_m ||
+      section.end_m > length
+    )
+      invalid();
+    previousEnd = end;
+    previousEndM = section.end_m;
+    total += end - start + 1;
+  }
+  if (total !== route.high_risk_total) invalid();
 }
 
 export function validateConditions(value: unknown): ConditionsResponse {

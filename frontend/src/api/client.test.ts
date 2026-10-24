@@ -77,6 +77,40 @@ describe("API client cancellation and live separation", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("waits up to 180 seconds for a route response, not the 45-second default", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("VITE_API_MODE", "live");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, options: RequestInit) =>
+          new Promise((_resolve, reject) =>
+            options.signal?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError")),
+            ),
+          ),
+      ),
+    );
+    const { searchRoutes } = await import("./client");
+    let settled = false;
+    const result = searchRoutes({
+      origin: { lat: 35.6812, lon: 139.7671 },
+      dest: { lat: 35.7138, lon: 139.7773 },
+      mode: "walk",
+      period: "all",
+      day_type: "all",
+      weather: "all",
+      max_detour_min: 10,
+    }).finally(() => {
+      settled = true;
+    });
+    const assertion = expect(result).rejects.toMatchObject({ code: "timeout" });
+    await vi.advanceTimersByTimeAsync(179_000);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await assertion;
+  });
+
   it("ends condition requests at 10 seconds and distinguishes timeouts from caller aborts", async () => {
     vi.useFakeTimers();
     vi.stubEnv("VITE_API_MODE", "live");

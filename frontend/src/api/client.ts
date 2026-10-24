@@ -72,15 +72,22 @@ async function demoStep(
     );
 }
 
-async function requestJson(
+/** Client deadlines (architecture.md 4): route covers body receipt, parsing and checks. */
+const ROUTE_TIMEOUT_MS = 180_000;
+const DEFAULT_TIMEOUT_MS = 45_000;
+const CONDITIONS_TIMEOUT_MS = 10_000;
+
+async function requestJson<T>(
   path: string,
+  parse: (data: unknown) => T,
   signal?: AbortSignal,
   body?: unknown,
-  timeout = 45_000,
-): Promise<unknown> {
+  timeout = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
   if (signal?.aborted) throw abortError();
   const controller = new AbortController();
   let timedOut = false;
+  const deadline = performance.now() + timeout;
   const abort = () => controller.abort();
   signal?.addEventListener("abort", abort, { once: true });
   const timer = setTimeout(() => {
@@ -117,7 +124,14 @@ async function requestJson(
         response.status,
       );
     }
-    return data;
+    const parsed = parse(data);
+    // Contract checks run synchronously, so the timer cannot fire during them.
+    // A result completed after the deadline is still a timeout.
+    if (performance.now() > deadline) {
+      timedOut = true;
+      throw abortError();
+    }
+    return parsed;
   } catch (error) {
     if (signal?.aborted) throw abortError();
     if (timedOut)
@@ -141,7 +155,7 @@ export async function getHealth(signal?: AbortSignal): Promise<HealthResponse> {
     await demoDelay(200, signal);
     return validateHealth(structuredClone(demoHealth));
   }
-  return validateHealth(await requestJson("/api/health", signal));
+  return requestJson("/api/health", validateHealth, signal);
 }
 
 export async function searchPlaces(
@@ -162,11 +176,10 @@ export async function searchPlaces(
     if (scenario === "empty") result.results = [];
     return validatePlaces(result);
   }
-  return validatePlaces(
-    await requestJson(
-      `/api/geocode?${new URLSearchParams({ q: query })}`,
-      signal,
-    ),
+  return requestJson(
+    `/api/geocode?${new URLSearchParams({ q: query })}`,
+    validatePlaces,
+    signal,
   );
 }
 
@@ -199,8 +212,12 @@ export async function getConditions(
     params.set("lat", location.lat.toFixed(2));
     params.set("lon", location.lon.toFixed(2));
   }
-  return validateConditions(
-    await requestJson(`/api/conditions?${params}`, signal, undefined, 10_000),
+  return requestJson(
+    `/api/conditions?${params}`,
+    validateConditions,
+    signal,
+    undefined,
+    CONDITIONS_TIMEOUT_MS,
   );
 }
 
@@ -220,8 +237,11 @@ export async function searchRoutes(
       request,
     );
   }
-  return validateRouteResponse(
-    await requestJson("/api/route", signal, request),
+  return requestJson(
+    "/api/route",
+    (data) => validateRouteResponse(data, request),
+    signal,
     request,
+    ROUTE_TIMEOUT_MS,
   );
 }

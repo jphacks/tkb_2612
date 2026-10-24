@@ -134,6 +134,44 @@ describe("API 2.0 contract and cross-field validation", () => {
       },
     ],
     [
+      "navigation on an unselected route",
+      (result) => {
+        // route-2 keeps its own valid navigation but is no longer selected.
+        result.safest_id = "route-1";
+        result.extra_minutes = 0;
+      },
+    ],
+    [
+      "missing navigation on a selected route",
+      (result) => {
+        result.candidates[0].navigation = null;
+      },
+    ],
+    [
+      "cumulative distances not matching geometry vertices",
+      (result) => {
+        result.candidates[0].navigation!.vertex_distances_m.pop();
+      },
+    ],
+    [
+      "cumulative distances not ending at length_m",
+      (result) => {
+        result.candidates[0].navigation!.length_m += 1;
+      },
+    ],
+    [
+      "navigation sections not covering high_risk_total",
+      (result) => {
+        result.candidates[0].navigation!.sections = [];
+      },
+    ],
+    [
+      "navigation section ID not matching its sid range",
+      (result) => {
+        result.candidates[0].navigation!.sections[0].id = "route-1:nav-0-0";
+      },
+    ],
+    [
       "API version drift",
       (result) => {
         Object.assign(result, { api_version: "1.0" });
@@ -143,6 +181,22 @@ describe("API 2.0 contract and cross-field validation", () => {
     const result = createDemoRouteResponse(request);
     mutate(result);
     expect(() => validateRouteResponse(result, request)).toThrow(/API契約/);
+  });
+
+  it("carries navigation only on the selected routes", () => {
+    const normal = validateRouteResponse(createDemoRouteResponse(request), request);
+    const selected = new Set([normal.fastest_id, normal.safest_id]);
+    for (const route of normal.candidates)
+      expect(route.navigation !== null).toBe(selected.has(route.id));
+    const zero = validateRouteResponse(
+      createDemoRouteResponse(request, "zero"),
+      request,
+    );
+    expect(zero.candidates.map((route) => route.navigation !== null)).toEqual([
+      true,
+      false,
+    ]);
+    expect(zero.candidates[0].navigation?.sections).toEqual([]);
   });
 
   it("requires weather and source to agree with weather_status", () => {

@@ -15,6 +15,7 @@ export type HealthResponse = Schema["HealthResponse"];
 export type GeocodeResponse = Schema["GeocodeResponse"];
 export type AccidentFeature = Schema["AccidentFeature"];
 export type HighRiskFeature = Schema["HighRiskFeature"];
+export type NavigationData = Schema["NavigationData"];
 export type ErrorResponse = Schema["ErrorResponse"];
 
 export type Scenario =
