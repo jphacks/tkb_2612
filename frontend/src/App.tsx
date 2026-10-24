@@ -433,31 +433,6 @@ export default function App() {
           >
             AcciLess<span>Navi</span>
           </button>
-          <nav aria-label="検索ステップ" className="steps">
-            {(["places", "conditions", "results"] as const).map(
-              (item, index) => (
-                <button
-                  key={item}
-                  type="button"
-                  aria-current={page === item ? "step" : undefined}
-                  disabled={
-                    item === "conditions"
-                      ? !confirmed
-                      : item === "results"
-                        ? !result
-                        : false
-                  }
-                  onClick={() => {
-                    if (page !== item && searching) invalidate();
-                    setPage(item);
-                  }}
-                >
-                  <span>{index + 1}</span>
-                  <b>{["地点", "条件", "比較"][index]}</b>
-                </button>
-              ),
-            )}
-          </nav>
           <span className={`mode-badge ${isDemo ? "" : "live"}`}>
             {isDemo ? "デモデータ" : "API接続"}
           </span>
@@ -471,7 +446,7 @@ export default function App() {
               <div className="place-form">
                 {places}
                 <button
-                  className="primary full next-button"
+                  className="primary next-button"
                   disabled={!confirmed}
                   onClick={() => setPage("conditions")}
                 >

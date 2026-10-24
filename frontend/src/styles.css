@@ -147,40 +147,6 @@ svg {
 .mode-badge.live {
   color: var(--blue);
 }
-.steps {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-.steps button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  color: var(--muted);
-  font-size: 12px;
-  padding: 0;
-}
-.steps button span {
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  font-size: 11px;
-}
-.steps button b {
-  font-weight: 500;
-}
-.steps button[aria-current] {
-  color: var(--blue);
-}
-.steps button[aria-current] span {
-  background: var(--blue);
-  color: white;
-  border-color: var(--blue);
-}
 .form-page {
   width: calc(100% - 48px);
   max-width: 480px;
@@ -396,7 +362,12 @@ svg {
   width: 100%;
 }
 .next-button {
+  display: flex;
+  width: fit-content;
+  min-width: 180px;
+  max-width: 100%;
   margin-top: 32px;
+  margin-left: auto;
   justify-content: space-between;
 }
 .condition-fields {
@@ -802,9 +773,6 @@ svg {
     padding: 0 24px;
     height: 64px;
   }
-  .steps {
-    gap: 14px;
-  }
   .result-page {
     height: calc(100dvh - 64px);
   }
@@ -824,18 +792,6 @@ svg {
   .wordmark {
     font-size: 20px;
     letter-spacing: -1px;
-  }
-  .steps {
-    gap: 8px;
-    margin-left: auto;
-  }
-  .steps button b {
-    display: none;
-  }
-  .steps button span {
-    width: 22px;
-    height: 22px;
-    font-size: 10px;
   }
   .mode-badge {
     display: none;
