@@ -1,0 +1,662 @@
+{
+  "description": "docs/api/openapi.yaml のPOST /api/route 200応答例から生成した期待値。入力は docs/api/fixtures/route-example-inputs.json の同名の例。手で編集せず backend/scripts/extract_route_examples.py で再生成する。",
+  "examples": {
+    "singleRoute": {
+      "fastest_id": "route-1",
+      "safest_id": "route-1",
+      "candidates": [
+        {
+          "duration": 600,
+          "distance": 1000,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          },
+          "accident_count": 1,
+          "fatal_accidents": 1,
+          "injury_accidents": 0,
+          "deaths": 1,
+          "injuries": 2,
+          "weather_match": {
+            "accident_count": 1,
+            "fatal_accidents": 1,
+            "injury_accidents": 0,
+            "deaths": 1,
+            "injuries": 2
+          },
+          "weighted_risk": 12.0,
+          "risk_per_km": 12.0,
+          "accident_points": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": 0,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005,
+                    35.0
+                  ]
+                },
+                "properties": {
+                  "deaths": 1,
+                  "injuries": 2,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              }
+            ]
+          },
+          "points_shown": 1,
+          "high_risk_sections": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": "route-1:segment-6",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.0046153846154,
+                      35.0
+                    ],
+                    [
+                      139.0053846153846,
+                      35.0
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 12,
+                  "segment_index": 6,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              }
+            ]
+          },
+          "high_risk_total": 1,
+          "navigation": {
+            "projection_lat_deg": 35.0,
+            "length_m": 910.8567728809412,
+            "vertex_distances_m": [
+              0.0,
+              910.8567728809412
+            ],
+            "sections": [
+              {
+                "id": "route-1:nav-6-6",
+                "start_segment_index": 6,
+                "end_segment_index": 6,
+                "start_m": 420.3954336373575,
+                "end_m": 490.4613392435837,
+                "severity_weight": 12
+              }
+            ]
+          },
+          "id": "route-1",
+          "exact_condition_count": 1,
+          "extra_minutes": 0.0,
+          "within_detour": true
+        }
+      ],
+      "extra_minutes": 0.0,
+      "risk_reduction_percent": 0.0,
+      "reason": "今回は最短時間経路が事故を考慮した経路と同じです。",
+      "warnings": [
+        "経路候補が1本のみのため、経路間の比較はできません。"
+      ],
+      "relaxed_conditions": [],
+      "effective_conditions": {
+        "mode": "walk",
+        "period": "昼",
+        "day_type": "休日",
+        "weather": "晴"
+      },
+      "radius_m": 72,
+      "distance_weight_sigma_m": 24,
+      "aggregation_ms": 0,
+      "data_years": [
+        2025
+      ],
+      "risk_note": "過去の事故件数に基づく参考指標です。経路から約72m以内の事故を、近いほど重く数えています。交通量や通行回数で補正した事故確率ではありません。",
+      "api_version": "2.0",
+      "dataset_id": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "noAccidents": {
+      "fastest_id": "route-1",
+      "safest_id": null,
+      "candidates": [
+        {
+          "duration": 600,
+          "distance": 1000,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          },
+          "accident_count": 0,
+          "fatal_accidents": 0,
+          "injury_accidents": 0,
+          "deaths": 0,
+          "injuries": 0,
+          "weather_match": {
+            "accident_count": 0,
+            "fatal_accidents": 0,
+            "injury_accidents": 0,
+            "deaths": 0,
+            "injuries": 0
+          },
+          "weighted_risk": 0.0,
+          "risk_per_km": 0.0,
+          "accident_points": {
+            "type": "FeatureCollection",
+            "features": []
+          },
+          "points_shown": 0,
+          "high_risk_sections": {
+            "type": "FeatureCollection",
+            "features": []
+          },
+          "high_risk_total": 0,
+          "navigation": {
+            "projection_lat_deg": 35.0,
+            "length_m": 910.8567728809412,
+            "vertex_distances_m": [
+              0.0,
+              910.8567728809412
+            ],
+            "sections": []
+          },
+          "id": "route-1",
+          "exact_condition_count": 0,
+          "extra_minutes": 0.0,
+          "within_detour": true
+        }
+      ],
+      "extra_minutes": null,
+      "risk_reduction_percent": null,
+      "reason": "全候補で該当する過去の事故がないため、事故を考慮した経路は選んでいません。",
+      "warnings": [
+        "経路候補が1本のみのため、経路間の比較はできません。",
+        "該当する事故が0件でも、安全であることの証明ではありません。"
+      ],
+      "relaxed_conditions": [],
+      "effective_conditions": {
+        "mode": "walk",
+        "period": "深夜",
+        "day_type": "休日",
+        "weather": "雪"
+      },
+      "radius_m": 72,
+      "distance_weight_sigma_m": 24,
+      "aggregation_ms": 0,
+      "data_years": [
+        2025
+      ],
+      "risk_note": "過去の事故件数に基づく参考指標です。経路から約72m以内の事故を、近いほど重く数えています。雨・霧・雪を指定した場合は、同じ天候の事故をさらに重く数えます。交通量や通行回数で補正した事故確率ではありません。",
+      "api_version": "2.0",
+      "dataset_id": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "twoSelected": {
+      "fastest_id": "route-1",
+      "safest_id": "route-2",
+      "candidates": [
+        {
+          "duration": 600,
+          "distance": 1000,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          },
+          "accident_count": 2,
+          "fatal_accidents": 1,
+          "injury_accidents": 1,
+          "deaths": 1,
+          "injuries": 5,
+          "weather_match": {
+            "accident_count": 2,
+            "fatal_accidents": 1,
+            "injury_accidents": 1,
+            "deaths": 1,
+            "injuries": 5
+          },
+          "weighted_risk": 12.21,
+          "risk_per_km": 12.21,
+          "accident_points": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": 0,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005,
+                    35.0
+                  ]
+                },
+                "properties": {
+                  "deaths": 1,
+                  "injuries": 2,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 1,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.0005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 3,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              }
+            ]
+          },
+          "points_shown": 2,
+          "high_risk_sections": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": "route-1:segment-6",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.0046153846154,
+                      35.0
+                    ],
+                    [
+                      139.0053846153846,
+                      35.0
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 12,
+                  "segment_index": 6,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-3",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00230769230768,
+                      35.0
+                    ],
+                    [
+                      139.00307692307692,
+                      35.0
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 3,
+                  "segment_index": 3,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              }
+            ]
+          },
+          "high_risk_total": 2,
+          "navigation": {
+            "projection_lat_deg": 35.0,
+            "length_m": 910.8567728809412,
+            "vertex_distances_m": [
+              0.0,
+              910.8567728809412
+            ],
+            "sections": [
+              {
+                "id": "route-1:nav-3-3",
+                "start_segment_index": 3,
+                "end_segment_index": 3,
+                "start_m": 210.19771681867874,
+                "end_m": 280.263622424905,
+                "severity_weight": 3
+              },
+              {
+                "id": "route-1:nav-6-6",
+                "start_segment_index": 6,
+                "end_segment_index": 6,
+                "start_m": 420.3954336373575,
+                "end_m": 490.4613392435837,
+                "severity_weight": 12
+              }
+            ]
+          },
+          "id": "route-1",
+          "exact_condition_count": 2,
+          "extra_minutes": 0.0,
+          "within_detour": true
+        },
+        {
+          "duration": 750,
+          "distance": 1100,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.005,
+                35.001
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          },
+          "accident_count": 2,
+          "fatal_accidents": 0,
+          "injury_accidents": 2,
+          "deaths": 0,
+          "injuries": 11,
+          "weather_match": {
+            "accident_count": 2,
+            "fatal_accidents": 0,
+            "injury_accidents": 2,
+            "deaths": 0,
+            "injuries": 11
+          },
+          "weighted_risk": 3.64,
+          "risk_per_km": 3.309,
+          "accident_points": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": 1,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.0005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 3,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 2,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.001000000000005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 8,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              }
+            ]
+          },
+          "points_shown": 2,
+          "high_risk_sections": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": "route-2:segment-3",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00214285714284,
+                      35.00042857142857
+                    ],
+                    [
+                      139.00285714285715,
+                      35.000571428571426
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-2",
+                  "severity_weight": 11,
+                  "segment_index": 3,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              }
+            ]
+          },
+          "high_risk_total": 1,
+          "navigation": {
+            "projection_lat_deg": 35.00033333333334,
+            "length_m": 937.6090254921936,
+            "vertex_distances_m": [
+              0.0,
+              468.8045127460968,
+              937.6090254921936
+            ],
+            "sections": [
+              {
+                "id": "route-2:nav-3-3",
+                "start_segment_index": 3,
+                "end_segment_index": 3,
+                "start_m": 200.9162197483272,
+                "end_m": 267.8882929977696,
+                "severity_weight": 11
+              }
+            ]
+          },
+          "id": "route-2",
+          "exact_condition_count": 2,
+          "extra_minutes": 2.5,
+          "within_detour": true
+        },
+        {
+          "duration": 900,
+          "distance": 1400,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.005,
+                35.002
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          },
+          "accident_count": 2,
+          "fatal_accidents": 0,
+          "injury_accidents": 2,
+          "deaths": 0,
+          "injuries": 11,
+          "weather_match": {
+            "accident_count": 2,
+            "fatal_accidents": 0,
+            "injury_accidents": 2,
+            "deaths": 0,
+            "injuries": 11
+          },
+          "weighted_risk": 8.34,
+          "risk_per_km": 5.957,
+          "accident_points": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": 1,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.0005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 3,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 2,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.001000000000005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 8,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              }
+            ]
+          },
+          "points_shown": 2,
+          "high_risk_sections": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": "route-3:segment-3",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00214285714284,
+                      35.00085714285714
+                    ],
+                    [
+                      139.00285714285715,
+                      35.00114285714286
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-3",
+                  "severity_weight": 11,
+                  "segment_index": 3,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              }
+            ]
+          },
+          "high_risk_total": 1,
+          "navigation": null,
+          "id": "route-3",
+          "exact_condition_count": 2,
+          "extra_minutes": 5.0,
+          "within_detour": true
+        }
+      ],
+      "extra_minutes": 2.5,
+      "risk_reduction_percent": 70.2,
+      "reason": "取得した3候補のうち、最短時間経路から+10分以内で、距離で重み付けしたリスクが最小の経路を選びました。追加2.5分、リスク70.2%減です。",
+      "warnings": [],
+      "relaxed_conditions": [],
+      "effective_conditions": {
+        "mode": "walk",
+        "period": "昼",
+        "day_type": "休日",
+        "weather": "晴"
+      },
+      "radius_m": 72,
+      "distance_weight_sigma_m": 24,
+      "aggregation_ms": 0,
+      "data_years": [
+        2025
+      ],
+      "risk_note": "過去の事故件数に基づく参考指標です。経路から約72m以内の事故を、近いほど重く数えています。交通量や通行回数で補正した事故確率ではありません。",
+      "api_version": "2.0",
+      "dataset_id": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  }
+}
