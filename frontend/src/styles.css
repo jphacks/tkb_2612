@@ -1,6 +1,5 @@
 @import url("./components/map.css");
 @import url("./components/intro.css");
-@import url("./components/results.css");
 
 :root {
   font-family:
@@ -553,6 +552,7 @@ svg {
   overflow: hidden;
 }
 .result-page {
+  --sidebar-space: 392px;
   position: relative;
   height: calc(100dvh - 72px);
   min-height: 400px;
@@ -562,79 +562,62 @@ svg {
   inset: 0;
   background: #f1f5f9;
 }
+.sidebar-open .map-stage {
+  left: var(--sidebar-space);
+}
+.sidebar-toggle {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+.sidebar-toggle:hover {
+  background: var(--soft);
+}
 .route-panel {
   position: absolute;
   top: 16px;
   left: 16px;
   bottom: 16px;
   width: 360px;
-  background: white;
+  background: #fff;
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: auto;
   overscroll-behavior: contain;
-  z-index: 10;
+  z-index: 20;
   scrollbar-width: thin;
 }
-.panel-trip {
-  padding: 16px;
-  border-bottom: 1px solid var(--border);
-  background: #fff;
+.route-panel[hidden] {
+  display: none;
 }
 .panel-title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
+  min-height: 64px;
+  padding: 16px 16px 16px 64px;
+  background: white;
+  border-bottom: 1px solid var(--border);
 }
 .panel-title h1 {
   font-size: 16px;
   letter-spacing: 0;
 }
-.compact-locations p {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  font-size: 12px;
-  line-height: 1.7;
-  margin: 8px 0;
-  overflow-wrap: anywhere;
-}
-.point-symbol {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  border: 2px solid var(--blue);
-  flex-shrink: 0;
-  margin: 5px 2px 0;
-}
-.point-symbol.end {
-  background: var(--blue);
-  border-radius: 2px;
-}
-.compact-conditions {
-  font-size: 10px;
-  color: var(--muted);
-  margin: 12px 0;
-  line-height: 1.8;
-}
-.panel-actions {
-  display: flex;
-  gap: 8px;
-}
-.panel-actions button {
-  min-height: 40px;
-  padding: 8px 12px;
-  font-size: 11px;
-  flex: 1;
-}
 .panel-editor {
-  padding: 20px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--soft);
+  padding: 24px 16px 16px;
 }
 .panel-editor .condition-fields {
-  margin-top: 24px;
+  margin-top: 28px;
   gap: 24px;
 }
 .panel-editor .location-control {
@@ -669,10 +652,9 @@ svg {
 }
 .panel-back {
   display: flex;
-  margin: 16px auto 24px;
+  margin: 12px auto 0;
 }
 .result-empty {
-  padding: 40px 24px;
   display: flex;
   align-items: center;
   text-align: center;
@@ -692,6 +674,18 @@ svg {
 }
 .result-empty button {
   font-size: 12px;
+}
+.map-search-status {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  width: min(360px, calc(100% - 32px));
+  padding: 28px 20px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 .demo-menu {
   position: fixed;
@@ -777,8 +771,11 @@ svg {
   .result-page {
     height: calc(100dvh - 64px);
   }
+  .result-page {
+    --sidebar-space: 352px;
+  }
   .route-panel {
-    width: 340px;
+    width: 320px;
   }
   .form-page {
     margin-top: 56px;
@@ -830,61 +827,11 @@ svg {
     padding-left: 12px;
     padding-right: 12px;
   }
-  .app-results {
-    height: auto;
-    overflow: visible;
-  }
   .result-page {
-    height: auto;
-    min-height: calc(100dvh - 64px);
-    padding-top: 43dvh;
-  }
-  .map-stage {
-    position: fixed;
-    top: 64px;
-    left: 0;
-    right: 0;
-    bottom: auto;
-    height: 47dvh;
-    min-height: 280px;
+    --sidebar-space: 0px;
   }
   .route-panel {
-    position: relative;
-    width: 100%;
-    top: auto;
-    left: auto;
-    bottom: auto;
-    overflow: visible;
-    border-radius: 8px 8px 0 0;
-    border-left: 0;
-    border-right: 0;
-    padding-bottom: 64px;
-    min-height: 50dvh;
-  }
-  .panel-trip {
-    padding: 16px 20px;
-  }
-  .panel-title {
-    margin-bottom: 8px;
-  }
-  .compact-locations {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-  }
-  .compact-locations p {
-    font-size: 11px;
-    margin: 0;
-  }
-  .compact-conditions {
-    margin: 8px 0;
-    line-height: 1.6;
-  }
-  .panel-actions button {
-    min-height: 44px;
-  }
-  .panel-editor {
-    padding: 24px 20px;
+    width: min(340px, calc(100% - 72px));
   }
   .demo-menu {
     bottom: 12px;
@@ -903,13 +850,6 @@ svg {
 }
 .map-legend {
   bottom: 76px;
-}
-@media (min-width: 700px) and (max-width: 899px) {
-  .route-schematic-canvas,
-  .route-live-map,
-  .map-unavailable {
-    left: 372px;
-  }
 }
 @media (max-width: 699px) {
   .map-legend {

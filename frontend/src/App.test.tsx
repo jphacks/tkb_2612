@@ -41,13 +41,6 @@ vi.mock("./components/LogoIntro", () => ({
     <button onClick={onComplete}>動画をスキップして開始</button>
   ),
 }));
-vi.mock("./components/RouteMap", () => ({
-  RouteMap: ({ result }: { result: unknown }) => (
-    <div aria-label="地図プレビュー">
-      {result ? "地図に経路があります" : "地図に経路はありません"}
-    </div>
-  ),
-}));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -144,6 +137,33 @@ async function switchScenario(
 }
 
 describe("App search flow and condition ownership", () => {
+  it("keeps conditions visible and preserves them when the sidebar is hidden and reopened", async () => {
+    const user = await openResults();
+    const sidebar = screen.getByRole("complementary", { name: "検索条件" });
+    expect(
+      within(sidebar).getByRole("combobox", { name: "目的地" }),
+    ).toHaveValue(DEMO_PLACES[1].label);
+    expect(
+      within(sidebar).getByRole("radio", { name: "徒歩" }),
+    ).toHaveAttribute("aria-checked", "true");
+    expect(
+      within(sidebar).queryByRole("group", { name: "表示する経路" }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: "条件サイドバーを閉じる" }),
+    );
+    expect(sidebar).not.toBeVisible();
+    expect(screen.getByRole("group", { name: "表示する経路" })).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: "条件サイドバーを開く" }),
+    );
+    expect(sidebar).toBeVisible();
+    expect(
+      within(sidebar).getByRole("combobox", { name: "目的地" }),
+    ).toHaveValue(DEMO_PLACES[1].label);
+    expect(api.searchRoutes).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves confirmed addresses and manual choices when going back and forward", async () => {
     const user = await openConditions();
     await user.click(screen.getByRole("radio", { name: "自転車" }));
@@ -184,12 +204,14 @@ describe("App search flow and condition ownership", () => {
         screen.getByRole("button", { name: "ルートを比較する" }),
       ).toBeEnabled(),
     );
-    expect(
-      screen.getByRole("radio", { name: "雨" }),
-    ).toHaveAttribute("aria-checked", "true");
-    expect(
-      screen.getByRole("radio", { name: "晴" }),
-    ).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("radio", { name: "雨" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByRole("radio", { name: "晴" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
     await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
     await screen.findByRole("group", { name: "表示する経路" });
     expect(api.searchRoutes.mock.calls.at(-1)?.[0]).toMatchObject({
@@ -199,13 +221,16 @@ describe("App search flow and condition ownership", () => {
 
   it("clears old routes immediately on condition edits and sends the new values only on re-search", async () => {
     const user = await openResults();
-    expect(screen.getByText("地図に経路があります")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "条件を編集" }));
+    expect(
+      screen.getByRole("button", { name: "最短時間を選択" }),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: "雨" }));
     expect(
       screen.queryByRole("group", { name: "表示する経路" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("地図に経路はありません")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "最短時間を選択" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByText("変更した条件で再検索してください。"),
     ).toBeInTheDocument();
@@ -255,7 +280,6 @@ describe("App search flow and condition ownership", () => {
 
   it("waits for recovered automatic conditions after leaving the conditions-error scenario", async () => {
     const user = await openResults();
-    await user.click(screen.getByRole("button", { name: "条件を編集" }));
     await switchScenario(user, "条件取得不可");
     await screen.findByText(/自動項目は指定なしに戻しました/);
     expect(
@@ -266,23 +290,17 @@ describe("App search flow and condition ownership", () => {
     await switchScenario(user, "通常");
     await screen.findByText("条件を取得しています…");
     expect(api.searchRoutes).toHaveBeenCalledTimes(1);
-    expect(
-      screen.getByRole("button", { name: "再検索" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "再検索" })).toBeDisabled();
     await act(async () =>
       pending.resolve(
         createDemoConditions("2026-10-24T12:00+09:00", DEMO_PLACES[0]),
       ),
     );
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "再検索" }),
-      ).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "再検索" })).toBeEnabled(),
     );
     expect(api.searchRoutes).toHaveBeenCalledTimes(1);
-    await user.click(
-      screen.getByRole("button", { name: "再検索" }),
-    );
+    await user.click(screen.getByRole("button", { name: "再検索" }));
     await screen.findByRole("group", { name: "表示する経路" });
     expect(api.searchRoutes.mock.calls.at(-1)?.[0]).toMatchObject({
       period: "昼",
@@ -304,7 +322,7 @@ describe("App search flow and condition ownership", () => {
       within(group).getByRole("button", { name: /最短時間/ }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/事故0件は安全の証明ではありません/),
+      within(group).getByRole("button", { name: /最短時間.*過去事故 0 件/ }),
     ).toBeInTheDocument();
   });
 });

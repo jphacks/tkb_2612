@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDemoRouteResponse, DEMO_PLACES } from "../api/demo";
 import { RouteMap, type RouteMapProps } from "./RouteMap";
@@ -26,10 +26,67 @@ function mapProps(result: RouteResponse): RouteMapProps {
 }
 
 describe("RouteMap", () => {
+  it.each([
+    [390, 720],
+    [390, 400],
+    [1048, 720],
+  ])(
+    "pairs callouts with paths and keeps cards within a %i by %i map",
+    (width, height) => {
+      const bounds = vi
+        .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+        .mockReturnValue({
+          width,
+          height,
+          top: 0,
+          left: 0,
+          bottom: height,
+          right: width,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        });
+      const props = mapProps(createDemoRouteResponse(request));
+      render(<RouteMap {...props} />);
+      const cards = within(
+        screen.getByRole("group", { name: "表示する経路" }),
+      ).getAllByRole("button");
+      expect(cards).toHaveLength(2);
+      const considered = cards.find((card) =>
+        card.textContent?.includes("事故履歴を考慮"),
+      )!;
+      const fastest = cards.find((card) =>
+        card.textContent?.includes("最短時間"),
+      )!;
+      expect(considered).toHaveClass("route-considered");
+      expect(fastest).toHaveClass("route-fastest");
+      const line = screen.getByRole("button", { name: "最短時間を選択" });
+      expect(line).toHaveClass("route-fastest");
+      fireEvent.pointerEnter(fastest);
+      expect(line).toHaveClass("is-hovered");
+      fireEvent.click(fastest);
+      expect(props.onSelectRoute).toHaveBeenCalledWith(
+        props.result!.fastest_id,
+      );
+      for (const card of cards) {
+        expect(parseFloat(card.style.left)).toBeGreaterThanOrEqual(0);
+        expect(
+          parseFloat(card.style.left) + parseFloat(card.style.width),
+        ).toBeLessThanOrEqual(width);
+        expect(
+          parseFloat(card.style.top) + parseFloat(card.style.height),
+        ).toBeLessThanOrEqual(height);
+      }
+      bounds.mockRestore();
+    },
+  );
   beforeEach(() => {
     vi.stubEnv("VITE_API_MODE", "demo");
   });
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
 
   it("connects route and section selection, and only shows factual accident fields", () => {
     const props = mapProps(createDemoRouteResponse(request));
@@ -90,8 +147,6 @@ describe("RouteMap", () => {
     ).toHaveLength(1);
     rerender(<RouteMap {...props} unavailable />);
     expect(screen.getByText("地図を利用できません")).toBeVisible();
-    expect(
-      screen.getByText("経路の比較と事故記録はパネルで確認できます。"),
-    ).toBeVisible();
+    expect(screen.getByRole("group", { name: "表示する経路" })).toBeVisible();
   });
 });

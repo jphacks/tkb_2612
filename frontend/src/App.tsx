@@ -3,14 +3,12 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  ChevronDown,
   LocateFixed,
+  Menu,
   MapPin,
   Navigation,
   RefreshCw,
-  Settings2,
   SlidersHorizontal,
-  X,
 } from "lucide-react";
 import {
   ApiError,
@@ -30,7 +28,6 @@ import LocationInput, { type LocationValue } from "./components/LocationInput";
 import ConditionFields, { type AutoFields } from "./components/ConditionFields";
 import { LogoIntro } from "./components/LogoIntro";
 import { RouteMap } from "./components/RouteMap";
-import ResultsPanel from "./components/ResultsPanel";
 
 type Page = "places" | "conditions" | "results";
 const blank: LocationValue = { text: "", place: null };
@@ -51,7 +48,6 @@ const scenarios: { id: Scenario; label: string }[] = [
   { id: "conditions-error", label: "条件取得不可" },
   { id: "map-error", label: "地図利用不可" },
 ];
-const modeNames = { walk: "徒歩", bike: "自転車", car: "自動車" };
 
 export default function App() {
   const [intro, setIntro] = useState(true);
@@ -82,7 +78,7 @@ export default function App() {
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
   const [scenario, setScenario] = useState<Scenario>("normal");
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [locating, setLocating] = useState(false);
   const [locationMessage, setLocationMessage] = useState("");
   const routeRequest = useRef<AbortController | null>(null);
@@ -274,7 +270,7 @@ export default function App() {
     setResult(null);
     setSelectedSection(null);
     setError("");
-    setEditorOpen(false);
+    if (page !== "results") setSidebarOpen(true);
     setPage("results");
     try {
       let applied = valuesRef.current;
@@ -410,7 +406,6 @@ export default function App() {
       compact={page === "results"}
     />
   );
-  const summary = `${modeNames[values.mode]} · ${values.weather === "all" ? "全天候" : values.weather} · ${values.period === "all" ? "全時間帯" : values.period} · ${values.day_type === "all" ? "全曜日" : values.day_type} · 追加${values.max_detour_min}分まで`;
 
   return (
     <>
@@ -496,7 +491,19 @@ export default function App() {
             )}
           </main>
         ) : (
-          <main className="result-page">
+          <main className={`result-page${sidebarOpen ? " sidebar-open" : ""}`}>
+            <button
+              className="sidebar-toggle"
+              type="button"
+              aria-label={
+                sidebarOpen ? "条件サイドバーを閉じる" : "条件サイドバーを開く"
+              }
+              aria-expanded={sidebarOpen}
+              aria-controls="search-conditions"
+              onClick={() => setSidebarOpen((open) => !open)}
+            >
+              <Menu size={22} aria-hidden="true" />
+            </button>
             <div className="map-stage">
               <RouteMap
                 result={result}
@@ -508,84 +515,13 @@ export default function App() {
                 }}
                 onSelectSection={setSelectedSection}
                 showAccidents={showAccidents}
+                onShowAccidents={setShowAccidents}
                 unavailable={scenario === "map-error"}
               />
-            </div>
-            <aside className="route-panel" aria-label="経路の比較と検索条件">
-              <div className="panel-trip">
-                <div className="panel-title">
-                  <h1 ref={heading} tabIndex={-1}>
-                    ルート比較
-                  </h1>
-                  <button
-                    className="icon-button"
-                    aria-label="条件を編集"
-                    aria-expanded={editorOpen}
-                    onClick={() => setEditorOpen((open) => !open)}
-                  >
-                    {editorOpen ? <X size={19} /> : <Settings2 size={19} />}
-                  </button>
-                </div>
-                <div className="compact-locations">
-                  <p>
-                    <span className="point-symbol start" />
-                    {origin.text || "出発地未設定"}
-                  </p>
-                  <p>
-                    <span className="point-symbol end" />
-                    {dest.text || "目的地未設定"}
-                  </p>
-                </div>
-                <p className="compact-conditions">
-                  {departure === "now"
-                    ? "今すぐ出発"
-                    : dateTime.replace("T", " ")}
-                  （日本時間）
-                  <br />
-                  {summary}
-                </p>
-                <div className="panel-actions">
-                  <button
-                    className="secondary"
-                    onClick={() => setEditorOpen((open) => !open)}
-                  >
-                    <SlidersHorizontal size={15} />
-                    条件を変更
-                    <ChevronDown size={14} />
-                  </button>
-                  <button
-                    className="primary"
-                    disabled={
-                      !confirmed || searching || conditionBusy || dataBlocked
-                    }
-                    onClick={() => void runSearch()}
-                  >
-                    <RefreshCw size={15} />
-                    再検索
-                  </button>
-                </div>
-              </div>
-              {editorOpen && (
-                <div className="panel-editor">
-                  {places}
-                  {fields}
-                  <button
-                    className="primary full"
-                    disabled={
-                      !confirmed || searching || conditionBusy || dataBlocked
-                    }
-                    onClick={() => void runSearch()}
-                  >
-                    変更した条件で再検索
-                    <ArrowRight size={16} />
-                  </button>
-                </div>
-              )}
               {searching ? (
-                <div className="result-empty" role="status">
+                <div className="map-search-status result-empty" role="status">
                   <Navigation className="spin" size={28} />
                   <h2>ルートを検索しています</h2>
-                  <p>条件に合う候補を比較しています。</p>
                   <button
                     className="secondary"
                     onClick={() => {
@@ -597,7 +533,7 @@ export default function App() {
                   </button>
                 </div>
               ) : error ? (
-                <div className="result-empty" role="alert">
+                <div className="map-search-status result-empty" role="alert">
                   <h2>検索できませんでした</h2>
                   <p>{error}</p>
                   <button
@@ -610,37 +546,56 @@ export default function App() {
                     再試行
                   </button>
                 </div>
-              ) : result && selectedRoute ? (
-                <ResultsPanel
-                  result={result}
-                  selectedRouteId={selectedRoute}
-                  onSelectRoute={(id) => {
-                    setSelectedRoute(id);
-                    setSelectedSection(null);
-                  }}
-                  selectedSectionId={selectedSection}
-                  onSelectSection={setSelectedSection}
-                  showAccidents={showAccidents}
-                  onShowAccidents={setShowAccidents}
-                  isDemo={isDemo}
-                />
-              ) : (
-                <div className="result-empty" role="status">
+              ) : !result ? (
+                <div className="map-search-status result-empty" role="status">
                   <MapPin size={28} />
                   <h2>条件を変更しました</h2>
                   <p>変更した条件で再検索してください。</p>
+                  <button
+                    className="primary"
+                    disabled={!confirmed || conditionBusy || dataBlocked}
+                    onClick={() => void runSearch()}
+                  >
+                    変更した条件で再検索
+                  </button>
                 </div>
-              )}
-              <button
-                className="text-button panel-back"
-                onClick={() => {
-                  if (searching) invalidate();
-                  setPage("conditions");
-                }}
-              >
-                <ArrowLeft size={15} />
-                条件選択に戻る
-              </button>
+              ) : null}
+            </div>
+            <aside
+              id="search-conditions"
+              className="route-panel"
+              aria-label="検索条件"
+              hidden={!sidebarOpen}
+            >
+              <div className="panel-title">
+                <h1 ref={heading} tabIndex={-1}>
+                  検索条件
+                </h1>
+              </div>
+              <div className="panel-editor">
+                {places}
+                {fields}
+                <button
+                  className="primary full"
+                  disabled={
+                    !confirmed || searching || conditionBusy || dataBlocked
+                  }
+                  onClick={() => void runSearch()}
+                >
+                  <RefreshCw size={16} />
+                  再検索
+                </button>
+                <button
+                  className="text-button panel-back"
+                  onClick={() => {
+                    if (searching) invalidate();
+                    setPage("conditions");
+                  }}
+                >
+                  <ArrowLeft size={15} />
+                  条件選択に戻る
+                </button>
+              </div>
             </aside>
           </main>
         )}

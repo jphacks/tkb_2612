@@ -1,11 +1,12 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
 } from "react";
-import { Crosshair, MapPin, Minus, Plus, X } from "lucide-react";
+import { Crosshair, Eye, EyeOff, MapPin, Minus, Plus, X } from "lucide-react";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import type {
   AccidentFeature,
@@ -14,6 +15,15 @@ import type {
 } from "../lib/types";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./map.css";
+import {
+  RouteCallouts,
+  featuredRoutes,
+  routeAnchor,
+  routeColors,
+  routeTone,
+  type MapPoint,
+  type MapSize,
+} from "./RouteCallouts";
 
 export type RouteMapProps = {
   result: RouteResponse | null;
@@ -22,6 +32,7 @@ export type RouteMapProps = {
   onSelectRoute: (id: string) => void;
   onSelectSection: (id: string | null) => void;
   showAccidents: boolean;
+  onShowAccidents?: (show: boolean) => void;
   unavailable: boolean;
 };
 
@@ -110,6 +121,7 @@ type LiveMapProps = RouteMapProps & {
   styleUrl: string;
   onAccident: (id: number) => void;
   onUnavailable: () => void;
+  onPositions: (positions: Record<string, MapPoint>) => void;
 };
 
 function LiveMap(props: LiveMapProps) {
@@ -133,6 +145,22 @@ function LiveMap(props: LiveMapProps) {
           attributionControl: false,
         });
         mapRef.current = map;
+        const reportPositions = () => {
+          const result = current.current.result;
+          if (!map || !result) return;
+          current.current.onPositions(
+            Object.fromEntries(
+              featuredRoutes(result).map((route) => {
+                const point = map!.project(
+                  routeAnchor(route, route.id === result.safest_id ? 0.6 : 0.4),
+                );
+                return [route.id, { x: point.x, y: point.y }];
+              }),
+            ),
+          );
+        };
+        map.on("move", reportPositions);
+        map.on("resize", reportPositions);
         map.addControl(
           new maplibre.NavigationControl({ showCompass: false }),
           "top-right",
@@ -152,9 +180,9 @@ function LiveMap(props: LiveMapProps) {
             type: "line",
             source: "routes",
             paint: {
-              "line-color": ["case", ["get", "selected"], "#2563eb", "#94a3b8"],
+              "line-color": ["get", "color"],
               "line-width": ["case", ["get", "selected"], 7, 4],
-              "line-opacity": ["case", ["get", "selected"], 1, 0.65],
+              "line-opacity": 1,
             },
             layout: { "line-cap": "round", "line-join": "round" },
           });
@@ -238,6 +266,19 @@ function LiveMap(props: LiveMapProps) {
   }, [props.styleUrl]);
 
   useEffect(() => {
+    if (
+      !ready ||
+      !mapRef.current ||
+      !container.current ||
+      typeof ResizeObserver === "undefined"
+    )
+      return;
+    const observer = new ResizeObserver(() => mapRef.current?.resize());
+    observer.observe(container.current);
+    return () => observer.disconnect();
+  }, [ready]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map) return;
     const result = props.result;
@@ -256,7 +297,10 @@ function LiveMap(props: LiveMapProps) {
         type: "Feature",
         id: route.id,
         geometry: route.geometry,
-        properties: { selected: route.id === props.selectedRouteId },
+        properties: {
+          selected: route.id === props.selectedRouteId,
+          color: routeColors[routeTone(route.id, result!)],
+        },
       })),
     });
     (map.getSource("sections") as GeoJSONSource).setData({
@@ -338,6 +382,7 @@ export function RouteMap(props: RouteMapProps) {
     onSelectRoute,
     onSelectSection,
     showAccidents,
+    onShowAccidents,
     unavailable,
   } = props;
   const routes = result?.candidates ?? [];
@@ -345,6 +390,25 @@ export function RouteMap(props: RouteMapProps) {
   const [accidentId, setAccidentId] = useState<number | null>(null);
   const [liveFailed, setLiveFailed] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [hoveredRouteId, setHoveredRouteId] = useState<string | null>(null);
+  const [livePositions, setLivePositions] = useState<Record<string, MapPoint>>(
+    {},
+  );
+  const shell = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<MapSize>({ width: WIDTH, height: HEIGHT });
+  useLayoutEffect(() => {
+    const element = shell.current;
+    if (!element) return;
+    const measure = () => {
+      const { width, height } = element.getBoundingClientRect();
+      if (width && height) setSize({ width, height });
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const project = useMemo(
     () => makeProjection(result?.candidates ?? []),
     [result],
@@ -377,6 +441,26 @@ export function RouteMap(props: RouteMapProps) {
       ? import.meta.env.VITE_MAP_STYLE_URL
       : undefined;
   const disabled = unavailable || liveFailed;
+  const scale = Math.min(
+    size.width / (WIDTH / actualZoom),
+    size.height / (HEIGHT / actualZoom),
+  );
+  const positions = result
+    ? Object.fromEntries(
+        featuredRoutes(result).map((route) => {
+          const point = project(
+            routeAnchor(route, route.id === result.safest_id ? 0.6 : 0.4),
+          );
+          return [
+            route.id,
+            {
+              x: size.width / 2 + (point[0] - center[0]) * scale,
+              y: size.height / 2 + (point[1] - center[1]) * scale,
+            },
+          ];
+        }),
+      )
+    : {};
 
   useEffect(() => {
     setAccidentId(null);
@@ -384,6 +468,7 @@ export function RouteMap(props: RouteMapProps) {
   useEffect(() => {
     setZoom(1);
     setLiveFailed(false);
+    setHoveredRouteId(null);
   }, [result]);
 
   // Identical geometries represent one visible line even if the API supplies duplicate candidates.
@@ -410,12 +495,14 @@ export function RouteMap(props: RouteMapProps) {
   };
 
   return (
-    <div className={`route-map-shell${styleUrl ? " is-live-map" : ""}`}>
+    <div
+      ref={shell}
+      className={`route-map-shell${styleUrl ? " is-live-map" : ""}`}
+    >
       {disabled ? (
         <div className="map-unavailable" role="status">
           <MapPin size={28} aria-hidden="true" />
           <strong>地図を利用できません</strong>
-          <p>経路の比較と事故記録はパネルで確認できます。</p>
         </div>
       ) : styleUrl ? (
         <LiveMap
@@ -423,6 +510,7 @@ export function RouteMap(props: RouteMapProps) {
           styleUrl={styleUrl}
           onAccident={setAccidentId}
           onUnavailable={() => setLiveFailed(true)}
+          onPositions={setLivePositions}
         />
       ) : (
         <div className="route-schematic-canvas">
@@ -457,12 +545,16 @@ export function RouteMap(props: RouteMapProps) {
               visibleRoutes.map((route) => (
                 <g
                   key={route.id}
-                  className={`map-route-button${route.id === selectedRouteId ? " is-selected" : ""}`}
+                  className={`map-route-button route-${routeTone(route.id, result)}${route.id === selectedRouteId ? " is-selected" : ""}${route.id === hoveredRouteId ? " is-hovered" : ""}`}
                   role="button"
                   tabIndex={0}
                   aria-label={`${routeLabel(route, result)}を選択`}
                   aria-pressed={route.id === selectedRouteId}
                   onClick={() => onSelectRoute(route.id)}
+                  onPointerEnter={() => setHoveredRouteId(route.id)}
+                  onPointerLeave={() => setHoveredRouteId(null)}
+                  onFocus={() => setHoveredRouteId(route.id)}
+                  onBlur={() => setHoveredRouteId(null)}
                   onKeyDown={(event) =>
                     keyActivate(event, () => onSelectRoute(route.id))
                   }
@@ -583,18 +675,22 @@ export function RouteMap(props: RouteMapProps) {
                 );
               })}
           </svg>
-          {!result && (
-            <div className="map-empty" role="status">
-              <MapPin size={28} />
-              <p>地点と条件を指定してルートを検索してください。</p>
-            </div>
-          )}
         </div>
       )}
+      {result && (
+        <RouteCallouts
+          result={result}
+          positions={disabled ? {} : styleUrl ? livePositions : positions}
+          size={size}
+          selectedRouteId={selectedRouteId}
+          hoveredRouteId={hoveredRouteId}
+          onSelectRoute={onSelectRoute}
+          onHoverRoute={setHoveredRouteId}
+          detached={disabled}
+        />
+      )}
       {!disabled && !styleUrl && (
-        <div className="map-preview-label">
-          地図プレビュー
-        </div>
+        <div className="map-preview-label">地図プレビュー</div>
       )}
       {!disabled && !styleUrl && (
         <div className="map-controls" aria-label="地図の表示操作">
@@ -617,17 +713,27 @@ export function RouteMap(props: RouteMapProps) {
           <button type="button" aria-label="経路全体を表示" onClick={reset}>
             <Crosshair size={20} />
           </button>
+          {onShowAccidents && (
+            <button
+              type="button"
+              aria-label="事故点を地図に表示"
+              aria-pressed={showAccidents}
+              onClick={() => onShowAccidents(!showAccidents)}
+            >
+              {showAccidents ? <Eye size={20} /> : <EyeOff size={20} />}
+            </button>
+          )}
         </div>
       )}
       {!disabled && (
         <div className="map-legend" aria-label="地図の凡例">
           <span>
-            <i className="legend-route" />
-            選択経路
+            <i className="legend-considered" />
+            事故履歴を考慮
           </span>
           <span>
-            <i className="legend-alternative" />
-            その他の候補
+            <i className="legend-fastest" />
+            最短時間
           </span>
           <span>
             <i className="legend-section" />

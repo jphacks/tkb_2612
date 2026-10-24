@@ -19,13 +19,12 @@
 }
 .map-route-line {
   fill: none;
-  stroke: #94a3b8;
-  stroke-width: 5;
+  stroke: var(--route-color, #94a3b8);
+  stroke-width: 6;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .map-route-button.is-selected .map-route-line {
-  stroke: #2563eb;
   stroke-width: 8;
 }
 .map-route-hit {
@@ -38,8 +37,7 @@
   outline: none;
 }
 .map-route-button:focus-visible .map-route-line {
-  stroke: #1e40af;
-  stroke-width: 12;
+  stroke-width: 10;
 }
 .map-section-line {
   fill: none;
@@ -289,14 +287,6 @@
 .is-live-map .map-legend {
   bottom: 40px;
 }
-@media (min-width: 900px) {
-  .route-schematic-canvas,
-  .route-live-map,
-  .map-empty,
-  .map-unavailable {
-    left: 392px;
-  }
-}
 @media (max-width: 600px) {
   .map-preview-label {
     top: 12px;
@@ -318,5 +308,135 @@
     top: 80px;
     width: min(280px, calc(100% - 80px));
     padding: 8px 12px 12px;
+  }
+}
+
+.route-considered {
+  --route-color: #16a34a;
+  --route-hover: #a3e635;
+}
+.route-fastest {
+  --route-color: #2563eb;
+  --route-hover: #0891b2;
+}
+.route-alternative {
+  --route-color: #94a3b8;
+  --route-hover: #cbd5e1;
+}
+.map-route-button.is-hovered .map-route-line {
+  stroke-width: 10;
+}
+.map-route-callouts {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.map-callout-connectors {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.map-route-card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 14px;
+  border: 2px solid #202020;
+  border-radius: 8px;
+  background: #090909;
+  color: #fff;
+  text-align: left;
+  pointer-events: auto;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.map-route-card.is-selected {
+  border-color: #525252;
+}
+.map-route-card:hover,
+.map-route-card:focus-visible,
+.map-route-card.is-hovered {
+  border-color: var(--route-hover);
+  outline: 2px solid var(--route-hover);
+  outline-offset: 0;
+}
+.map-card-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.map-card-title i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--route-color);
+  flex-shrink: 0;
+}
+.map-card-title > span {
+  flex: 1;
+}
+.map-card-duration {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.map-card-metrics {
+  display: flex;
+  gap: 12px;
+  color: #e5e5e5;
+  font-size: 12px;
+}
+.map-card-accidents {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+.map-card-accidents b {
+  font-size: 14px;
+}
+.map-card-same {
+  margin-left: auto;
+  font-size: 10px;
+}
+.map-controls,
+.map-preview-label,
+.map-legend {
+  z-index: 3;
+}
+.map-accident-popup {
+  z-index: 5;
+}
+.map-legend .legend-considered {
+  background: #16a34a;
+}
+.map-legend .legend-fastest {
+  background: #2563eb;
+}
+.map-unavailable {
+  justify-content: flex-start;
+  padding-top: 80px;
+}
+@media (max-width: 479px) {
+  .map-route-card {
+    padding: 12px;
+  }
+  .map-card-title {
+    font-size: 11px;
+    gap: 5px;
+  }
+  .map-card-duration {
+    font-size: 26px;
+  }
+  .map-card-metrics {
+    font-size: 11px;
+    gap: 8px;
   }
 }
