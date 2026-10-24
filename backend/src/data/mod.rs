@@ -6,6 +6,7 @@
 //! `contract` と `domain` に依存してよい（`domain` は `data` に依存しない）。
 //! `api`・`providers`・`testing` やHTTP/非同期ランタイムには依存しない。
 
+pub mod csv_syntax;
 pub mod encoding;
 pub mod holidays;
 pub mod load;

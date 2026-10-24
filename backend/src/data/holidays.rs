@@ -7,6 +7,7 @@ use chrono::NaiveDate;
 
 use crate::domain::HolidayCalendar;
 
+use super::csv_syntax::ends_inside_quoted_field;
 use super::encoding::decode_text;
 
 /// 祝日表の読込の失敗。
@@ -40,6 +41,11 @@ pub fn parse_holiday_date(s: &str) -> Option<NaiveDate> {
 /// 祝日CSVのバイト列から判定器を作る。
 pub fn parse_holiday_csv(bytes: &[u8]) -> Result<HolidayCalendar, HolidayCsvError> {
     let (_, text) = decode_text(bytes).map_err(|e| HolidayCsvError(e.to_string()))?;
+    if ends_inside_quoted_field(&text) {
+        return Err(HolidayCsvError(
+            "引用符が閉じないままファイルが終わっています".to_owned(),
+        ));
+    }
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
         .flexible(true)

@@ -133,6 +133,34 @@ fn quoted_fields_and_newlines_are_parsed_as_csv() {
 }
 
 #[test]
+fn unterminated_quote_fails_the_file() {
+    // 引用符が閉じないまま終わると、CSVパーサは残りを1つのフィールドにして行を失う
+    let mut text = csv_text(&HEADER, &[SourceRow::valid(2025, 1, 6, 12)], None);
+    text.push_str("\"1,");
+    let next = csv_text(&HEADER, &[SourceRow::valid(2025, 1, 7, 12)], None);
+    text.push_str(next.split_once("\r\n").unwrap().1);
+    assert!(matches!(
+        run(text.as_bytes()),
+        Err(PreprocessError::File { .. })
+    ));
+    // 閉じた引用符・引用中の "" ・引用を閉じた後の文字は構文の不正ではない
+    use accident_route_backend::data::csv_syntax::ends_inside_quoted_field;
+    for ok in [
+        "a,\"b\"\n",
+        "a,\"b\"\"c\"\n",
+        "a,\"b\nc\"\n",
+        "a,b\"c\n",
+        "a,\"b\"c\n",
+        "",
+    ] {
+        assert!(!ends_inside_quoted_field(ok), "{ok:?}");
+    }
+    for bad in ["a,\"b\n", "a,\"b\"\"\n", "\""] {
+        assert!(ends_inside_quoted_field(bad), "{bad:?}");
+    }
+}
+
+#[test]
 fn whole_run_fails_on_missing_year_or_no_retained_rows() {
     let dir = tempfile::tempdir().unwrap();
     write_source_dir(dir.path(), |year| vec![SourceRow::valid(year, 1, 6, 12)]);

@@ -20,6 +20,7 @@ use crate::domain::HolidayCalendar;
 
 use self::codebook::{CodebookError, CodebookFile, CodebookVerifier};
 use self::rows::{Column, ColumnIndex, ExclusionReason, convert_row};
+use super::csv_syntax::ends_inside_quoted_field;
 use super::encoding::decode_text;
 use super::release::{AccidentCsvWriter, ReleaseContent, build_release, sha256_hex};
 
@@ -117,6 +118,11 @@ pub fn process_file(
         message,
     };
     let (encoding, text) = decode_text(bytes).map_err(|e| file_error(e.to_string()))?;
+    if ends_inside_quoted_field(&text) {
+        return Err(file_error(
+            "引用符が閉じないままファイルが終わっています".to_owned(),
+        ));
+    }
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(true)
         .flexible(true)
