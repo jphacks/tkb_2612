@@ -368,7 +368,8 @@ svg {
   max-width: 100%;
   margin-top: 32px;
   margin-left: auto;
-  justify-content: space-between;
+  justify-content: flex-end;
+  text-align: right;
 }
 .condition-fields {
   display: flex;
