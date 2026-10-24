@@ -197,7 +197,7 @@ Issue #8 の実装です。計算は [behavior.md](../docs/api/behavior.md) 2〜
 | `codebooks_xlsx`・`codebooks_pdf` | 照合したコード表の `source_year`・`file`・`sha256` | — |
 | `elapsed_seconds` | 前処理の秒数 | — |
 
-ロードでは、あわせてヘッダの17列の完全一致、先頭10列の型と範囲（緯度経度の範囲、modes 0〜7、period 0〜4、weather 1〜5、day_type 0〜1、人数は各0〜999で合計1以上、実在する日付で1900 ≦ 発生年 ≦ source_year）、空でないことを検証します。失敗は `LoadError` で、メッセージに位置や原本行を含めません。
+ロードでは、あわせてヘッダの17列の完全一致、先頭10列の型と範囲（緯度経度の範囲、modes 0〜7、period 0〜4、weather 1〜5、day_type 0〜1、人数は各0〜999で合計1以上、実在する8桁の日付で1900 ≦ 発生年 ≦ source_year かつ発生年は9999以下）、空でないことを検証します。失敗は `LoadError` で、メッセージに位置や原本行を含めません。
 
 除外理由のキー：`missing_field`・`invalid_coordinates`・`invalid_datetime`・`invalid_casualties`・`unknown_party_code`・`unknown_weather_code`・`unknown_injury_code`・`unknown_daynight_code`・`invalid_accident_type`（この順で最初の理由に1回だけ計上）。
 

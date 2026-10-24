@@ -193,6 +193,15 @@ fn malformed_accident_csv_stops_loading() {
             1,
         ),
         (
+            // chronoは5桁の年も実在日として扱うので、年の上限を別に検査する
+            "5桁の年の発生日",
+            format!(
+                "{header}\n{}\n",
+                row("1", "0").replace(",2025,20250106,", ",10000,100000101,")
+            ),
+            1,
+        ),
+        (
             "source_yearより後の発生年",
             format!(
                 "{header}\n{}\n",

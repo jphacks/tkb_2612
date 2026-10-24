@@ -119,10 +119,11 @@ pub fn parse_accidents(gzip: &[u8]) -> Result<AccidentColumns, LoadError> {
         check(DayType::from_code(day_type).is_some())?;
         // 人数は各0〜999で合計1以上（behavior.md 2章）
         check(deaths <= 999 && injuries <= 999 && deaths + injuries >= 1)?;
-        // 発生日は実在し、1900 <= 発生年 <= source_year（behavior.md 2章）
+        // 発生日は実在する8桁のYYYYMMDDで、1900 <= 発生年 <= source_year（behavior.md 2章。
+        // openapi.yamlの上限 99991231 のとおり年は4桁まで）
         let year = date / 10_000;
         check(
-            (1900..=u32::from(source_year)).contains(&year)
+            (1900..=u32::from(source_year).min(9999)).contains(&year)
                 && NaiveDate::from_ymd_opt(year as i32, (date / 100) % 100, date % 100).is_some(),
         )?;
         c.lat.push(lat);
