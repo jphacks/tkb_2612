@@ -437,12 +437,18 @@ struct QueueSlot<'a>(&'a AtomicUsize);
 
 impl<'a> QueueSlot<'a> {
     fn take(waiting: &'a AtomicUsize, capacity: usize) -> Option<Self> {
-        waiting
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                (n < capacity).then_some(n + 1)
-            })
-            .ok()
-            .map(|_| QueueSlot(waiting))
+        // `fetch_update` は新しいRustで非推奨（`try_update` へ改名）、`try_update` は1.88に無いので
+        // compare_exchangeで書く
+        let mut n = waiting.load(Ordering::Acquire);
+        loop {
+            if n >= capacity {
+                return None;
+            }
+            match waiting.compare_exchange_weak(n, n + 1, Ordering::AcqRel, Ordering::Acquire) {
+                Ok(_) => return Some(QueueSlot(waiting)),
+                Err(current) => n = current,
+            }
+        }
     }
 }
 

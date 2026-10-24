@@ -127,11 +127,7 @@ async fn firestore_handler(
             json_reply(json!([found]))
         }
         "commit" => {
-            if fake
-                .conflicts
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
-                .is_ok()
-            {
+            if take_one(&fake.conflicts) {
                 return StatusCode::CONFLICT.into_response();
             }
             let read = fake
@@ -644,4 +640,16 @@ async fn lease_remaining_counts_down() {
 fn tokens_are_not_shown_in_debug_output() {
     let text = format!("{:?}", StaticToken("ya29.S3CRET".to_owned()));
     assert!(!text.contains("S3CRET"), "{text}");
+}
+
+/// 残りが1以上なら1減らして `true`（`fetch_update` は新しいRustで非推奨、`try_update` は1.88に無い）。
+fn take_one(counter: &AtomicUsize) -> bool {
+    let mut n = counter.load(Ordering::SeqCst);
+    while n > 0 {
+        match counter.compare_exchange_weak(n, n - 1, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => return true,
+            Err(current) => n = current,
+        }
+    }
+    false
 }
