@@ -64,6 +64,7 @@ ASCII数字のみの文字列を整数Nとして解釈し、符号、小数点�
 
 ### 日時・コード・重大度
 
+- CSVの整数列（年月日時分、死者数・負傷者数、天候・昼夜・事故類型・当事者種別・人身損傷程度の各コード）は、前後の空白を除いた後、ASCII数字1文字以上だけからなる値を10進整数として受理する（先頭0は可）。符号（`+`/`-`）、小数点、指数表記、全角数字、桁区切り、空文字は不正として、その列に対応する理由で行を除外する。受理例 `0`・`07`・` 12 `、拒否例 `-1`・`+1`・`1.0`・`１２`・`1,000`・空文字をfixtureにする。DMS座標は上記の規則に従う。
 - 年月日時分は整数化し、実在する日時であることを検査する。時0〜23、分0〜59。年は `1900 <= 発生年 <= source_year`。ファイル年より前の事故を保持する。タイムゾーン変換は行わない（日本の原データの時刻として扱う）。
 - 時間帯は発生時から計算し、元の昼夜コードとは別である。分は区分に使わない（8:59は早朝、9:00は昼）。移行契約で夜を2つに分け、5区分にする。
 
@@ -111,7 +112,7 @@ gzip CSVヘッダは17列の完全一致を要求する。現行は先頭9列を
 
 行番号0始まりを事故IDにする。空間索引の方式は実装で選んでよい。初期案は `grid[(floor(lat*1000), floor(lon*1000))]` に入力順で登録する0.001度グリッドで、集合B・最寄り線分・事故点の順序は索引の走査順に依存させない（6.・7.）。yearsは読み込んだsource_year集合。実発生年とは別である。ロード時間は計測値であり結果同等性の対象外。
 
-移行契約の `dataset_id` は配信中の `accidents.csv.gz` 全バイトのSHA-256小文字hex（64文字）。再圧縮でも変わり得る。同じ内容の事故でも別スナップショットではIDは保証しない。事故参照は `(dataset_id, feature.id)`、経路/区間参照はさらに**その検索応答**に限定する。検索ごとのroute-1等を永続IDと解釈しない。配信物全体の識別子 `release_id` は、`dataset_id` と同梱祝日表のSHA-256を `\n` で連結したUTF-8文字列のSHA-256小文字hexとする。祝日表だけの更新でも `release_id` は変わる。起動時にmetadataのschema_version・dataset_id（hash）・件数・必須値と列挙値を再検証し、失敗はプロセス停止とする。
+移行契約の `dataset_id` は配信中の `accidents.csv.gz` 全バイトのSHA-256小文字hex（64文字）。再圧縮でも変わり得る。同じ内容の事故でも別スナップショットではIDは保証しない。事故参照は `(dataset_id, feature.id)`、経路/区間参照はさらに**その検索応答**に限定する。検索ごとのroute-1等を永続IDと解釈しない。配信物全体の識別子 `release_id` は、`dataset_id` と同梱祝日表のSHA-256を `\n` で連結したUTF-8文字列のSHA-256小文字hexとする。祝日表だけの更新でも `release_id` は変わる。起動時に、gzipと同梱祝日表の実ファイルからSHA-256を計算し直して `dataset_id` と `release_id` を再計算し、metadataの値と照合する。あわせてschema_version・件数・必須値と列挙値を再検証する。いずれかが一致しなければプロセスを停止する。
 
 ## 4. リクエスト検証
 
@@ -127,7 +128,7 @@ HTTP JSONはUTF-8、有限数値だけ。JSONオブジェクトの重複キー�
 - hourは省略/nullなら無視。指定時は整数0〜23、該当する時間帯全体へ変換（0〜3は深夜、19〜23は夜）。periodがall/nullならhourで具体化、具体値と矛盾すれば400。hourがあっても先に不正periodを検査する。12.1やbool不可。
 - weatherは晴/曇/雨/霧/雪、整数1〜5、all、null。省略all。
 - day_type（移行追加）は平日/休日、all、null。省略all。整数コードやエイリアスは受理しない。曜日区分の判定に必要な日時はrouteでは受け取らない。出発日時からの判定は `/api/conditions` の責務である。
-- **移行契約の差分**：JSON Schemaのintegerは数学的整数なので12.0等も整数として扱う。Pythonは `type(x) is int` により12.0を拒否する。Rustの入力アダプタで整数値のfloat表記を受理し、canonicalフロントは常に整数リテラルを送る。これは数値・集計結果を変えない入力表記の拡張。Pythonの整数パーサの特殊な文字表記等は通常CSVの互換試験を優先し、曖昧な点は現行実装に合わせる。
+- **移行契約の差分**：JSON Schemaのintegerは数学的整数なので12.0等も整数として扱う。Pythonは `type(x) is int` により12.0を拒否する。Rustの入力アダプタで整数値のfloat表記を受理し、canonicalフロントは常に整数リテラルを送る。これは数値・集計結果を変えない入力表記の拡張。JSON以外の表記（数値文字列等）は受理しない。CSVの整数表記は2.の規則に従う。
 
 APIの正規表記を日本語にする理由：現行UI/READMEが既に日本語を送っており、コード表の内部番号をフロントへ漏らす利点がない。コードとエイリアスは互換入力として残し、レスポンスは日本語に統一する。
 
@@ -382,7 +383,7 @@ JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-
 | テスト名                                     | 現行の保証 / Rustへの移植指針                                                                                                               |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | test_left_right_vias_and_deduplication       | bikeの左右via緯度、追加で3候補、重複だけなら1候補+警告。router呼出しを記録する偽物で検証                                                    |
-| test_additional_api_failure_keeps_original   | 追加2通信の失敗でも初回を保持、初回失敗は全体失敗                                                                                           |
+| test_additional_api_failure_keeps_original   | 追加2通信の個別上流失敗（HTTP/通信/422等）でも初回を保持し200+warnings、初回失敗は全体失敗。追加候補取得中の共有ゲート読取失敗・競合未解消・待ち行列満杯は要求全体が503 service_busy |
 | test_osrm_profiles_parameters_and_user_agent | 3modeのURL/profile、7桁座標、alternatives/geojson、UA。移行では設定済み識別UAとsteps/overviewも検証                                         |
 | test_external_errors                         | URLError/timeout/上流429→APIError。Rustでは通信抽象の各失敗と502形式に対応                                                                  |
 | test_geocode_cache_and_japanese_query        | 前後空白のtrim、query日本語のURLエンコード、Geoapify固定応答のlat/lon/label正規化と帰属。キャッシュoffで同一qも毎回通信すること          |
@@ -400,7 +401,8 @@ JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-
 
 1. 同一入力データ、同一順序の固定OSRM応答で、ID/候補順/件数/重み/選定/間引き順が決定的に一致することをfixtureで検証する。Pythonとの比較は参考であり合格条件にしない。
 2. 浮動小数の距離・補間座標は通常ケースで座標絶対誤差1e-10度以内を目安とするが、採用/除外・丸め済み数値・順序の差は許さない。72m境界、75m分割、20m/30km/80km、許容時間+1e-6、丸め後のリスク同点、duration同点のfixtureを追加する。
-3. 15,000/15,001頂点、本文16,384/16,385バイト、provider12,000,000超、死亡250超、hotspot100超（high_risk_totalが100超）/重み2対3、重複座標と0長線分、元CSV重複行、初回/追加バッチ途中失敗を追加する。
+3. 起動時検証：metadataのdataset_id/release_idと実ファイル（gzip・祝日表）の不一致で起動停止すること。祝日表だけを差し替えたreleaseでrelease_idが変わり、事故CSVが同じならdataset_idは変わらないこと。
+   15,000/15,001頂点、本文16,384/16,385バイト、provider12,000,000超、死亡250超、hotspot100超（high_risk_totalが100超）/重み2対3、重複座標と0長線分、元CSV重複行、初回/追加バッチ途中失敗を追加する。
 4. 全スキーマの必須/null/列挙/座標順を検証。`points_shown == features.length`、`high_risk_sections.features.length == min(high_risk_total, 100)`、source頂点範囲、feature.id/route_id、fastest_id/safest_idの参照整合を検証。正常・全候補0件（safest_id=null）・天候一致0件・天候all（weather_match=null）・同一経路・全HTTPエラーの共通fixtureでReact/Rustを結合する。
 5. 前処理の全入力行数/保持数/除外理由とCSV復号後の全行を検査する。現行記録は入力2,182,298、保持2,182,127、除外171（全件DMS不正）だが入力スナップショットに依存する。曜日区分の追加で保持・除外件数は変わらない。性能記録（6モックケースで1秒未満）はSLAではない。実OSRM/Geoapify/Open-Meteo、ブラウザ描画、実GPSはVALIDATION時点で未検証で、別の結合受け入れ試験が必要。
 

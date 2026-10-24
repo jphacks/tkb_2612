@@ -102,7 +102,7 @@ HTML/manifest/sw.jsはno-cache（再検証可能）、内容ハッシュ付きas
 2. backend/dataの非公開stagingディレクトリで前処理。入力件数=保持+除外、除外理由、modes=0、コード表照合、17列形式、非空、period 0〜4・day_type 0〜1、祝日表の収録範囲外の行数を検査する。期待値は確定仕様から作ったfixtureで検査し、Pythonの出力との一致は合格条件にしない。
 3. gzipのSHA-256をdataset_idとし、祝日表のSHA-256と組み合わせたrelease_id（behavior 3章）とともに、処理版と合わせてmetadataへ記録する。前処理日時/圧縮メタデータ差でIDが変わり得るため、意味的同等性は復号後のデータでも確認する。
 4. 検証済みのgzip・metadata・前処理に使った祝日表を同じreleases/<release-id>に配置し、不変・読み取り専用にする。途中ファイルをcurrentへ置かない。`/api/conditions` もこのreleaseの祝日表を読むので、事故記録の曜日区分と自動判定の祝日表は常に一致する。
-5. 検証済みreleaseを同梱したイメージで新しいCloud Runリビジョンを作り、起動時に全件ロードとhash/schema/件数の検証を終えてからstartup probeを成功させる（起動4分以内）。成功したリビジョンへトラフィックを切り替える。初期版ではホットリロードを実装しない。プロセスは起動時にreleaseの実パスを1回解決して同じスナップショットから2ファイルを読む。
+5. 検証済みreleaseを同梱したイメージで新しいCloud Runリビジョンを作り、起動時に全件ロードと、実ファイルから再計算したdataset_id/release_id・schema・件数の検証を終えてからstartup probeを成功させる（起動4分以内）。成功したリビジョンへトラフィックを切り替える。初期版ではホットリロードを実装しない。プロセスは起動時にreleaseの実パスを1回解決して同じスナップショットから2ファイルを読む。
 6. `/api/health` のrelease_id/dataset_id/accidents/data_yearsと固定検索fixtureを確認。失敗時は旧リビジョンへ戻す。途中でmetadataだけ新しくなる状態を公開しない。
 
 一つの検索要求中は一つのデータスナップショットを固定する。公開事故データの保存と、利用者の現在地・検索履歴の無保存は別の対象である。

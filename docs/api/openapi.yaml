@@ -41,7 +41,8 @@ paths:
         出発日時は受け取らない。period/day_type/weatherの自動値は/api/conditionsで得る。
         天候は事故を除外せず、一致事故をweather_matchで別集計し、スコアで重く数える。
         全候補で該当事故が0件でも条件を解除しない。その場合safest_idはnull。
-        全体期限内の追加候補のみの失敗は200のwarningsに残す。
+        全体期限内の追加候補のみの個別上流通信の失敗は200のwarningsに残す。
+        ただし共有上流ゲートの読取失敗・競合未解消と待ち行列満杯は、追加候補の取得中でも要求全体を503 service_busyにする。
         受付からJSON準備完了までの全体期限35秒を超えたら、段階によらず503 service_busy。
         候補が取得済みでも全体期限後に200を返さない。
       requestBody:
@@ -275,7 +276,7 @@ paths:
         '405': {$ref: '#/components/responses/MethodNotAllowed'}
         '500': {$ref: '#/components/responses/InternalError'}
         '502': {$ref: '#/components/responses/UpstreamError'}
-        '503': {$ref: '#/components/responses/Unavailable'}
+        '503': {$ref: '#/components/responses/Busy'}
   /api/conditions:
     get:
       operationId: getConditions
@@ -543,7 +544,7 @@ components:
     Unavailable:
       description: |
         503 data_unavailable（データ未ready、route/health/statusのみ）、
-        またはservice_busy（受付/上流待ち行列の上限、要求全体35秒超過、route/geocodeのみ）。
+        またはservice_busy（受付/上流待ち行列の上限、共有上流ゲートの読取失敗・競合未解消、要求全体35秒超過、route/geocodeのみ）。
       headers:
         Cache-Control: {$ref: '#/components/headers/NoStore'}
         X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
@@ -551,6 +552,17 @@ components:
         application/json:
           schema: {$ref: '#/components/schemas/ErrorResponse'}
           example: {error: {code: data_unavailable, message: 事故データを準備しています。時間をおいて再試行してください。}}
+    Busy:
+      description: |
+        503 service_busy（受付/上流待ち行列の上限、共有上流ゲートの読取失敗・競合未解消、要求全体35秒超過）。
+        事故データを使わないAPI（geocode）用。data_unavailableは返さない。
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+        X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+          example: {error: {code: service_busy, message: 混み合っています。時間をおいて再試行してください。}}
     InternalError:
       description: 500 internal_error。予期しない内部失敗。内部詳細を返さない。
       headers:
