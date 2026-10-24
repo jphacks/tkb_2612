@@ -30,8 +30,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # 原本 accident/（約420MB）はCIで使わない
+          # ②のテスト（backend/tests/preprocess_files.rs）が原本 accident/（約420MB、通常のGit管理でLFSではない）を読む
           sparse-checkout: |
+            accident
             backend
             docs
             frontend
