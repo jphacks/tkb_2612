@@ -1,0 +1,518 @@
+//! 全インスタンス共通の上流ゲート（backend-spec.md 6章、architecture.md 7章）。
+//!
+//! 提供元（OSRM・Geoapify・Open-Meteo）ごとに、通信開始間隔・同時通信数・集計期間別の上限を
+//! 共有状態で管理し、満たしてから送信させる。有限の待ち行列はプロセスごとに持つ。
+//!
+//! 判定（[`apply`]）は保存方式から分けた純粋な状態遷移で、保存方式は [`GateStore`] で
+//! 差し替える（ローカル開発用の [`LocalGateStore`]、本番のFirestore）。共有状態に持つのは
+//! 提供元の識別子（キー）、呼出し開始時刻、リースの期限と世代番号、集計件数だけで、
+//! 住所・座標・経路・利用者ID・リクエストIDは持たない。通信はトランザクションの外で行う。
+
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use serde::{Deserialize, Serialize};
+use tokio::sync::Notify;
+
+use crate::contract::{BoxFuture, CancelToken, Interrupt};
+use crate::providers::clock::Clock;
+
+/// 共有状態の読取失敗・競合の未解消・待ち行列の満杯・上限到達は、呼び出さずに `Busy`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GateError {
+    Busy,
+    Interrupted(Interrupt),
+}
+
+impl From<Interrupt> for GateError {
+    fn from(value: Interrupt) -> Self {
+        GateError::Interrupted(value)
+    }
+}
+
+/// 上限を数える期間。境界はUTC。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum QuotaPeriod {
+    Minute,
+    Hour,
+    Day,
+    Month,
+}
+
+impl QuotaPeriod {
+    /// `now_ms` を含む期間の開始（UNIXミリ秒）。
+    pub fn start_ms(self, now_ms: i64) -> i64 {
+        const MINUTE: i64 = 60_000;
+        const HOUR: i64 = 60 * MINUTE;
+        const DAY: i64 = 24 * HOUR;
+        match self {
+            QuotaPeriod::Minute => now_ms.div_euclid(MINUTE) * MINUTE,
+            QuotaPeriod::Hour => now_ms.div_euclid(HOUR) * HOUR,
+            QuotaPeriod::Day => now_ms.div_euclid(DAY) * DAY,
+            QuotaPeriod::Month => {
+                let now = DateTime::<Utc>::from_timestamp_millis(now_ms).unwrap_or_default();
+                NaiveDate::from_ymd_opt(now.year(), now.month(), 1)
+                    .and_then(|d| d.and_hms_opt(0, 0, 0))
+                    .map_or(0, |t| t.and_utc().timestamp_millis())
+            }
+        }
+    }
+}
+
+/// 集計期間別の上限。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Quota {
+    pub period: QuotaPeriod,
+    pub limit: u64,
+}
+
+/// 提供元ごとの制御値。
+#[derive(Debug, Clone, PartialEq)]
+pub struct GatePolicy {
+    /// 通信開始の最短間隔。
+    pub min_interval: Duration,
+    /// 同時通信数。
+    pub max_concurrent: u32,
+    /// このプロセスで送信を待てる呼出しの数。超えたら `Busy`。
+    pub queue_capacity: usize,
+    /// リースの有効期間。1通信の期限に余裕を足した値にする。
+    pub lease_ttl: Duration,
+    pub quotas: Vec<Quota>,
+}
+
+/// 同時通信のリース。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeaseRecord {
+    pub generation: u64,
+    pub expires_at_ms: i64,
+}
+
+/// 集計期間の件数。期間が変わったら上書きする。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuotaCounter {
+    pub period: QuotaPeriod,
+    pub period_start_ms: i64,
+    pub count: u64,
+}
+
+/// 提供元1つ分の共有状態。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GateState {
+    pub last_start_ms: Option<i64>,
+    pub next_generation: u64,
+    pub leases: Vec<LeaseRecord>,
+    pub counters: Vec<QuotaCounter>,
+}
+
+/// 共有状態への操作。
+#[derive(Debug, Clone, Copy)]
+pub enum GateOp<'a> {
+    Acquire(&'a GatePolicy),
+    Release { generation: u64 },
+}
+
+/// 操作の結果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decision {
+    /// 送信してよい。リースを持って送信し、終わったら解放する。
+    Granted(LeaseRecord),
+    /// `until_ms` まで待ってから再判定する（同時数の空き待ちはもっと早く空くことがある）。
+    Wait {
+        until_ms: i64,
+    },
+    /// 集計期間の上限に達した。
+    QuotaExhausted,
+    Released,
+}
+
+/// 状態遷移（保存方式に依存しない判定）。
+///
+/// 期限切れのリースを除いてから判定する。解放は世代番号が一致するリースだけを消すので、
+/// 期限切れで除かれた古い処理の終了が、後から発行された新しいリースを解放することはない。
+pub fn apply(state: &mut GateState, op: GateOp<'_>, now_ms: i64) -> Decision {
+    state.leases.retain(|l| l.expires_at_ms > now_ms);
+    match op {
+        GateOp::Release { generation } => {
+            state.leases.retain(|l| l.generation != generation);
+            Decision::Released
+        }
+        GateOp::Acquire(policy) => acquire(state, policy, now_ms),
+    }
+}
+
+fn acquire(state: &mut GateState, policy: &GatePolicy, now_ms: i64) -> Decision {
+    // 期間が終わった件数は上書きし、使わなくなった期間の件数は消す
+    let mut counters = Vec::with_capacity(policy.quotas.len());
+    for quota in &policy.quotas {
+        let start = quota.period.start_ms(now_ms);
+        let count = state
+            .counters
+            .iter()
+            .find(|c| c.period == quota.period && c.period_start_ms == start)
+            .map_or(0, |c| c.count);
+        counters.push(QuotaCounter {
+            period: quota.period,
+            period_start_ms: start,
+            count,
+        });
+    }
+    state.counters = counters;
+    if policy
+        .quotas
+        .iter()
+        .zip(&state.counters)
+        .any(|(q, c)| c.count >= q.limit)
+    {
+        return Decision::QuotaExhausted;
+    }
+    if state.leases.len() >= policy.max_concurrent as usize {
+        let until_ms = state
+            .leases
+            .iter()
+            .map(|l| l.expires_at_ms)
+            .min()
+            .unwrap_or(now_ms);
+        return Decision::Wait { until_ms };
+    }
+    if let Some(last) = state.last_start_ms {
+        let next = last.saturating_add(duration_ms(policy.min_interval));
+        if now_ms < next {
+            return Decision::Wait { until_ms: next };
+        }
+    }
+    let lease = LeaseRecord {
+        generation: state.next_generation,
+        expires_at_ms: now_ms.saturating_add(duration_ms(policy.lease_ttl)),
+    };
+    state.next_generation += 1;
+    state.leases.push(lease);
+    state.last_start_ms = Some(now_ms);
+    for c in &mut state.counters {
+        c.count += 1;
+    }
+    Decision::Granted(lease)
+}
+
+fn duration_ms(d: Duration) -> i64 {
+    i64::try_from(d.as_millis()).unwrap_or(i64::MAX)
+}
+
+/// 共有状態の読取・書込みに失敗した（競合が解消しない場合を含む）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StoreError;
+
+/// 共有状態の保存方式。
+pub trait GateStore: Send + Sync {
+    /// `key` の状態を読み、[`apply`] を適用して原子的に書き戻す。
+    fn transact<'a>(
+        &'a self,
+        key: &'a str,
+        op: GateOp<'a>,
+        now_ms: i64,
+    ) -> BoxFuture<'a, Result<Decision, StoreError>>;
+}
+
+/// 単一プロセス内の保存方式。ローカル開発専用（`UPSTREAM_GATE=local`）。
+#[derive(Debug, Default)]
+pub struct LocalGateStore {
+    states: Mutex<HashMap<String, GateState>>,
+}
+
+impl LocalGateStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 現在の状態（テスト用）。
+    pub fn snapshot(&self, key: &str) -> Option<GateState> {
+        self.states.lock().unwrap().get(key).cloned()
+    }
+}
+
+impl GateStore for LocalGateStore {
+    fn transact<'a>(
+        &'a self,
+        key: &'a str,
+        op: GateOp<'a>,
+        now_ms: i64,
+    ) -> BoxFuture<'a, Result<Decision, StoreError>> {
+        Box::pin(async move {
+            let mut states = self.states.lock().map_err(|_| StoreError)?;
+            let state = states.entry(key.to_owned()).or_default();
+            Ok(apply(state, op, now_ms))
+        })
+    }
+}
+
+/// 同時数の空き待ちで共有状態を読み直す間隔の上限。他インスタンスの解放を拾うため。
+const RECHECK_INTERVAL: Duration = Duration::from_millis(100);
+/// 取消し・期限を確認する間隔。
+const CANCEL_POLL: Duration = Duration::from_millis(10);
+
+/// 提供元1つ分のゲート。複製は同じゲートを共有する。
+#[derive(Clone)]
+pub struct Gate {
+    inner: Arc<GateInner>,
+}
+
+struct GateInner {
+    key: String,
+    policy: GatePolicy,
+    store: Arc<dyn GateStore>,
+    clock: Arc<dyn Clock>,
+    /// 送信を待っている呼出し数（このプロセス内）。
+    waiting: AtomicUsize,
+    /// このプロセスの待ちを先着順に並べ、先頭だけが共有状態を読む。
+    order: tokio::sync::Mutex<()>,
+    /// このプロセスでリースを解放したときに待ちを起こす。
+    released: Notify,
+}
+
+impl std::fmt::Debug for Gate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Gate")
+            .field("key", &self.inner.key)
+            .field("policy", &self.inner.policy)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Gate {
+    pub fn new(
+        key: impl Into<String>,
+        policy: GatePolicy,
+        store: Arc<dyn GateStore>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(GateInner {
+                key: key.into(),
+                policy,
+                store,
+                clock,
+                waiting: AtomicUsize::new(0),
+                order: tokio::sync::Mutex::new(()),
+                released: Notify::new(),
+            }),
+        }
+    }
+
+    pub fn policy(&self) -> &GatePolicy {
+        &self.inner.policy
+    }
+
+    /// 送信の許可を待つ。期限切れ・取消しで待ちを解除する。
+    pub async fn acquire(&self, cancel: &CancelToken) -> Result<Lease, GateError> {
+        cancel.check()?;
+        let inner = &self.inner;
+        let _slot =
+            QueueSlot::take(&inner.waiting, inner.policy.queue_capacity).ok_or(GateError::Busy)?;
+        let _turn = tokio::select! {
+            biased;
+            turn = inner.order.lock() => turn,
+            interrupt = until_interrupted(cancel) => return Err(interrupt.into()),
+        };
+        loop {
+            cancel.check()?;
+            let now_ms = inner.clock.now_ms();
+            let decision = inner
+                .store
+                .transact(&inner.key, GateOp::Acquire(&inner.policy), now_ms)
+                .await
+                .map_err(|_| GateError::Busy)?;
+            match decision {
+                Decision::Granted(record) => {
+                    return Ok(Lease {
+                        inner: Some(inner.clone()),
+                        record,
+                    });
+                }
+                Decision::QuotaExhausted | Decision::Released => return Err(GateError::Busy),
+                Decision::Wait { until_ms } => {
+                    let wait = Duration::from_millis(until_ms.saturating_sub(now_ms).max(1) as u64)
+                        .min(RECHECK_INTERVAL);
+                    tokio::select! {
+                        biased;
+                        interrupt = until_interrupted(cancel) => return Err(interrupt.into()),
+                        () = inner.released.notified() => {}
+                        () = tokio::time::sleep(wait) => {}
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 期限切れか取消しまで待ち、その理由を返す。
+pub(crate) async fn until_interrupted(cancel: &CancelToken) -> Interrupt {
+    loop {
+        if let Err(interrupt) = cancel.check() {
+            return interrupt;
+        }
+        let step = cancel
+            .remaining()
+            .map_or(CANCEL_POLL, |r| r.min(CANCEL_POLL));
+        tokio::time::sleep(step).await;
+    }
+}
+
+/// 待ち行列の1枠。破棄で返す。
+struct QueueSlot<'a>(&'a AtomicUsize);
+
+impl<'a> QueueSlot<'a> {
+    fn take(waiting: &'a AtomicUsize, capacity: usize) -> Option<Self> {
+        waiting
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                (n < capacity).then_some(n + 1)
+            })
+            .ok()
+            .map(|_| QueueSlot(waiting))
+    }
+}
+
+impl Drop for QueueSlot<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// 同時通信のリース。通信が終わったら [`Lease::release`] で返す。
+/// 返さずに破棄した場合（要求の取消し等）も、非同期に解放する。
+pub struct Lease {
+    inner: Option<Arc<GateInner>>,
+    record: LeaseRecord,
+}
+
+impl std::fmt::Debug for Lease {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Lease")
+            .field("record", &self.record)
+            .finish()
+    }
+}
+
+impl Lease {
+    pub fn record(&self) -> LeaseRecord {
+        self.record
+    }
+
+    /// 送信の直前に呼ぶ。リースの期限が切れていたら送信しない。
+    ///
+    /// 期限切れのリースは共有状態から除かれ、その枠は別の処理に渡り得るため。
+    pub fn ensure_valid(&self) -> Result<(), GateError> {
+        let inner = self.inner.as_ref().expect("解放前のリース");
+        if inner.clock.now_ms() < self.record.expires_at_ms {
+            Ok(())
+        } else {
+            Err(GateError::Busy)
+        }
+    }
+
+    /// リースを返す。共有状態の書込みに失敗しても、期限切れで自然に除かれる。
+    pub async fn release(mut self) {
+        if let Some(inner) = self.inner.take() {
+            release(inner, self.record.generation).await;
+        }
+    }
+}
+
+async fn release(inner: Arc<GateInner>, generation: u64) {
+    let now_ms = inner.clock.now_ms();
+    let _ = inner
+        .store
+        .transact(&inner.key, GateOp::Release { generation }, now_ms)
+        .await;
+    inner.released.notify_waiters();
+}
+
+impl Drop for Lease {
+    fn drop(&mut self) {
+        if let Some(inner) = self.inner.take()
+            && let Ok(runtime) = tokio::runtime::Handle::try_current()
+        {
+            runtime.spawn(release(inner, self.record.generation));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn policy() -> GatePolicy {
+        GatePolicy {
+            min_interval: Duration::from_millis(1050),
+            max_concurrent: 1,
+            queue_capacity: 16,
+            lease_ttl: Duration::from_secs(10),
+            quotas: vec![Quota {
+                period: QuotaPeriod::Day,
+                limit: 2,
+            }],
+        }
+    }
+
+    #[test]
+    fn interval_concurrency_and_quota_are_decided_from_the_state_alone() {
+        let p = policy();
+        let mut state = GateState::default();
+        let Decision::Granted(first) = apply(&mut state, GateOp::Acquire(&p), 1_000) else {
+            panic!("最初は許可");
+        };
+        // 同時1：解放までは待つ（最短でリース期限まで）
+        assert_eq!(
+            apply(&mut state, GateOp::Acquire(&p), 5_000),
+            Decision::Wait {
+                until_ms: first.expires_at_ms
+            }
+        );
+        apply(
+            &mut state,
+            GateOp::Release {
+                generation: first.generation,
+            },
+            5_000,
+        );
+        // 開始間隔
+        let mut early = state.clone();
+        early.last_start_ms = Some(4_500);
+        assert_eq!(
+            apply(&mut early, GateOp::Acquire(&p), 5_000),
+            Decision::Wait { until_ms: 5_550 }
+        );
+        assert!(matches!(
+            apply(&mut state, GateOp::Acquire(&p), 5_000),
+            Decision::Granted(_)
+        ));
+        state.leases.clear();
+        // 1日2件の上限
+        assert_eq!(
+            apply(&mut state, GateOp::Acquire(&p), 7_000),
+            Decision::QuotaExhausted
+        );
+        // 翌日（UTC）は件数を上書きする
+        assert!(matches!(
+            apply(&mut state, GateOp::Acquire(&p), 86_400_000 + 1),
+            Decision::Granted(_)
+        ));
+        assert_eq!(state.counters[0].count, 1);
+    }
+
+    #[test]
+    fn month_period_starts_at_utc_first_day() {
+        let t = DateTime::parse_from_rfc3339("2026-10-24T09:00:00+09:00")
+            .unwrap()
+            .timestamp_millis();
+        let start = QuotaPeriod::Month.start_ms(t);
+        assert_eq!(
+            DateTime::<Utc>::from_timestamp_millis(start)
+                .unwrap()
+                .to_rfc3339(),
+            "2026-10-01T00:00:00+00:00"
+        );
+    }
+}
