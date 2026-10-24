@@ -208,11 +208,42 @@ UPDATE_API_FIXTURES=1 cargo test --manifest-path backend/Cargo.toml --test api_c
 
 偽上流（偽OSRM・偽Geoapify・偽Open-Meteo）をループバックの空きポートで起動し、それを指す環境変数を出力します。外部のネットワークには通信しません。
 
-1. ②が提供する人工releaseのディレクトリを用意する。
-2. 端末A：`cargo run --manifest-path backend/Cargo.toml --example dev_stack -- --example twoSelected`。`export NAME='value'` の行（同じ内容の `env.sh` のパスも表示）が出る。Ctrl-Cで停止。`--example` で偽OSRMが返す例を選ぶ（fixtureの例は出発地・目的地が同じなので、座標では区別できない）。
-3. 端末B：出力された環境変数を設定し（`source <表示されたenv.sh>`）、`ACCIDENT_DATA_DIR` に人工releaseを指定して `cargo run --manifest-path backend/Cargo.toml` で `127.0.0.1:8000` に起動する。
+1. 人工releaseを書き出す（②のヘルパー）。**releaseは例ごとに事故の中身が違う**ので、手順2で選ぶ `--example` と同じ例の名前で作る。出力先は新しい空のディレクトリで、`releases/<id>/` は作られず出力先そのものがreleaseになる。標準出力に `release_dir=`・`dataset_id=`・`release_id=` が出る。
+
+   ```sh
+   cargo run --manifest-path backend/Cargo.toml --example make_test_release -- /tmp/c4-release twoSelected
+   ```
+
+2. 端末A：`cargo run --manifest-path backend/Cargo.toml --example dev_stack -- --example twoSelected`。`export NAME='value'` の行（同じ内容の `env.sh` のパスも表示）が出る。Ctrl-Cで停止。`--example` で偽OSRMが返す例を選ぶ（fixtureの例は出発地・目的地が同じなので、座標では区別できない）。出力には `BACKEND_BIND='127.0.0.1:8000'` が含まれるが、`ACCIDENT_DATA_DIR` は含まれない。
+3. 端末B：出力された環境変数を設定し（`source <表示されたenv.sh>`）、**`ACCIDENT_DATA_DIR` に手順1の `release_dir` を明示して**、実エンジンのbackendを起動する（`cargo run` の既定バイナリがbackend。`--simple` は付けない）。
+
+   ```sh
+   source <表示されたenv.sh>
+   ACCIDENT_DATA_DIR=/tmp/c4-release cargo run --manifest-path backend/Cargo.toml
+   ```
+
+   - `ACCIDENT_DATA_DIR` の既定は `backend/data/current` だが、前処理・`make_test_release` は `current` を作らない（`current` の実体と置き場所は未決）。C4ではこの既定に頼らず必ず明示する。未指定だと `releaseを読み込めません` で終了コード1になる。相対パスはrepo rootが基準。
+   - `curl -s http://127.0.0.1:8000/api/health` が `"status":"ok"` と、手順1の出力と一致する `release_id`・`dataset_id`、`data_years:[2025]` を返せば準備完了（それまで `/api/health`・`/api/route` は503）。
+   - **Viteのプロキシ先は `http://127.0.0.1:8000` に固定**（`frontend/vite.config.ts`。環境変数では変えられない）。8000番が他のプロセスに使われている環境では、`BACKEND_BIND=127.0.0.1:18000` などで別ポートに起動してもフロントからは届かない。8000番を空けるか、vite.config.ts のプロキシ先を変える必要がある（frontendの変更は①の担当）。別ポートで起動するときは、`source` の**後で** `BACKEND_BIND` を指定する（env.sh が `BACKEND_BIND` を8000番で上書きするため）。この場合はフロントを使わず、下の `curl` で確かめる。
 4. 端末C：`(cd frontend && VITE_API_MODE=live npm run dev)`。`VITE_API_MODE=live` が無いとデモ応答になる。`/api` は `http://127.0.0.1:8000` へ転送される。
 5. ブラウザで `http://127.0.0.1:5173` を開き、実際に検索する。
+
+例を切り替えるときは、端末AとBを止め、手順1から別の例の名前（と別の出力先）でやり直す。
+
+フロントを使わずに確かめる例（backendが `127.0.0.1:8000` のとき。別ポートなら読み替える）：
+
+```sh
+curl -s http://127.0.0.1:8000/api/health
+# 要求本文は docs/api/fixtures/route-example-inputs.json の examples[].request
+curl -s -X POST http://127.0.0.1:8000/api/route -H 'content-type: application/json' \
+  -d '{"origin":{"lat":35,"lon":139},"dest":{"lat":35,"lon":139.01},"mode":"walk","period":"昼","day_type":"休日","weather":"晴","max_detour_min":10}'
+curl -s 'http://127.0.0.1:8000/api/conditions?datetime=2025-11-24T09:00%2B09:00&lat=35&lon=139'
+curl -s 'http://127.0.0.1:8000/api/geocode?q=test'
+```
+
+- `/api/route` の応答は、選んだ例の `tests/fixtures/route-responses.json` と、`dataset_id` と `aggregation_ms` を除いて一致する。ただし事故点の座標は、releaseが小数7桁で保存するため、fixtureの `35.001000000000005` が `35.001` になる（7桁で丸めて比較する）。`Accept-Encoding: gzip` を付けると `content-encoding: gzip` で返り、`Cache-Control: no-store` が付く。
+- `/api/conditions` は `datetime`（オフセット付きISO 8601、必須）と、天気を得るための `lat`・`lon` を取る。過去の日時は `weather_status: "past"`（天気なし）、今日以降は偽Open-Meteoの天気が返る。人工releaseの祝日表は2025年だけなので、2025-11-24は `振替休日`、2026年の日付は `holiday_table_covered: false`。
+- 不正な要求は400の `{"error":{"code":"invalid_request",…}}`、存在しない `/api/` 配下のパスは404の `not_found`。
 
 偽上流の応答：
 
