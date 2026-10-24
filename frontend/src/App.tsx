@@ -474,6 +474,18 @@ export default function App() {
     />
   );
 
+  const healthNotice = healthWarning && (
+    <div className="notice warning">
+      <p>{healthWarning}</p>
+      <button
+        className="text-button"
+        onClick={() => setHealthRevision((count) => count + 1)}
+      >
+        準備状況を再確認
+      </button>
+    </div>
+  );
+
   return (
     <>
       <div
@@ -546,17 +558,7 @@ export default function App() {
                 </div>
               </>
             )}
-            {healthWarning && (
-              <div className="notice warning">
-                <p>{healthWarning}</p>
-                <button
-                  className="text-button"
-                  onClick={() => setHealthRevision((count) => count + 1)}
-                >
-                  準備状況を再確認
-                </button>
-              </div>
-            )}
+            {healthNotice}
           </main>
         ) : (
           <main className={`result-page${sidebarOpen ? " sidebar-open" : ""}`}>
@@ -634,6 +636,7 @@ export default function App() {
               </div>
               {/* frontend-spec 3: inputs stay locked while searching; there is no cancel. */}
               <fieldset className="panel-editor" disabled={searching}>
+                {healthNotice}
                 {places}
                 {fields}
                 <button

@@ -440,4 +440,45 @@ describe("App search flow and condition ownership", () => {
     await act(async () => {});
     expect(api.getHealth).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps the health warning and manual re-check on the result page when the dataset re-check fails", async () => {
+    const user = await openConditions();
+    await waitFor(() => expect(api.getHealth).toHaveBeenCalledTimes(1));
+    api.getHealth
+      .mockRejectedValueOnce(
+        new ApiError("データを利用できません。", "data_unavailable", 503),
+      )
+      .mockResolvedValueOnce(demoHealth);
+    api.searchRoutes.mockImplementation((request: RouteRequest) =>
+      Promise.resolve({
+        ...createDemoRouteResponse(request),
+        dataset_id: "route-dataset",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
+    await screen.findByRole("group", { name: "表示する経路" });
+    expect(await screen.findByText("データを利用できません。")).toBeVisible();
+    expect(screen.getByRole("button", { name: "再検索" })).toBeDisabled();
+
+    await user.click(screen.getByRole("radio", { name: "雨" }));
+    expect(
+      screen.queryByRole("group", { name: "表示する経路" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("データを利用できません。")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "変更した条件で再検索" }),
+    ).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "準備状況を再確認" }));
+    await waitFor(() =>
+      expect(screen.queryByText("データを利用できません。")).toBeNull(),
+    );
+    expect(api.getHealth).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("button", { name: "再検索" })).toBeEnabled();
+    await user.click(
+      screen.getByRole("button", { name: "変更した条件で再検索" }),
+    );
+    await screen.findByRole("group", { name: "表示する経路" });
+    expect(api.searchRoutes).toHaveBeenCalledTimes(2);
+  });
 });
