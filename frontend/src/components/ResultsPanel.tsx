@@ -6,11 +6,25 @@ import {
   Info,
 } from "lucide-react";
 import type { RouteCandidate, RouteResponse } from "../lib/types";
-import { formatDistance, formatDuration } from "../lib/format";
+import {
+  formatExtraMinutes,
+  formatKilometres,
+  formatMinutes,
+} from "../lib/format";
+import type { AutoFields } from "./ConditionFields";
 import "./results.css";
+
+/** Inputs as they were when the displayed result was requested (frontend-spec 5). */
+export type SearchSnapshot = {
+  departure: "now" | "custom";
+  /** Asia/Tokyo "YYYY-MM-DDTHH:mm" used as the departure time of the request. */
+  dateTime: string;
+  auto: AutoFields;
+};
 
 export interface ResultsPanelProps {
   result: RouteResponse;
+  snapshot: SearchSnapshot;
   selectedRouteId: string;
   onSelectRoute: (id: string) => void;
   selectedSectionId: string | null;
@@ -23,9 +37,20 @@ export interface ResultsPanelProps {
 const number = new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 2 });
 const precise = new Intl.NumberFormat("ja-JP", { maximumFractionDigits: 3 });
 const modeLabels = { walk: "徒歩", bike: "自転車", car: "自動車" };
+const FASTEST = "最短時間経路";
+const CONSIDERED = "事故考慮経路（取得候補内）";
 
-function extraTime(minutes: number) {
-  return minutes === 0 ? "+0分" : `+${precise.format(minutes)}分`;
+const dateLabel = (value: string) =>
+  `${value.slice(0, 4)}/${Number(value.slice(5, 7))}/${Number(value.slice(8, 10))} ${value.slice(11, 16)}`;
+const source = (auto: boolean) => (auto ? "自動" : "手動");
+
+function reductionText(result: RouteResponse, fastest: RouteCandidate) {
+  if (result.safest_id === null)
+    return "算出できません（事故考慮経路がないため）";
+  // A zero baseline never yields a meaningful percentage, whatever the field holds.
+  if (fastest.weighted_risk === 0 || result.risk_reduction_percent === null)
+    return "算出できません（最短時間経路の基準リスクが0のため）";
+  return `${result.risk_reduction_percent.toFixed(1)}%`;
 }
 
 function RouteCard({
@@ -53,11 +78,11 @@ function RouteCard({
         </span>
       </span>
       <strong className="result-duration">
-        {formatDuration(route.duration)}
+        {formatMinutes(route.duration)}
       </strong>
       <span className="result-route-meta">
-        <span>{formatDistance(route.distance)}</span>
-        <span>{extraTime(route.extra_minutes)}</span>
+        <span>{formatKilometres(route.distance)}</span>
+        <span>{formatExtraMinutes(route.extra_minutes)}</span>
       </span>
       <span className="result-route-count">
         過去事故 <b>{route.accident_count.toLocaleString("ja-JP")}</b> 件
@@ -66,8 +91,41 @@ function RouteCard({
   );
 }
 
+/** Rows of the side-by-side table for the one or two selected routes. */
+const metricRows: [string, (route: RouteCandidate) => string][] = [
+  ["所要時間", (route) => formatMinutes(route.duration)],
+  ["距離", (route) => formatKilometres(route.distance)],
+  ["最短比の追加時間", (route) => formatExtraMinutes(route.extra_minutes)],
+  ["過去事故", (route) => `${route.accident_count.toLocaleString("ja-JP")}件`],
+  [
+    "死亡事故 / 負傷事故",
+    (route) => `${route.fatal_accidents} / ${route.injury_accidents}件`,
+  ],
+  ["死者 / 負傷者", (route) => `${route.deaths} / ${route.injuries}人`],
+  [
+    "指定天候と一致する事故",
+    (route) =>
+      route.weather_match
+        ? `${route.weather_match.accident_count}件（死亡事故 ${route.weather_match.fatal_accidents}・負傷事故 ${route.weather_match.injury_accidents}件、死者 ${route.weather_match.deaths}・負傷者 ${route.weather_match.injuries}人）`
+        : "天候指定なし",
+  ],
+  ["重み", (route) => `${number.format(route.weighted_risk)}点`],
+  ["重み / km", (route) => `${precise.format(route.risk_per_km)}点/km`],
+  ["許容追加時間", (route) => (route.within_detour ? "範囲内" : "範囲外")],
+  [
+    "地図の事故点",
+    (route) => `${route.points_shown} / ${route.accident_count}件`,
+  ],
+  [
+    "注意区間",
+    (route) =>
+      `${route.high_risk_sections.features.length} / ${route.high_risk_total}区間`,
+  ],
+];
+
 export function ResultsPanel({
   result,
+  snapshot,
   selectedRouteId,
   onSelectRoute,
   selectedSectionId,
@@ -86,36 +144,55 @@ export function ResultsPanel({
     result.candidates.find((candidate) => candidate.id === selectedRouteId) ??
     fastest;
   const same = considered?.id === fastest.id;
+  const featured = considered ? [fastest, considered] : [fastest];
   const sections = selected.high_risk_sections.features;
   const conditions = result.effective_conditions;
-  const reduction =
-    fastest.weighted_risk > 0 && result.risk_reduction_percent !== null
-      ? `${number.format(result.risk_reduction_percent)}%`
-      : "算出不可";
+  const thinned = featured.some(
+    (route) => route.points_shown < route.accident_count,
+  );
+  const truncated = featured.some(
+    (route) => route.high_risk_sections.features.length < route.high_risk_total,
+  );
+  const autoWeather = snapshot.auto.weather && conditions.weather !== "全天候";
 
   return (
     <div className="result-content">
-      <section className="result-block" aria-label="経路の比較">
+      <section
+        className="result-block"
+        aria-labelledby="result-compare-heading"
+      >
         <div className="result-section-heading">
-          <h2>ルートを比較</h2>
+          <h2 id="result-compare-heading">ルートを比較</h2>
           {isDemo && <span className="result-demo-label">デモデータ</span>}
         </div>
+        <dl className="result-meanings">
+          <div>
+            <dt>{FASTEST}</dt>
+            <dd>取得した候補の中で所要時間が最も短い経路です。</dd>
+          </div>
+          <div>
+            <dt>{CONSIDERED}</dt>
+            <dd>
+              取得した候補の中から、過去の事故記録を考慮して選んだ経路です。全道路網の中から選んだ最適な経路ではありません。
+            </dd>
+          </div>
+        </dl>
         <div
-          className={`result-route-cards${considered ? "" : " result-single-card"}`}
+          className={`result-route-cards${considered && !same ? "" : " result-single-card"}`}
           role="group"
-          aria-label="表示する経路"
+          aria-label="比較結果の経路"
         >
-          {considered && (
+          {considered && !same && (
             <RouteCard
               route={considered}
-              title="事故履歴を考慮"
+              title={CONSIDERED}
               selected={selected.id === considered.id}
               onClick={() => onSelectRoute(considered.id)}
             />
           )}
           <RouteCard
             route={fastest}
-            title="最短時間"
+            title={same ? `${FASTEST}・${CONSIDERED}` : FASTEST}
             selected={selected.id === fastest.id}
             onClick={() => onSelectRoute(fastest.id)}
           />
@@ -123,14 +200,20 @@ export function ResultsPanel({
         {same && (
           <p className="result-same">
             <Check size={15} aria-hidden="true" />
-            同一経路
+            今回は{FASTEST}と{CONSIDERED}が同じ経路です。
+          </p>
+        )}
+        {result.candidates.length === 1 && (
+          <p className="result-notice">
+            <Info size={16} aria-hidden="true" />
+            <span>経路候補が1本だけのため、他の経路と比較できません。</span>
           </p>
         )}
         {!considered && (
           <p className="result-notice">
             <Info size={16} aria-hidden="true" />
             <span>
-              全候補の該当事故が0件のため、事故履歴から優先経路を判断できません。事故0件は安全の証明ではありません。
+              全候補で該当する事故が0件のため、事故を考慮した経路は選んでいません。事故0件は安全の証明ではありません。
             </span>
           </p>
         )}
@@ -144,6 +227,72 @@ export function ResultsPanel({
               </li>
             ))}
           </ul>
+        )}
+        <p className="result-risk-note">{result.risk_note}</p>
+      </section>
+
+      <section
+        className="result-block"
+        aria-labelledby="result-metrics-heading"
+      >
+        <div className="result-section-heading">
+          <h2 id="result-metrics-heading">2経路の指標</h2>
+        </div>
+        <div
+          className="result-table-scroll"
+          role="region"
+          aria-label="2経路の指標（横スクロール）"
+          tabIndex={0}
+        >
+          <table className="result-table result-compare-table">
+            <thead>
+              <tr>
+                <th scope="col">項目</th>
+                <th scope="col">{FASTEST}</th>
+                {considered && <th scope="col">{CONSIDERED}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {metricRows.map(([label, value]) => (
+                <tr key={label}>
+                  <th scope="row">{label}</th>
+                  {featured.map((route, index) => (
+                    <td key={index}>{value(route)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <dl className="result-metrics">
+          <div>
+            <dt>最短比の重み減少率</dt>
+            <dd>{reductionText(result, fastest)}</dd>
+          </div>
+          <div>
+            <dt>事故考慮経路の追加時間</dt>
+            <dd>
+              {result.extra_minutes === null
+                ? "対象なし"
+                : formatExtraMinutes(result.extra_minutes)}
+            </dd>
+          </div>
+        </dl>
+        {thinned && (
+          <p className="result-notice">
+            <Info size={16} aria-hidden="true" />
+            <span>
+              地図の事故点は各経路で死亡事故を優先して最大250件まで表示しています（表示数/該当件数は上の表）。候補間で重複する事故は地図上で1つにまとめています。
+            </span>
+          </p>
+        )}
+        {truncated && (
+          <p className="result-notice">
+            <Info size={16} aria-hidden="true" />
+            <span>
+              注意区間は各経路で上位100区間だけを表示しています（表示数/全区間数は上の表）。
+            </span>
+          </p>
         )}
       </section>
 
@@ -180,7 +329,7 @@ export function ResultsPanel({
           </ul>
         ) : (
           <p className="result-no-sections">
-            表示対象の注意区間はありません。
+            表示対象の注意区間はありません。安全であることを示すものではありません。
           </p>
         )}
         <label className="result-toggle-row">
@@ -195,104 +344,63 @@ export function ResultsPanel({
         </label>
       </section>
 
+      <section
+        className="result-block"
+        aria-labelledby="result-applied-heading"
+      >
+        <div className="result-section-heading">
+          <h2 id="result-applied-heading">適用された条件</h2>
+        </div>
+        <dl className="result-metrics">
+          <div>
+            <dt>出発日時</dt>
+            <dd>
+              {snapshot.departure === "now"
+                ? `現在（${dateLabel(snapshot.dateTime)}の検索時点）`
+                : `指定：${dateLabel(snapshot.dateTime)}`}
+            </dd>
+          </div>
+          <div>
+            <dt>移動手段</dt>
+            <dd>{modeLabels[conditions.mode]}</dd>
+          </div>
+          <div>
+            <dt>時間帯</dt>
+            <dd>
+              {conditions.period}（{source(snapshot.auto.period)}）
+            </dd>
+          </div>
+          <div>
+            <dt>曜日区分</dt>
+            <dd>
+              {conditions.day_type}（{source(snapshot.auto.day_type)}）
+            </dd>
+          </div>
+          <div>
+            <dt>天候</dt>
+            <dd>
+              {conditions.weather}（{source(snapshot.auto.weather)}）
+            </dd>
+          </div>
+        </dl>
+        <p className="result-muted">
+          条件は自動で緩和しません。天候を指定しても集計する事故は減りません。雨・霧・雪を指定した場合だけ同じ天候の事故を重く数え、晴・曇では「指定天候と一致する事故」の集計だけが変わります。
+        </p>
+        {autoWeather && (
+          <p className="result-muted">
+            事故記録の天候は発生時の現場での判定で、自動取得した天候は気象モデルの推定値です。両者は同じ尺度ではありません。
+          </p>
+        )}
+      </section>
+
       <details className="result-details">
         <summary>
-          <span>指標と詳細</span>
+          <span>集計条件と全候補</span>
           <ChevronDown size={18} aria-hidden="true" />
         </summary>
         <div className="result-details-body">
-          <h3>適用された条件</h3>
-          <p className="result-applied-conditions">
-            {modeLabels[conditions.mode]} / {conditions.period} /{" "}
-            {conditions.day_type} / {conditions.weather}
-          </p>
-
-          <h3>選択経路の集計</h3>
+          <h3>集計条件</h3>
           <dl className="result-metrics">
-            <div>
-              <dt>過去事故</dt>
-              <dd>{selected.accident_count.toLocaleString("ja-JP")}件</dd>
-            </div>
-            <div>
-              <dt>死亡事故 / 負傷事故</dt>
-              <dd>
-                {selected.fatal_accidents} / {selected.injury_accidents}件
-              </dd>
-            </div>
-            <div>
-              <dt>死者 / 負傷者</dt>
-              <dd>
-                {selected.deaths} / {selected.injuries}人
-              </dd>
-            </div>
-            <div>
-              <dt>重み</dt>
-              <dd>{number.format(selected.weighted_risk)}点</dd>
-            </div>
-            <div>
-              <dt>重み / km</dt>
-              <dd>{precise.format(selected.risk_per_km)}点/km</dd>
-            </div>
-            <div>
-              <dt>許容追加時間</dt>
-              <dd>{selected.within_detour ? "範囲内" : "範囲外"}</dd>
-            </div>
-            <div>
-              <dt>地図の事故点</dt>
-              <dd>
-                {selected.points_shown} / {selected.accident_count}件
-              </dd>
-            </div>
-            <div>
-              <dt>注意区間</dt>
-              <dd>
-                {sections.length} / {selected.high_risk_total}区間
-              </dd>
-            </div>
-          </dl>
-
-          <h3>指定天候と一致する事故</h3>
-          {selected.weather_match ? (
-            <dl className="result-metrics">
-              <div>
-                <dt>過去事故</dt>
-                <dd>{selected.weather_match.accident_count}件</dd>
-              </div>
-              <div>
-                <dt>死亡事故 / 負傷事故</dt>
-                <dd>
-                  {selected.weather_match.fatal_accidents} /{" "}
-                  {selected.weather_match.injury_accidents}件
-                </dd>
-              </div>
-              <div>
-                <dt>死者 / 負傷者</dt>
-                <dd>
-                  {selected.weather_match.deaths} /{" "}
-                  {selected.weather_match.injuries}人
-                </dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="result-muted">
-              天候指定なしのため、天候別の一致集計はありません。
-            </p>
-          )}
-
-          <h3>比較と集計条件</h3>
-          <dl className="result-metrics">
-            <div>
-              <dt>最短比の重み減少率</dt>
-              <dd>{reduction}</dd>
-            </div>
-            <div>
-              <dt>事故考慮経路の追加時間</dt>
-              <dd>
-                {result.extra_minutes === null
-                  ? "対象なし"
-                  : extraTime(result.extra_minutes)}
-              </dd>
-            </div>
             <div>
               <dt>集計半径</dt>
               <dd>{result.radius_m}m</dd>
@@ -302,16 +410,16 @@ export function ResultsPanel({
               <dd>{result.distance_weight_sigma_m}m</dd>
             </div>
             <div>
-              <dt>データ年</dt>
-              <dd>{result.data_years.join("・")}年</dd>
-            </div>
-            <div>
               <dt>経路候補</dt>
               <dd>{result.candidates.length}本</dd>
             </div>
             <div>
-              <dt>集計・選定時間</dt>
-              <dd>{number.format(result.aggregation_ms)}ms</dd>
+              <dt>データ年</dt>
+              <dd>{result.data_years.join("・")}年</dd>
+            </div>
+            <div>
+              <dt>サーバーでの集計・選定時間（通信時間を含みません）</dt>
+              <dd>{Math.round(result.aggregation_ms)}ms</dd>
             </div>
           </dl>
 
@@ -367,9 +475,9 @@ export function ResultsPanel({
                         .filter(Boolean)
                         .join(" / ") || "—"}
                     </td>
-                    <td>{formatDuration(candidate.duration)}</td>
-                    <td>{formatDistance(candidate.distance)}</td>
-                    <td>{extraTime(candidate.extra_minutes)}</td>
+                    <td>{formatMinutes(candidate.duration)}</td>
+                    <td>{formatKilometres(candidate.distance)}</td>
+                    <td>{formatExtraMinutes(candidate.extra_minutes)}</td>
                     <td>{candidate.accident_count}件</td>
                     <td>
                       {candidate.weather_match
@@ -386,46 +494,6 @@ export function ResultsPanel({
           </div>
         </div>
       </details>
-      {!isDemo && (
-        <footer className="result-attribution">
-          事故データ：
-          <a
-            href="https://www.npa.go.jp/publications/statistics/koutsuu/opendata/index_opendata.html"
-            target="_blank"
-            rel="noreferrer"
-          >
-            警察庁交通事故統計オープンデータ
-          </a>
-          （{result.data_years.join("・")}年）
-          <br />
-          <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">
-            Weather data by Open-Meteo.com
-          </a>
-          （CC BY 4.0）
-          <br />
-          祝日データ：
-          <a
-            href="https://www8.cao.go.jp/chosei/shukujitsu/gaiyou.html"
-            target="_blank"
-            rel="noreferrer"
-          >
-            内閣府「国民の祝日」
-          </a>
-          <br />
-          経路：
-          <a href="https://project-osrm.org/" target="_blank" rel="noreferrer">
-            OSRM
-          </a>{" "}
-          /{" "}
-          <a
-            href="https://www.openstreetmap.org/copyright"
-            target="_blank"
-            rel="noreferrer"
-          >
-            OpenStreetMap contributors
-          </a>
-        </footer>
-      )}
     </div>
   );
 }

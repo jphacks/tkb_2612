@@ -33,3 +33,18 @@ export function toTokyoIso(localValue: string): string {
     throw new Error("出発日時は2000年から2100年の間で指定してください。");
   return result;
 }
+
+/** frontend-spec 5: comparison durations in minutes with one decimal (API seconds). */
+export function formatMinutes(seconds: number): string {
+  return `${(seconds / 60).toFixed(1)}分`;
+}
+
+/** frontend-spec 5: comparison distances in kilometres with two decimals (API metres). */
+export function formatKilometres(metres: number): string {
+  return `${(metres / 1000).toFixed(2)} km`;
+}
+
+/** frontend-spec 5: extra_minutes is already minutes; shown with one decimal. */
+export function formatExtraMinutes(minutes: number): string {
+  return `+${minutes.toFixed(1)}分`;
+}

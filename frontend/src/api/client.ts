@@ -105,6 +105,19 @@ async function requestJson<T>(
       signal: controller.signal,
       cache: "no-store",
     });
+    // frontend-spec 5: an expired IAP session redirects the API to a login page.
+    // That HTML is a non-JSON failure; the user is told to reload, never redirected.
+    if (
+      response.redirected ||
+      response.status === 401 ||
+      response.status === 403 ||
+      /text\/html/i.test(response.headers.get("Content-Type") ?? "")
+    )
+      throw new ApiError(
+        "ログインの有効期限が切れた可能性があります。",
+        "auth_required",
+        response.status,
+      );
     let data: unknown;
     try {
       data = await response.json();

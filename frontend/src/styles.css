@@ -868,3 +868,21 @@ svg {
     transition: none !important;
   }
 }
+.panel-subtitle {
+  margin: 24px 16px 0;
+  font-size: 16px;
+}
+.data-attribution {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.8;
+  padding: 0 16px 16px;
+}
+.data-attribution ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+.form-page .data-attribution {
+  margin-top: 40px;
+  padding: 0;
+}

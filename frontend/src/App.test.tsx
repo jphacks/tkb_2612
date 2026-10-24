@@ -148,7 +148,9 @@ async function switchScenario(
 describe("App search flow and condition ownership", () => {
   it("keeps conditions visible and preserves them when the sidebar is hidden and reopened", async () => {
     const user = await openResults();
-    const sidebar = screen.getByRole("complementary", { name: "検索条件" });
+    const sidebar = screen.getByRole("complementary", {
+      name: "検索結果と条件",
+    });
     expect(
       within(sidebar).getByRole("combobox", { name: "目的地" }),
     ).toHaveValue(DEMO_PLACES[1].label);
@@ -266,7 +268,9 @@ describe("App search flow and condition ownership", () => {
     expect(
       screen.queryByRole("button", { name: /キャンセル/ }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "条件選択に戻る" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "条件選択に戻る" }),
+    ).toBeDisabled();
     expect(screen.getByRole("button", { name: "再検索" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "AcciLessNavi 地点入力へ" }),
@@ -280,7 +284,9 @@ describe("App search flow and condition ownership", () => {
     );
     await screen.findByRole("group", { name: "表示する経路" });
     expect(api.searchRoutes).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "条件選択に戻る" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "条件選択に戻る" }),
+    ).toBeEnabled();
   });
 
   it("shows why automatic day type and weather were chosen", async () => {
@@ -366,7 +372,9 @@ describe("App search flow and condition ownership", () => {
       fireEvent.change(screen.getByRole("combobox", { name }), {
         target: { value: query },
       });
-      await user.click(screen.getByRole("button", { name: `${name}の候補を検索` }));
+      await user.click(
+        screen.getByRole("button", { name: `${name}の候補を検索` }),
+      );
       await user.click(
         await screen.findByRole("option", { name: DEMO_PLACES[index].label }),
       );
@@ -480,5 +488,119 @@ describe("App search flow and condition ownership", () => {
     );
     await screen.findByRole("group", { name: "表示する経路" });
     expect(api.searchRoutes).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("App result comparison and failures (frontend-spec 5, 10)", () => {
+  it("shows the comparison with the requested departure and auto/manual sources in the sidebar", async () => {
+    const user = await openConditions();
+    await user.click(screen.getByRole("radio", { name: "自転車" }));
+    await user.click(screen.getByRole("radio", { name: /夕 16:00/ }));
+    await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
+    const sidebar = await screen.findByRole("complementary", {
+      name: "検索結果と条件",
+    });
+    const response: RouteResponse =
+      await api.searchRoutes.mock.results.at(-1)?.value;
+    expect(within(sidebar).getByText(response.reason)).toBeInTheDocument();
+    expect(within(sidebar).getByText(response.risk_note)).toBeInTheDocument();
+    const applied = within(sidebar).getByRole("region", {
+      name: "適用された条件",
+    });
+    expect(
+      within(applied).getByText(/^現在（.*の検索時点）$/),
+    ).toBeInTheDocument();
+    expect(within(applied).getByText("自転車")).toBeInTheDocument();
+    expect(within(applied).getByText("夕（手動）")).toBeInTheDocument();
+    expect(
+      within(applied).getByText(
+        `${response.effective_conditions.day_type}（自動）`,
+      ),
+    ).toBeInTheDocument();
+
+    // Selecting in the panel updates the map selection too.
+    await user.click(
+      within(
+        within(sidebar).getByRole("group", { name: "比較結果の経路" }),
+      ).getByRole("button", { name: /^最短時間経路/ }),
+    );
+    expect(
+      screen.getByRole("button", { name: "最短時間を選択" }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    // Editing a condition clears the comparison with the result.
+    await user.click(within(sidebar).getByRole("radio", { name: "雨" }));
+    expect(
+      within(sidebar).queryByRole("region", { name: "適用された条件" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["no_route", 502, /道路に近い地点/],
+    ["route_too_long", 422, /80km.*近づけて/],
+    ["service_busy", 503, /混み合って/],
+    ["invalid_response", undefined, /再読み込み/],
+    [
+      "brand_new_code",
+      500,
+      /^未知の失敗です。 時間をおいて再試行してください。$/,
+    ],
+  ])(
+    "shows the %s failure by code with a manual retry and keeps the inputs",
+    async (code, status, expected) => {
+      const user = await openConditions();
+      api.searchRoutes.mockRejectedValueOnce(
+        new ApiError("未知の失敗です。", code, status),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "ルートを比較する" }),
+      );
+      const alert = await screen.findByRole("alert");
+      expect(within(alert).getByText(expected)).toBeInTheDocument();
+      expect(
+        within(alert).getByRole("button", { name: "再試行" }),
+      ).toBeEnabled();
+      expect(screen.getByRole("combobox", { name: "目的地" })).toHaveValue(
+        DEMO_PLACES[1].label,
+      );
+    },
+  );
+
+  it("always shows live data attribution, including the geocode providers", async () => {
+    mode.demo = false;
+    api.searchPlaces.mockImplementation((query: string) =>
+      Promise.resolve({
+        ...findDemoPlaces(query),
+        attribution: [
+          { text: "Powered by Geoapify", url: "https://www.geoapify.com/" },
+        ],
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      screen.getByRole("button", { name: "動画をスキップして開始" }),
+    );
+    const footer = screen.getByRole("contentinfo", { name: "データの出典" });
+    await waitFor(() =>
+      expect(
+        within(footer).getByText(
+          new RegExp(`（${demoHealth.data_years.join("・")}年）`),
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      within(footer).getByRole("link", {
+        name: "Weather data by Open-Meteo.com",
+      }),
+    ).toBeInTheDocument();
+    const input = screen.getByRole("combobox", { name: "目的地" });
+    fireEvent.change(input, { target: { value: "上野" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(
+        within(footer).getByRole("link", { name: "Powered by Geoapify" }),
+      ).toHaveAttribute("href", "https://www.geoapify.com/"),
+    );
   });
 });

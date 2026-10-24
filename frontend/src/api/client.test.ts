@@ -58,16 +58,14 @@ describe("API client cancellation and live separation", () => {
 
   it("does not replace a live server error with demo data or retry it", async () => {
     vi.stubEnv("VITE_API_MODE", "live");
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            error: { code: "service_busy", message: "混み合っています。" },
-          }),
-          { status: 503 },
-        ),
-      );
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: { code: "service_busy", message: "混み合っています。" },
+        }),
+        { status: 503 },
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const { getHealth } = await import("./client");
     await expect(getHealth()).rejects.toMatchObject({
@@ -148,9 +146,9 @@ describe("API client cancellation and live separation", () => {
       }),
     );
     const { getConditions } = await import("./client");
-    await expect(
-      getConditions("2026-10-24T12:00+09:00"),
-    ).rejects.toMatchObject({ code: "timeout" });
+    await expect(getConditions("2026-10-24T12:00+09:00")).rejects.toMatchObject(
+      { code: "timeout" },
+    );
   });
 
   it("keeps an invalid response that completes within the deadline as invalid_response", async () => {
@@ -163,8 +161,51 @@ describe("API client cancellation and live separation", () => {
       ),
     );
     const { getConditions } = await import("./client");
+    await expect(getConditions("2026-10-24T12:00+09:00")).rejects.toMatchObject(
+      { code: "invalid_response" },
+    );
+  });
+});
+
+describe("API client failure classification (frontend-spec 5)", () => {
+  async function failWith(response: Response) {
+    vi.stubEnv("VITE_API_MODE", "live");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+    const { getHealth } = await import("./client");
+    return getHealth();
+  }
+
+  it("classifies an HTML login page as an authentication failure", async () => {
     await expect(
-      getConditions("2026-10-24T12:00+09:00"),
+      failWith(
+        new Response("<html>login</html>", {
+          status: 200,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "auth_required" });
+  });
+
+  it("classifies a redirected API response as an authentication failure", async () => {
+    const response = new Response("{}", { status: 200 });
+    Object.defineProperty(response, "redirected", { value: true });
+    await expect(failWith(response)).rejects.toMatchObject({
+      code: "auth_required",
+    });
+  });
+
+  it("classifies 401/403 as authentication failures even with a JSON body", async () => {
+    for (const status of [401, 403]) {
+      vi.resetModules();
+      await expect(
+        failWith(new Response("{}", { status })),
+      ).rejects.toMatchObject({ code: "auth_required", status });
+    }
+  });
+
+  it("keeps other non-JSON bodies as invalid_response", async () => {
+    await expect(
+      failWith(new Response("not json", { status: 200 })),
     ).rejects.toMatchObject({ code: "invalid_response" });
   });
 });
