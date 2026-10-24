@@ -14,6 +14,8 @@ import type {
   RouteResponse,
 } from "../lib/types";
 import "maplibre-gl/dist/maplibre-gl.css";
+// v6のESM版はworkerを import.meta.url からの相対で探すので、ビルドに含めてURLを渡す
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import "./map.css";
 import {
   RouteCallouts,
@@ -137,6 +139,7 @@ function LiveMap(props: LiveMapProps) {
     void import("maplibre-gl")
       .then((maplibre) => {
         if (disposed || !container.current) return;
+        maplibre.setWorkerUrl(maplibreWorkerUrl);
         map = new maplibre.Map({
           container: container.current,
           style: props.styleUrl,
