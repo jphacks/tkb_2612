@@ -2,7 +2,7 @@
 
 事故データ・計算担当（②）とAPI・外部通信・基盤担当（③）が、相手の完成を待たずに並行して実装するための内部契約です（Issue #4）。外部のHTTP/JSONは [openapi.yaml](../docs/api/openapi.yaml)、計算は [behavior.md](../docs/api/behavior.md)、構成は [architecture.md](../docs/architecture.md) に従います。ここでは公開APIと計算仕様を変更していません。
 
-現時点で入っているのは契約の型、スタブ、fixtureの読込、検証用のテストです。各機能の本実装（Axumハンドラ、OSRMアダプタ、集計、前処理、祝日表の読込）はまだありません。
+現時点で入っているのは契約の型、スタブ、fixtureの読込、検証用のテストと、②の本実装（前処理、release、祝日表の読込と判定、`load_calendar`・`load_engine`、計算エンジン。下記「事故データ・計算（②）」）です。③の本実装（Axumハンドラ、OSRMアダプタ等）はまだありません。
 
 ## 型の所在
 
@@ -150,6 +150,85 @@ python3 -B backend/scripts/extract_route_examples.py          # openapi.yamlの�
 - `tests/connection.rs`：fixtureの整合と相関制約（崩した結果を拒否すること）、スタブを経由した接続、不正な経路、上流で待っている間の期限切れ、集計中の期限切れ、完了と期限切れの同時観測、要求の破棄による取消し
 - `tests/boundaries.rs`：依存方向
 
+## 事故データ・計算（②）
+
+Issue #8 の実装です。計算は [behavior.md](../docs/api/behavior.md) 2〜8章に従い、公開API・計算仕様・`src/contract/` は変更していません。
+
+### 依存方向
+
+`data` は `domain` に依存してよい（エンジンと `Calendar` の実装は `domain` にあり、`data` がそれを組み立てる）。`domain` は `data` に依存しない。どちらも `api`・`providers`・`testing`・tokio/axum/reqwest/hyper を参照しない。
+
+| モジュール | 内容 |
+|---|---|
+| `domain::calendar` | `HolidayCalendar`（`contract::Calendar` の唯一の実装）。前処理と `/api/conditions` が同じ型を使う |
+| `domain::candidates` | 候補の取得（初回→side=-1→+1）・検証・80km判定・5桁fingerprintの重複排除・duration安定ソート |
+| `domain::corridor` | 局所投影・75m分割・72m回廊（0.001度グリッド。結果は索引の走査順に依存しない） |
+| `domain::scoring`・`navigation`・`engine` | 集合B・スコア・事故点・高リスク区間・ナビ区間・選定・文言（`AccidentEngine`） |
+| `domain::rounding` | `py_round`（Pythonの `round` と同じ二進値のhalf-even）。丸めはすべてこれを使う |
+| `data::encoding`・`holidays` | 文字コード判定（`utf-8-sig`→cp932）、祝日CSVの読込 |
+| `data::preprocess` | 原本CSVの行・ファイル処理、コード表の照合 |
+| `data::release`・`load` | releaseの書き出し、起動時ロードと検証 |
+
+### release形式
+
+`ACCIDENT_DATA_DIR`（既定 `backend/data/current`）はこのディレクトリそのものを指します（`current` をさらに付けません）。
+
+| ファイル | 内容 |
+|---|---|
+| `accidents.csv.gz` | UTF-8・gzip（レベル3）の17列CSV（behavior.md 2章の列順）。緯度経度は小数7桁。行番号0始まりが事故ID |
+| `syukujitsu.csv` | 前処理に使った内閣府の祝日表（原本のバイト列のまま） |
+| `metadata.json` | 下表 |
+
+`metadata.json` のキー（③のコードは読まない。`/api/health` は `RouteEngine::dataset()` の `DatasetInfo` から作る）：
+
+| キー | 内容 | ロード時の検証 |
+|---|---|---|
+| `schema_version` | 2 | 2であること |
+| `dataset_id` | `accidents.csv.gz` 全バイトのSHA-256（小文字hex） | 実ファイルから再計算して一致 |
+| `release_id` | `dataset_id` と祝日表のSHA-256を `\n` で連結した文字列のSHA-256 | 実ファイルから再計算して一致 |
+| `rows` | 保持行数（modes=0を含む） | ロード行数と一致 |
+| `holiday_table` | `file`・`sha256`・`first_date`・`last_date`（表中の最小・最大日付）・`rows`・`coverage_start`・`coverage_end`（収録範囲） | `sha256` が実ファイルと一致（`load_calendar` も照合） |
+| `holiday_uncovered_rows` | 祝日表の収録範囲外の日付で、土日と年末年始だけで判定した行数 | — |
+| `processor` | `name`（`prepare_release`）・`version`（crateの版） | — |
+| `generated_at` | 前処理の日時（タイムゾーン付きRFC 3339） | — |
+| `columns`・`gzip_bytes`・`data_years` | 17列の名前、gzipのバイト数、source_yearの昇順 | — |
+| `files` | 年度ごとの `source_year`・`file`・`sha256`（原本）・`encoding`・`input_rows`・`retained_rows`・`excluded_rows`・`excluded_by_reason`・`no_target_mode` | — |
+| `totals` | 全年度の `input_rows`・`retained_rows`・`excluded_rows` | — |
+| `codebooks_xlsx`・`codebooks_pdf` | 照合したコード表の `source_year`・`file`・`sha256` | — |
+| `elapsed_seconds` | 前処理の秒数 | — |
+
+ロードでは、あわせてヘッダの17列の完全一致、先頭10列の型と範囲（緯度経度の範囲、modes 0〜7、period 0〜4、weather 1〜5、day_type 0〜1、人数は各0〜999で合計1以上、実在する8桁の日付で1900 ≦ 発生年 ≦ source_year かつ発生年は9999以下）、空でないことを検証します。失敗は `LoadError` で、メッセージに位置や原本行を含めません。
+
+除外理由のキー：`missing_field`・`invalid_coordinates`・`invalid_datetime`・`invalid_casualties`・`unknown_party_code`・`unknown_weather_code`・`unknown_injury_code`・`unknown_daynight_code`・`invalid_accident_type`（この順で最初の理由に1回だけ計上）。
+
+### 前処理コマンド
+
+バイナリ名は `prepare_release` です（`default-run` とDockerfileの `--bin` は③が決めます）。
+
+```sh
+cargo run --release --manifest-path backend/Cargo.toml --bin prepare_release -- \
+    --accident-dir accident --holidays accident/syukujitsu.csv --output backend/data
+```
+
+- 原本（`honhyo_2019.csv`〜`honhyo_2025.csv`、`codebook_2019〜2021.pdf`、`codebook_2022〜2025.xlsx`）は読むだけです。コード表は常に実ファイルで照合します（省略するオプションはありません）。
+- `<output>/staging/` で3ファイルを作ってから `<output>/releases/<release_id>/` へ移し、読み取り専用にします。同じ `release_id` が既にあれば上書きせず失敗します。`current` は変更しません。
+- 成果物（`backend/data/releases/`・`staging/`・`current`）は置き場所とgit管理が決まるまでコミットしません（`backend/data/.gitignore`）。
+- 標準出力に件数・ID・年度別の除外理由をJSONで出します。
+
+### テスト用のヘルパー
+
+| 用途 | 使うもの |
+|---|---|
+| 人工releaseを一時ディレクトリに作る（C3） | `testing::TestRelease::for_example(name)`。`path()` を `data::load_calendar`・`data::load_engine` に渡す。破棄時に消える。`ids` は実際のハッシュ（fixtureの0埋めとは異なる） |
+| 例ごとの固定経路 | `testing::example_router(&example)`。初回は固定経路、初回が3本未満なら追加の2回にも同じ経路を返す |
+| 人工releaseを永続ディレクトリに書く（C4） | `cargo run --manifest-path backend/Cargo.toml --example make_test_release -- <出力先> <例の名前>` |
+
+人工releaseの事故は、その例の `accident_ids`（0からの連番であることを検査）だけです。`DatasetInfo.accidents` はその件数（`singleRoute`=1、`noAccidents`・`twoSelected`=3）、`data_years` は `[2025]` です。同梱の祝日表（`testing::release::TEST_HOLIDAY_CSV`）は2025年の祝日・休日で、収録範囲は2025-01-01〜2025-12-31です（範囲内の例：2025-11-24は振替休日、範囲外の例：2026-01-05は `holiday_table_covered=false`）。
+
+### 追加したテスト
+
+`calendar`（時間帯・曜日区分・祝日表）、`preprocess_rows`・`preprocess_files`・`preprocess_release`（前処理・コード表）、`release_load`（起動時検証）、`test_release`（人工release）、`candidates`・`corridor`・`scoring`・`navigation`（`navigation-cases.json` の全ケース）・`selection`、`engine_fixtures`（人工release＋実エンジン＋固定経路がopenapi.yamlの全応答例と一致。比較規則は共通前提のC3と同じ）、`engine_cancel`（中断）。実コード表・実祝日表の試験はリポジトリの `accident/` を使い、なければ失敗します（省略しません）。実releaseの確認は `real_release` で、既定では `ignored` と数えます。`ACCIDENT_REAL_RELEASE_DIR` を指定し、`-- --ignored` を付けて実行します。
+
 ## 範囲外
 
-本PRには含めないものです：Axumハンドラ、DTO、OSRM・Geoapify・Open-Meteoのアダプタ、上流ゲート、集計、ナビ区間、前処理、祝日表の読込と判定、クラウドへの配備。WMOコードから天候への変換表（architecture.mdでdomainに置くとされているもの）の担当は、本Issueでは決めていません。
+③の担当で、ここに含めないものです：Axumハンドラ、DTO、OSRM・Geoapify・Open-Meteoのアダプタ、上流ゲート、クラウドへの配備。WMOコードから天候への変換表は③の担当です（#7〜#9 共通前提2章）。
