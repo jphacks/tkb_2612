@@ -1,0 +1,322 @@
+.route-map-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 320px;
+  overflow: hidden;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.route-schematic-canvas,
+.route-live-map {
+  position: absolute;
+  inset: 0;
+}
+.route-schematic {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.map-route-line {
+  fill: none;
+  stroke: #94a3b8;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.map-route-button.is-selected .map-route-line {
+  stroke: #2563eb;
+  stroke-width: 8;
+}
+.map-route-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 44;
+  cursor: pointer;
+}
+.map-route-button:focus-visible {
+  outline: none;
+}
+.map-route-button:focus-visible .map-route-line {
+  stroke: #1e40af;
+  stroke-width: 12;
+}
+.map-section-line {
+  fill: none;
+  stroke: #d97706;
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.map-section-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 44;
+}
+.map-section-marker {
+  fill: #d97706;
+  stroke: #fff;
+  stroke-width: 2;
+}
+.map-section-number {
+  fill: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.map-section-button {
+  cursor: pointer;
+  outline: none;
+}
+.map-section-button.is-selected .map-section-line,
+.map-section-button:focus-visible .map-section-line {
+  stroke-width: 12;
+}
+.map-section-button.is-selected .map-section-marker,
+.map-section-button:focus-visible .map-section-marker {
+  stroke: #0f172a;
+  stroke-width: 3;
+}
+.map-endpoint circle {
+  fill: #fff;
+  stroke: #0f172a;
+  stroke-width: 4;
+}
+.map-endpoint.is-destination circle {
+  fill: #0f172a;
+  stroke: #fff;
+}
+.map-endpoint text {
+  fill: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: #f1f5f9;
+  stroke-width: 5;
+}
+.map-accident-button {
+  cursor: pointer;
+  outline: none;
+}
+.map-accident-dot {
+  fill: #fff;
+  stroke: #d97706;
+  stroke-width: 3;
+}
+.map-accident-button:focus-visible .map-accident-dot {
+  stroke: #0f172a;
+  stroke-width: 5;
+}
+.map-preview-label {
+  position: absolute;
+  top: 16px;
+  right: 80px;
+  max-width: calc(100% - 104px);
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.map-preview-label small {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 400;
+}
+.map-controls {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.map-controls button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid #e2e8f0;
+  color: #0f172a;
+  cursor: pointer;
+}
+.map-controls button:last-child {
+  border-bottom: 0;
+}
+.map-controls button:hover {
+  background: #f8fafc;
+}
+.map-controls button:disabled {
+  color: #94a3b8;
+  cursor: default;
+}
+.map-controls button:focus-visible,
+.map-popup-heading button:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: -3px;
+}
+.map-legend {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  max-width: calc(100% - 32px);
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 11px;
+  pointer-events: none;
+}
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.map-legend i {
+  display: inline-block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  background: #2563eb;
+}
+.map-legend .legend-alternative {
+  background: #94a3b8;
+}
+.map-legend .legend-section {
+  background: #d97706;
+}
+.map-legend .legend-accident {
+  width: 9px;
+  height: 9px;
+  border: 2px solid #d97706;
+  border-radius: 50%;
+  background: #fff;
+}
+.map-empty,
+.map-unavailable {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 72px 24px;
+  text-align: center;
+  color: #64748b;
+  font-size: 14px;
+}
+.map-empty p,
+.map-unavailable p {
+  margin: 0;
+}
+.map-unavailable strong {
+  color: #0f172a;
+}
+.map-accident-popup {
+  position: absolute;
+  right: 80px;
+  top: 100px;
+  width: min(280px, calc(100% - 96px));
+  padding: 12px 16px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+}
+.map-popup-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.map-popup-heading button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: #64748b;
+  background: #fff;
+  cursor: pointer;
+}
+.map-popup-heading button:hover {
+  background: #f8fafc;
+}
+.map-accident-popup dl {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  gap: 8px;
+  margin: 0;
+}
+.map-accident-popup dt {
+  color: #64748b;
+}
+.map-accident-popup dd {
+  margin: 0;
+  color: #0f172a;
+}
+.route-live-map .maplibregl-ctrl-group {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.route-live-map .maplibregl-ctrl-group button {
+  width: 44px;
+  height: 44px;
+}
+.route-live-map .maplibregl-ctrl-attrib {
+  max-width: 100%;
+  font-size: 11px;
+}
+.is-live-map .map-legend {
+  bottom: 40px;
+}
+@media (min-width: 900px) {
+  .route-schematic-canvas,
+  .route-live-map,
+  .map-empty,
+  .map-unavailable {
+    left: 392px;
+  }
+}
+@media (max-width: 600px) {
+  .map-preview-label {
+    top: 12px;
+    right: 68px;
+    padding: 6px 8px;
+  }
+  .map-controls {
+    top: 12px;
+    right: 12px;
+  }
+  .map-legend {
+    right: 12px;
+    bottom: 12px;
+    max-width: calc(100% - 24px);
+    gap: 6px 12px;
+  }
+  .map-accident-popup {
+    right: 68px;
+    top: 80px;
+    width: min(280px, calc(100% - 80px));
+    padding: 8px 12px 12px;
+  }
+}
