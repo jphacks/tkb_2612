@@ -2,7 +2,7 @@
 
 事故データ・計算担当（②）とAPI・外部通信・基盤担当（③）が、相手の完成を待たずに並行して実装するための内部契約です（Issue #4）。外部のHTTP/JSONは [openapi.yaml](../docs/api/openapi.yaml)、計算は [behavior.md](../docs/api/behavior.md)、構成は [architecture.md](../docs/architecture.md) に従います。ここでは公開APIと計算仕様を変更していません。
 
-現時点で入っているのは契約の型、スタブ、fixtureの読込、検証用のテストと、②の本実装（前処理、release、祝日表の読込と判定、`load_calendar`・`load_engine`、計算エンジン。下記「事故データ・計算（②）」）です。③の本実装（Axumハンドラ、OSRMアダプタ等）はまだありません。
+現時点で入っているのは契約の型、スタブ、fixtureの読込、検証用のテストと、②の本実装（前処理、release、祝日表の読込と判定、`load_calendar`・`load_engine`、計算エンジン。下記「事故データ・計算（②）」）、③の本実装（Axumハンドラ、外部提供元のアダプタ、上流ゲート、設定と起動、CI、配備定義。下記「API・外部通信・基盤（③）」。Issue #9）です。
 
 ## 型の所在
 
@@ -149,6 +149,93 @@ python3 -B backend/scripts/extract_route_examples.py          # openapi.yamlの�
 - `tests/contract_types.rs`：コードとラベル、時間帯の境界、直線距離と許容時間の境界、期限とキャンセルの規則（`settle` を含む）
 - `tests/connection.rs`：fixtureの整合と相関制約（崩した結果を拒否すること）、スタブを経由した接続、不正な経路、上流で待っている間の期限切れ、集計中の期限切れ、完了と期限切れの同時観測、要求の破棄による取消し
 - `tests/boundaries.rs`：依存方向
+
+## API・外部通信・基盤（③）
+
+Issue #9 の実装です。設定は環境変数（architecture.md 6章）だけから読み、表にない変数は作りません。
+
+| パス | 内容 |
+|---|---|
+| `src/main.rs`、`src/startup.rs` | 設定の検査→ログ→releaseの解決（`ACCIDENT_DATA_DIR` を1回だけ `canonicalize`）→祝日表→待受け→事故データの読込（readyまで `/api/health`・`/api/route` は503、`/api/conditions` は使える）。読込の失敗・panicで待受けをやめて非0で終了する。SIGTERM/Ctrl-Cで受付をやめ、処理中の接続を最大10秒待つ |
+| `src/config.rs` | 6章の変数の既定値と検査。誤りは変数名だけを出し、値・秘密・URLを出さない。`BACKEND_BIND` が無く `PORT` があれば `0.0.0.0:$PORT` |
+| `src/logging.rs` | ルートのテンプレート・status・処理時間・匿名のエラーコードだけを出す。依存ライブラリのログは出さない |
+| `src/api/` | `/api/route`・`/api/geocode`・`/api/conditions`・`/api/health`・`/api/status` と静的配信、エラー変換、gzip、転送期限、気象キャッシュ |
+| `src/providers/` | OSRM・Geoapify・Open-Meteoのアダプタ、上流HTTPクライアント（プロキシ・リダイレクトなし、期限とサイズ上限）、上流ゲート（`local`・`firestore`） |
+| `examples/dev_stack.rs` | C4用の偽上流（下記）。本番の処理から使わない |
+
+### テスト
+
+すべてループバックの偽上流だけを使い、外部へ通信しません。
+
+| ファイル | 内容 |
+|---|---|
+| `tests/api_contract.rs` | C1（全例のroute応答＝`route_response_json`、gzip有無）、C2の生成と比較 |
+| `tests/api_route*.rs`、`tests/api_http.rs` | route入力の検証順、DTO変換、期限・取消し・エラー変換・同時数・gzip・転送期限 |
+| `tests/api_geocode.rs`、`tests/api_conditions.rs`、`tests/api_static.rs`、`tests/api_smoke.rs` | 各API・静的配信の規則 |
+| `tests/providers_*.rs` | アダプタのURL・解釈・失敗の変換・期限・サイズ上限・鍵を出さないこと |
+| `tests/gate_local.rs` | 上流ゲート（間隔・同時数・待ち行列・日次上限・リース・競合の再試行）。`local` と偽Firestoreの両方で同じ検査 |
+| `tests/config.rs`、`tests/startup.rs`、`tests/logging.rs` | 設定の検査、起動の配線、ログに検索語・座標・鍵・上流URLが出ないこと |
+
+### C2：`tests/fixtures/api-responses.json`
+
+実ハンドラから生成した、route以外の応答とエラー応答の一式です（①がフロントの検証関数で確かめる）。手で編集しません。
+
+```json
+{
+  "description": "…",
+  "fixed_now": "2026-10-24T09:00:00+09:00",
+  "responses": {
+    "conditions.currentOk": {
+      "validator": "validateConditions",
+      "request": {"method": "GET", "target": "/api/conditions?…"},
+      "status": 200,
+      "headers": {"cache-control": "no-store", "content-type": "application/json", "x-content-type-options": "nosniff"},
+      "body": {"api_version": "2.0", "…": "…"}
+    }
+  }
+}
+```
+
+- キーは `<種類>.<場合>`（`error.<code>.<API>`、`conditions.*`、`health.*`、`geocode.*`）。`request.body` はPOSTのときだけあり、要求本文のJSONです。`headers` は `content-length` を除く応答ヘッダー（小文字名）です。
+- 9種のエラーcode、天候の5つのstatus、current/forecast、`holiday_table_covered=false`、0件/複数件のgeocodeを含みます（`tests/api_contract.rs` が網羅を検査する）。
+- 応答を変えたら再生成し、差分を確認してコミットします。
+
+```sh
+UPDATE_API_FIXTURES=1 cargo test --manifest-path backend/Cargo.toml --test api_contract
+```
+
+### C4のローカル起動
+
+偽上流（偽OSRM・偽Geoapify・偽Open-Meteo）をループバックの空きポートで起動し、それを指す環境変数を出力します。外部のネットワークには通信しません。
+
+1. ②が提供する人工releaseのディレクトリを用意する。
+2. 端末A：`cargo run --manifest-path backend/Cargo.toml --example dev_stack -- --example twoSelected`。`export NAME='value'` の行（同じ内容の `env.sh` のパスも表示）が出る。Ctrl-Cで停止。`--example` で偽OSRMが返す例を選ぶ（fixtureの例は出発地・目的地が同じなので、座標では区別できない）。
+3. 端末B：出力された環境変数を設定し（`source <表示されたenv.sh>`）、`ACCIDENT_DATA_DIR` に人工releaseを指定して `cargo run --manifest-path backend/Cargo.toml` で `127.0.0.1:8000` に起動する。
+4. 端末C：`(cd frontend && VITE_API_MODE=live npm run dev)`。`VITE_API_MODE=live` が無いとデモ応答になる。`/api` は `http://127.0.0.1:8000` へ転送される。
+5. ブラウザで `http://127.0.0.1:5173` を開き、実際に検索する。
+
+偽上流の応答：
+
+- 偽OSRMは、`--example` で選んだ例とmodeが一致すればその例の固定経路を返す。選んでいないかmodeが違えば、出発地・目的地・modeがfixture（`docs/api/fixtures/route-example-inputs.json`）の例と一致する最初の例、それも無ければ同じmodeの最初の例の経路を返す。
+- 偽Geoapifyは、どの検索語にもfixtureの出発地・目的地を候補として返す。`該当なし` を含む検索語は0件。
+- 偽Open-Meteoは、今日0時から `forecast_days` 日分の毎時の天気（日ごとに晴・雨・雪）を返し、現在は晴。
+
+人工releaseが無い間の予行には簡易モードを使えます。`StubEngine`（`Fixed`）と `FixedCalendar`（平日）でAPIサーバも起動し、どの入力にも選んだ例の結果を返します。**実エンジンではないので、C4の合格には使えません。**
+
+```sh
+cargo run --manifest-path backend/Cargo.toml --example dev_stack -- --simple            # 例 twoSelected
+cargo run --manifest-path backend/Cargo.toml --example dev_stack -- --simple noAccidents
+# 8000番が使用中なら BACKEND_BIND=127.0.0.1:18000 を付けて起動する
+```
+
+### CI・配備
+
+- `.github/workflows/ci.yml`：PRとmainへのpushで、基本4点（`cargo test` はstableと1.88）とC0-a〜C0-d（frontendの `npm ci`、`generate:api` 後の差分なし、`typecheck`、`test`、`build`）を実行する。秘密・実通信・GCP認証を使わない。
+- ルートの `Dockerfile`・`.dockerignore` と [deploy/README.md](../deploy/README.md)：Cloud Run＋IAPの配備定義と手順書。**配備は未実施**。
+
+## 範囲外
+
+PR #5（Issue #4）には含めなかったものです（③の部分はIssue #9で実装済み）：Axumハンドラ、DTO、OSRM・Geoapify・Open-Meteoのアダプタ、上流ゲート、集計、ナビ区間、前処理、祝日表の読込と判定、クラウドへの配備。WMOコードから天候への変換表（architecture.mdでdomainに置くとされているもの）の担当は、本Issueでは決めていません。
 
 ## 事故データ・計算（②）
 

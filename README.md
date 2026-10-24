@@ -4,6 +4,10 @@
 
 AcciLessNaviのフロント実装は [`frontend/`](frontend/README.md) にあります。`cd frontend` → `npm ci` → `npm run dev` でデモを起動できます。画面・実API接続・検証手順は同ディレクトリのREADMEを参照してください。
 
+## バックエンドの起動と配備
+
+APIサーバ（Rust/Axum）は [`backend/`](backend/README.md) にあります。設定は環境変数（[architecture.md](docs/architecture.md) 6章）で渡します。偽の上流を使ったローカル起動（`cargo run --manifest-path backend/Cargo.toml --example dev_stack`）と検証コマンドは backend/README.md の「API・外部通信・基盤（③）」、Cloud Run＋IAPへの配備手順（未実施）は [`deploy/README.md`](deploy/README.md) を参照してください。
+
 [![IMAGE ALT TEXT HERE](https://jphacks.com/wp-content/uploads/2026/07/IMG_5316.png)](https://www.youtube.com/watch?v=piaNsc6ilBI)
 
 ## 製品概要

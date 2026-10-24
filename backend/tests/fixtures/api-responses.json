@@ -1,0 +1,646 @@
+{
+  "description": "実Axumハンドラから生成（共通前提4章 C2）。手編集禁止。再生成: UPDATE_API_FIXTURES=1 cargo test --manifest-path backend/Cargo.toml --test api_contract。各responsesのvalidatorはフロントの検証関数名、requestのbodyはPOSTの要求本文（JSON）、headersはcontent-lengthを除く応答ヘッダー（小文字名）、bodyは応答JSON本文。",
+  "fixed_now": "2026-10-24T09:00:00+09:00",
+  "responses": {
+    "conditions.currentOk": {
+      "body": {
+        "api_version": "2.0",
+        "datetime": "2026-10-24T09:05:00+09:00",
+        "day_type": "休日",
+        "day_type_reason": "土曜",
+        "holiday_table_covered": true,
+        "period": "昼",
+        "weather": "曇",
+        "weather_source": {
+          "kind": "current",
+          "provider": "Open-Meteo",
+          "target_time": "2026-10-24T09:00:00+09:00"
+        },
+        "weather_status": "ok"
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/conditions?datetime=2026-10-24T09:05%2B09:00&lat=35.681&lon=139.767"
+      },
+      "status": 200,
+      "validator": "validateConditions"
+    },
+    "conditions.forecastOk": {
+      "body": {
+        "api_version": "2.0",
+        "datetime": "2026-10-26T14:30:00+09:00",
+        "day_type": "平日",
+        "day_type_reason": "平日",
+        "holiday_table_covered": true,
+        "period": "昼",
+        "weather": "雨",
+        "weather_source": {
+          "kind": "forecast",
+          "provider": "Open-Meteo",
+          "target_time": "2026-10-26T14:00:00+09:00"
+        },
+        "weather_status": "ok"
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/conditions?datetime=2026-10-26T05:30Z&lat=35.681&lon=139.767"
+      },
+      "status": 200,
+      "validator": "validateConditions"
+    },
+    "conditions.holidayTableNotCovered": {
+      "body": {
+        "api_version": "2.0",
+        "datetime": "2099-11-03T12:00:00+09:00",
+        "day_type": "平日",
+        "day_type_reason": "平日",
+        "holiday_table_covered": false,
+        "period": "昼",
+        "weather": null,
+        "weather_source": null,
+        "weather_status": "no_location"
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/conditions?datetime=2099-11-03T12:00%2B09:00"
+      },
+      "status": 200,
+      "validator": "validateConditions"
+    },
+    "conditions.noLocation": {
+      "body": {
+        "api_version": "2.0",
+        "datetime": "2026-10-24T18:00:00+09:00",
+        "day_type": "休日",
+        "day_type_reason": "土曜",
+        "holiday_table_covered": true,
+        "period": "夕",
+        "weather": null,
+        "weather_source": null,
+        "weather_status": "no_location"
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/conditions?datetime=2026-10-24T18:00%2B09:00"
+      },
+      "status": 200,
+      "validator": "validateConditions"
+    },
+    "conditions.outOfRange": {
+      "body": {
+        "api_version": "2.0",
+        "datetime": "2026-11-03T14:30:00+09:00",
+        "day_type": "休日",
+        "day_type_reason": "祝日：文化の日",
+        "holiday_table_covered": true,
+        "period": "昼",
+        "weather": null,
+        "weather_source": null,
+        "weather_status": "out_of_range"
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/conditions?datetime=2026-11-03T14:30%2B09:00&lat=35.7&lon=139.77"
+      },
+      "status": 200,
+      "validator": "validateConditions"
+    },
+    "conditions.past": {
+      "body": {
+        "api_version": "2.0",
+        "datetime": "2026-10-20T08:00:00+09:00",
+        "day_type": "平日",
+        "day_type_reason": "平日",
+        "holiday_table_covered": true,
+        "period": "早朝",
+        "weather": null,
+        "weather_source": null,
+        "weather_status": "past"
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/conditions?datetime=2026-10-20T08:00%2B09:00&lat=35.681&lon=139.767"
+      },
+      "status": 200,
+      "validator": "validateConditions"
+    },
+    "conditions.unavailable": {
+      "body": {
+        "api_version": "2.0",
+        "datetime": "2026-10-24T12:00:00+09:00",
+        "day_type": "休日",
+        "day_type_reason": "土曜",
+        "holiday_table_covered": true,
+        "period": "昼",
+        "weather": null,
+        "weather_source": null,
+        "weather_status": "unavailable"
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/conditions?datetime=2026-10-24T12:00%2B09:00&lat=35.681&lon=139.767"
+      },
+      "status": 200,
+      "validator": "validateConditions"
+    },
+    "error.dataUnavailable.health": {
+      "body": {
+        "error": {
+          "code": "data_unavailable",
+          "message": "事故データを準備しています。時間をおいて再試行してください。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/health"
+      },
+      "status": 503,
+      "validator": "validateError"
+    },
+    "error.dataUnavailable.route": {
+      "body": {
+        "error": {
+          "code": "data_unavailable",
+          "message": "事故データを準備しています。時間をおいて再試行してください。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "body": {
+          "dest": {
+            "lat": 35.69,
+            "lon": 139.77
+          },
+          "origin": {
+            "lat": 35.681,
+            "lon": 139.767
+          }
+        },
+        "method": "POST",
+        "target": "/api/route"
+      },
+      "status": 503,
+      "validator": "validateError"
+    },
+    "error.externalApi.geocode": {
+      "body": {
+        "error": {
+          "code": "external_api_error",
+          "message": "住所検索サービスに接続できません。時間をおいて再試行してください。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/geocode?q=%E6%9D%B1%E4%BA%AC%E9%A7%85"
+      },
+      "status": 502,
+      "validator": "validateError"
+    },
+    "error.externalApi.route": {
+      "body": {
+        "error": {
+          "code": "external_api_error",
+          "message": "経路サービスに接続できません。時間をおいて再試行してください。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "body": {
+          "dest": {
+            "lat": 35.69,
+            "lon": 139.77
+          },
+          "origin": {
+            "lat": 35.681,
+            "lon": 139.767
+          }
+        },
+        "method": "POST",
+        "target": "/api/route"
+      },
+      "status": 502,
+      "validator": "validateError"
+    },
+    "error.internal.route": {
+      "body": {
+        "error": {
+          "code": "internal_error",
+          "message": "処理に失敗しました。時間をおいて再試行してください。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "body": {
+          "dest": {
+            "lat": 35.69,
+            "lon": 139.77
+          },
+          "origin": {
+            "lat": 35.681,
+            "lon": 139.767
+          }
+        },
+        "method": "POST",
+        "target": "/api/route"
+      },
+      "status": 500,
+      "validator": "validateError"
+    },
+    "error.invalidRequest.conditions": {
+      "body": {
+        "error": {
+          "code": "invalid_request",
+          "message": "datetimeはオフセット付きのISO 8601形式（例：2026-11-03T14:30+09:00）で、2000-01-01T00:00+09:00〜2100-12-31T23:59+09:00の実在する日時を1個指定してください。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/conditions?datetime=2026-10-24T09:00"
+      },
+      "status": 400,
+      "validator": "validateError"
+    },
+    "error.invalidRequest.geocode": {
+      "body": {
+        "error": {
+          "code": "invalid_request",
+          "message": "検索語qは1個だけ指定し、前後の空白を除いて2〜200文字にしてください。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/geocode?q=%20a%20"
+      },
+      "status": 400,
+      "validator": "validateError"
+    },
+    "error.invalidRequest.route": {
+      "body": {
+        "error": {
+          "code": "invalid_request",
+          "message": "出発地には日本国内の緯度・経度を指定してください。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "body": {},
+        "method": "POST",
+        "target": "/api/route"
+      },
+      "status": 400,
+      "validator": "validateError"
+    },
+    "error.methodNotAllowed.health": {
+      "body": {
+        "error": {
+          "code": "method_not_allowed",
+          "message": "このAPIでは指定のメソッドを使用できません。"
+        }
+      },
+      "headers": {
+        "allow": "GET",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "POST",
+        "target": "/api/health"
+      },
+      "status": 405,
+      "validator": "validateError"
+    },
+    "error.methodNotAllowed.route": {
+      "body": {
+        "error": {
+          "code": "method_not_allowed",
+          "message": "このAPIでは指定のメソッドを使用できません。"
+        }
+      },
+      "headers": {
+        "allow": "POST",
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/route"
+      },
+      "status": 405,
+      "validator": "validateError"
+    },
+    "error.noRoute.route": {
+      "body": {
+        "error": {
+          "code": "no_route",
+          "message": "経路が見つかりませんでした。地点や移動手段を変えて再試行してください。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "body": {
+          "dest": {
+            "lat": 35.69,
+            "lon": 139.77
+          },
+          "origin": {
+            "lat": 35.681,
+            "lon": 139.767
+          }
+        },
+        "method": "POST",
+        "target": "/api/route"
+      },
+      "status": 502,
+      "validator": "validateError"
+    },
+    "error.notFound.api": {
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "APIが見つかりません。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/unknown"
+      },
+      "status": 404,
+      "validator": "validateError"
+    },
+    "error.routeTooLong.route": {
+      "body": {
+        "error": {
+          "code": "route_too_long",
+          "message": "候補経路が80kmを超えました。近い地点を指定してください。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "body": {
+          "dest": {
+            "lat": 35.69,
+            "lon": 139.77
+          },
+          "origin": {
+            "lat": 35.681,
+            "lon": 139.767
+          }
+        },
+        "method": "POST",
+        "target": "/api/route"
+      },
+      "status": 422,
+      "validator": "validateError"
+    },
+    "error.serviceBusy.geocode": {
+      "body": {
+        "error": {
+          "code": "service_busy",
+          "message": "混み合っています。時間をおいて再試行してください。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/geocode?q=%E6%9D%B1%E4%BA%AC%E9%A7%85"
+      },
+      "status": 503,
+      "validator": "validateError"
+    },
+    "error.serviceBusy.route": {
+      "body": {
+        "error": {
+          "code": "service_busy",
+          "message": "混み合っています。時間をおいて再試行してください。"
+        }
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "body": {
+          "dest": {
+            "lat": 35.69,
+            "lon": 139.77
+          },
+          "origin": {
+            "lat": 35.681,
+            "lon": 139.767
+          }
+        },
+        "method": "POST",
+        "target": "/api/route"
+      },
+      "status": 503,
+      "validator": "validateError"
+    },
+    "geocode.empty": {
+      "body": {
+        "attribution": [
+          {
+            "text": "Powered by Geoapify",
+            "url": "https://www.geoapify.com/"
+          },
+          {
+            "text": "© OpenStreetMap contributors",
+            "url": "https://www.openstreetmap.org/copyright"
+          }
+        ],
+        "results": []
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/geocode?q=%E5%AD%98%E5%9C%A8%E3%81%97%E3%81%AA%E3%81%84%E5%9C%B0%E5%90%8D"
+      },
+      "status": 200,
+      "validator": "validatePlaces"
+    },
+    "geocode.multiple": {
+      "body": {
+        "attribution": [
+          {
+            "text": "Powered by Geoapify",
+            "url": "https://www.geoapify.com/"
+          },
+          {
+            "text": "© OpenStreetMap contributors",
+            "url": "https://www.openstreetmap.org/copyright"
+          }
+        ],
+        "results": [
+          {
+            "label": "東京駅, 丸の内一丁目, 千代田区, 東京都, 日本",
+            "lat": 35.6812368,
+            "lon": 139.7671251
+          },
+          {
+            "label": "東京駅八重洲口, 八重洲一丁目, 中央区, 東京都, 日本",
+            "lat": 35.68,
+            "lon": 139.7689
+          },
+          {
+            "label": "東京駅前バス停, 京都市, 京都府, 日本",
+            "lat": 34.9858,
+            "lon": 135.7588
+          }
+        ]
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/geocode?q=%E6%9D%B1%E4%BA%AC%E9%A7%85"
+      },
+      "status": 200,
+      "validator": "validatePlaces"
+    },
+    "health.ready": {
+      "body": {
+        "accidents": 3,
+        "api_version": "2.0",
+        "data_years": [
+          2025
+        ],
+        "dataset_id": "0000000000000000000000000000000000000000000000000000000000000000",
+        "load_seconds": 0.0,
+        "release_id": "0000000000000000000000000000000000000000000000000000000000000000",
+        "status": "ok"
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/health"
+      },
+      "status": 200,
+      "validator": "validateHealth"
+    },
+    "health.status": {
+      "body": {
+        "accidents": 3,
+        "api_version": "2.0",
+        "data_years": [
+          2025
+        ],
+        "dataset_id": "0000000000000000000000000000000000000000000000000000000000000000",
+        "load_seconds": 0.0,
+        "release_id": "0000000000000000000000000000000000000000000000000000000000000000",
+        "status": "ok"
+      },
+      "headers": {
+        "cache-control": "no-store",
+        "content-type": "application/json",
+        "x-content-type-options": "nosniff"
+      },
+      "request": {
+        "method": "GET",
+        "target": "/api/status"
+      },
+      "status": 200,
+      "validator": "validateHealth"
+    }
+  }
+}

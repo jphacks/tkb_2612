@@ -4,20 +4,39 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
 publish = false
+# src/main.rs（APIサーバ、③）と前処理の src/bin/（②）が並ぶため、cargo run の既定を決める。
+default-run = "accident-route-backend"
 
 # 依存の追加・更新とCargo.lockの統合は③（API・外部通信・基盤）が担当する。
 # 手順はREADME.mdの「Cargo設定とlockfile」を参照。
+# domain・data には tokio/axum/reqwest/hyper を使わない（tests/boundaries.rs）。
 
 [dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "matched-path", "tokio"] }
+bytes = "1"
 chrono = "0.4"
 csv = "1"
 encoding_rs = "0.8"
 flate2 = "1"
+form_urlencoded = "1"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+http = "1"
+http-body = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["http1", "server", "server-graceful", "service", "tokio"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 roxmltree = "0.21"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tower-service = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std"] }
 zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = "3"
+tokio = { version = "1", features = ["test-util"] }
+tower = { version = "0.5", default-features = false, features = ["util"] }
