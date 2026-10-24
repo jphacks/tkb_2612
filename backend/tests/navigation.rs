@@ -234,3 +234,32 @@ fn all_zero_length_route_has_zero_length() {
     assert_eq!(nav.sections.len(), 1);
     assert_eq!((nav.sections[0].start_m, nav.sections[0].end_m), (0.0, 0.0));
 }
+
+#[test]
+fn maximum_section_count_at_the_schema_bound() {
+    // 関数単体の上限試験：behavior.md 7章の保守的な上限（元辺14,999本、小線分16,466本、
+    // 結合後8,233区間）に届く入力。1,467本の辺は100m（2分割）、残りは0長辺（1本）にする。
+    // 有効な経路（80km以下）ではここまで届かないため、経路の検証を通さずに関数へ渡す
+    let kx = METERS_PER_DEGREE * 35f64.to_radians().cos();
+    let mut route = vec![LonLat::new(139.0, 35.0)];
+    let mut lon = 139.0;
+    for edge in 0..14_999 {
+        if edge < 1_467 {
+            lon += 100.0 / kx;
+        }
+        route.push(LonLat::new(lon, 35.0));
+    }
+    let subdivision = Subdivision::new(&route);
+    assert_eq!(subdivision.edge_lengths.len(), 14_999);
+    assert_eq!(subdivision.segments.len(), 16_466);
+    let weights: Vec<u64> = (0..16_466)
+        .map(|sid| if sid % 2 == 0 { 3 } else { 2 })
+        .collect();
+    let (display, total) = display_sections(&subdivision, &weights);
+    assert_eq!(total, 8_233);
+    assert_eq!(display.len(), 100);
+    let nav = navigation_data(&subdivision, &weights);
+    assert_eq!(nav.sections.len(), 8_233);
+    assert_eq!(nav.vertex_distances_m.len(), 15_000);
+    check_correlation(&nav, total, &subdivision);
+}

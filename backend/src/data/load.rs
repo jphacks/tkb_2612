@@ -117,7 +117,8 @@ pub fn parse_accidents(gzip: &[u8]) -> Result<AccidentColumns, LoadError> {
         check(Period::from_code(period).is_some())?;
         check(Weather::from_code(weather).is_some())?;
         check(DayType::from_code(day_type).is_some())?;
-        check(deaths <= 999 && injuries <= 999)?;
+        // 人数は各0〜999で合計1以上（behavior.md 2章）
+        check(deaths <= 999 && injuries <= 999 && deaths + injuries >= 1)?;
         check(
             NaiveDate::from_ymd_opt((date / 10_000) as i32, (date / 100) % 100, date % 100)
                 .is_some(),

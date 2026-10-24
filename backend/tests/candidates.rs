@@ -269,13 +269,21 @@ async fn vertex_count_and_80km_limits() {
     );
     let (result, _) = collect(Mode::Car, single(long.clone())).await;
     assert_eq!(result.unwrap_err(), EngineError::RouteTooLong);
-    let exact = path(
-        600.0,
-        1000.0,
-        &[(139.0, 35.0), (139.0, 35.0 + 79_999.0 / METERS_PER_DEGREE)],
-    );
-    let (result, _) = collect(Mode::Car, single(exact)).await;
-    assert!(result.is_ok());
+    // 南北の1辺のgeometry長は K×|Δlat|（behavior.md 4章の式で経度差0）。
+    // この長さが80,000m以下となる最大の緯度を1 ulpずつ探し、境界ちょうどは可、直上は超過とする
+    let length = |lat: f64| METERS_PER_DEGREE * (lat - 35.0);
+    let next_up = |x: f64| f64::from_bits(x.to_bits() + 1);
+    let mut lat = 35.0 + 79_999.999 / METERS_PER_DEGREE;
+    while length(next_up(lat)) <= 80_000.0 {
+        lat = next_up(lat);
+    }
+    assert!(length(lat) <= 80_000.0 && length(next_up(lat)) > 80_000.0);
+    let at_limit = path(600.0, 1000.0, &[(139.0, 35.0), (139.0, lat)]);
+    let (result, _) = collect(Mode::Car, single(at_limit)).await;
+    assert!(result.is_ok(), "geometry長80,000m以下は可");
+    let over = path(600.0, 1000.0, &[(139.0, 35.0), (139.0, next_up(lat))]);
+    let (result, _) = collect(Mode::Car, single(over)).await;
+    assert_eq!(result.unwrap_err(), EngineError::RouteTooLong);
 
     // 追加呼出しの80km超は警告にして既存候補を残す
     let (result, _) = collect(

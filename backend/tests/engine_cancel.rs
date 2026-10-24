@@ -102,3 +102,48 @@ fn cancel_from_another_thread_stops_cpu_work_promptly() {
         "取消しから{lag:?}かかった"
     );
 }
+
+#[test]
+fn cancel_is_prompt_when_many_subsegments_share_a_cell() {
+    // 15,000個の重複頂点（0長の小線分14,999本）が同じセルに集まり、そのセルに5,000件の事故がある。
+    // 事故1件ごとに約15,000本と比べるので、距離計算の回数でも中断を確かめる必要がある
+    let route = accident_route_backend::contract::RoutedPath {
+        duration_s: 600.0,
+        distance_m: 1000.0,
+        coordinates: vec![accident_route_backend::contract::LonLat::new(139.0005, 35.0005); 15_000],
+    };
+    let accidents: Vec<Acc> = (0..5_000)
+        .map(|i| {
+            Acc::at(
+                139.0001 + 0.0008 * (i % 100) as f64 / 100.0,
+                35.0001 + 0.0008 * (i / 100) as f64 / 50.0,
+            )
+        })
+        .collect();
+    let e = engine(&accidents);
+    let q = query(Mode::Walk, 10.0, ConditionFilter::default());
+    let candidates = CandidateSet {
+        routes: vec![route],
+        warnings: vec![],
+    };
+    let cancel = CancelToken::unbounded();
+    let remote = cancel.clone();
+    let canceller = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(5));
+        remote.cancel();
+        Instant::now()
+    });
+    let result = e.evaluate(&q, candidates, &cancel);
+    let returned = Instant::now();
+    let cancelled_at = canceller.join().unwrap();
+    assert_eq!(
+        result.unwrap_err(),
+        EngineError::Interrupted(Interrupt::Cancelled),
+        "約7,500万回の距離計算が5msで終わることはない"
+    );
+    let lag = returned.saturating_duration_since(cancelled_at);
+    assert!(
+        lag < Duration::from_millis(500),
+        "取消しから{lag:?}かかった"
+    );
+}

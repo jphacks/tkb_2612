@@ -164,7 +164,8 @@ fn test_point_sampling_prioritizes_fatalities_without_affecting_totals() {
     // 先に死亡事故、続いて残り枠をそれ以外から等間隔に（事故ID昇順の元順）
     assert!(c.accident_points[..10].iter().all(|p| p.deaths > 0));
     let others: Vec<u64> = (0..400).filter(|i| i % 40 != 0).collect();
-    let expected: Vec<u64> = sample(&others, 240);
+    // 期待値は実装の sample を使わず、式 items[floor(i*N/limit)] から求める
+    let expected: Vec<u64> = (0..240).map(|i| others[i * others.len() / 240]).collect();
     assert_eq!(
         c.accident_points[10..]
             .iter()
@@ -184,7 +185,8 @@ fn more_than_250_fatal_accidents_are_sampled() {
     assert_eq!(c.totals.fatal_accidents, 300);
     assert_eq!(c.accident_points.len(), 250);
     let ids: Vec<u64> = c.accident_points.iter().map(|p| p.id).collect();
-    assert_eq!(ids, sample(&(0..300).collect::<Vec<u64>>(), 250));
+    let expected: Vec<u64> = (0..250u64).map(|i| i * 300 / 250).collect();
+    assert_eq!(ids, expected);
 }
 
 #[test]

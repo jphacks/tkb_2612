@@ -165,6 +165,36 @@ fn ties_use_rounded_risk_then_duration_then_distance_then_order() {
 }
 
 #[test]
+fn rounded_risk_tie_is_broken_by_duration_not_raw_score() {
+    // 生のスコアは 3.0（車線1）> 2.996（車線2）だが、2桁に丸めるとどちらも3.00。
+    // 丸めた値で比べるので、所要時間の短い車線1を選ぶ（生のスコアなら車線2になる）
+    let sigma = 24.0f64;
+    let north = (-2.0 * sigma * sigma * (2.996f64 / 3.0).ln()).sqrt(); // 3×exp(−d²/2σ²)=2.996
+    let mut slightly_off = on_lane(2, 3);
+    slightly_off.lat += north / accident_route_backend::contract::geo::METERS_PER_DEGREE;
+    let o = run(
+        vec![
+            lane(0, 600.0, 1000.0),
+            lane(1, 650.0, 1000.0),
+            lane(2, 700.0, 1000.0),
+        ],
+        &[on_lane(0, 10), on_lane(1, 3), slightly_off],
+        10.0,
+        None,
+        vec![],
+    );
+    assert_eq!(o.candidates[1].weighted_risk, 3.0);
+    assert_eq!(o.candidates[2].weighted_risk, 3.0);
+    assert_eq!(
+        o.candidates[2].totals.accident_count, 1,
+        "2.996でBに入っている"
+    );
+    assert_eq!(o.safest, Some(1));
+    // 削減率も丸めた値から計算する：100×(10−3)/10
+    assert_eq!(o.risk_reduction_percent, Some(70.0));
+}
+
+#[test]
 fn test_time_fallback_and_all_zero_have_no_false_percentage() {
     // 全候補で集合Bが空：safest・extra_minutes・削減率はnull、警告を加える
     let o = run(

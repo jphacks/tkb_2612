@@ -175,11 +175,20 @@ pub fn corridor_hits(
     let lon_margin = CORRIDOR_RADIUS_M / projection.kx;
     // セルごとのsid（登録順＝sid昇順）。HashMapは参照にだけ使い、反復しない。
     let mut cell_sids: std::collections::HashMap<Cell, Vec<u32>> = std::collections::HashMap::new();
-    let mut candidates: Vec<u32> = Vec::new();
-    for (sid, segment) in subdivision.segments.iter().enumerate() {
-        if sid % CANCEL_CHECK_INTERVAL == 0 {
+    // 候補の事故IDのビット集合。整列せずに事故ID昇順で走査でき、重複も除ける
+    let mut candidates = vec![0u64; snapshot.len().div_ceil(64)];
+    // 処理量（登録・距離計算の回数）に応じて中断を確かめる
+    let mut work = 0usize;
+    let mut tick = |amount: usize| -> Result<(), Interrupt> {
+        let before = work / CANCEL_CHECK_INTERVAL;
+        work += amount;
+        if work / CANCEL_CHECK_INTERVAL != before {
             cancel.check()?;
         }
+        Ok(())
+    };
+    for (sid, segment) in subdivision.segments.iter().enumerate() {
+        tick(1)?;
         let lat_lo = segment.start.lat.min(segment.end.lat) - lat_margin;
         let lat_hi = segment.start.lat.max(segment.end.lat) + lat_margin;
         let lon_lo = segment.start.lon.min(segment.end.lon) - lon_margin;
@@ -190,43 +199,52 @@ pub fn corridor_hits(
             for gx in gx_lo..=gx_hi {
                 let sids = cell_sids.entry((gy, gx)).or_default();
                 if sids.is_empty() {
-                    candidates.extend_from_slice(snapshot.cell((gy, gx)));
+                    let ids = snapshot.cell((gy, gx));
+                    for &id in ids {
+                        candidates[id as usize / 64] |= 1 << (id % 64);
+                    }
+                    tick(ids.len())?;
                 }
                 sids.push(sid as u32);
             }
         }
     }
     // 各事故を1回だけ判定する（セルの走査順によらず事故ID昇順）
-    candidates.sort_unstable();
-    candidates.dedup();
     let columns = snapshot.columns();
     let mut hits = Vec::new();
-    for (i, &id) in candidates.iter().enumerate() {
-        if i % CANCEL_CHECK_INTERVAL == 0 {
-            cancel.check()?;
-        }
-        let index = id as usize;
-        if columns.modes[index] & mode_mask == 0 {
-            continue;
-        }
-        let (lat, lon) = (columns.lat[index], columns.lon[index]);
-        let p = projection.xy(LonLat::new(lon, lat));
-        let mut best: Option<(f64, u32)> = None;
-        for &sid in &cell_sids[&cell_of(lat, lon)] {
-            let d2 = subdivision.segments[sid as usize].distance_sq(p);
-            // sidは昇順なので、同距離では先に見た小さいsidが残る
-            if best.is_none_or(|(b, _)| d2 < b) {
-                best = Some((d2, sid));
+    for (word_index, &word) in candidates.iter().enumerate() {
+        tick(1)?;
+        let mut bits = word;
+        while bits != 0 {
+            let id = (word_index * 64) as u32 + bits.trailing_zeros();
+            bits &= bits - 1;
+            let index = id as usize;
+            if columns.modes[index] & mode_mask == 0 {
+                continue;
             }
-        }
-        if let Some((distance_sq, sid)) = best
-            && distance_sq <= CORRIDOR_RADIUS_SQ_M2
-        {
-            hits.push(CorridorHit {
-                accident: id,
-                sid,
-                distance_sq,
-            });
+            let (lat, lon) = (columns.lat[index], columns.lon[index]);
+            let p = projection.xy(LonLat::new(lon, lat));
+            let sids = &cell_sids[&cell_of(lat, lon)];
+            let mut best: Option<(f64, u32)> = None;
+            for chunk in sids.chunks(CANCEL_CHECK_INTERVAL) {
+                tick(chunk.len())?;
+                for &sid in chunk {
+                    let d2 = subdivision.segments[sid as usize].distance_sq(p);
+                    // sidは昇順なので、同距離では先に見た小さいsidが残る
+                    if best.is_none_or(|(b, _)| d2 < b) {
+                        best = Some((d2, sid));
+                    }
+                }
+            }
+            if let Some((distance_sq, sid)) = best
+                && distance_sq <= CORRIDOR_RADIUS_SQ_M2
+            {
+                hits.push(CorridorHit {
+                    accident: id,
+                    sid,
+                    distance_sq,
+                });
+            }
         }
     }
     Ok(hits)

@@ -82,18 +82,19 @@ fn next_up(x: f64) -> f64 {
 #[test]
 fn radius_boundary_is_inclusive() {
     let route = east_1000m();
-    let subdivision = Subdivision::new(&route);
     let mid = 139.0 + 500.0 / KX35;
-    // 計算上 d² <= 5184 となる最大の緯度を1 ulpずつ探す
+    // 東西の線の内部の真北の点は、線までの距離が北への距離 (lat−35)×K（局所投影のky=K）。
+    // この式で d² <= 72² となる最大の緯度を1 ulpずつ探す（実装の距離計算とは別に求める）
     let d2 = |lat: f64| {
-        let p = subdivision.projection.xy(LonLat::new(mid, lat));
-        subdivision.segments[6].distance_sq(p)
+        let north = (lat - 35.0) * METERS_PER_DEGREE;
+        north * north
     };
     let mut lat = lat_north_of_35(71.999_999);
-    while d2(next_up(lat)) <= CORRIDOR_RADIUS_SQ_M2 {
+    while d2(next_up(lat)) <= 72.0 * 72.0 {
         lat = next_up(lat);
     }
-    assert!(d2(lat) <= CORRIDOR_RADIUS_SQ_M2 && d2(next_up(lat)) > CORRIDOR_RADIUS_SQ_M2);
+    assert!(d2(lat) <= 5_184.0 && d2(next_up(lat)) > 5_184.0);
+    assert_eq!(CORRIDOR_RADIUS_SQ_M2, 5_184.0);
     let result = hits(
         &route,
         &[Acc::at(mid, lat), Acc::at(mid, next_up(lat))],
@@ -129,14 +130,27 @@ fn foldback_counts_each_accident_once_with_smallest_sid() {
 
 #[test]
 fn subsegment_split_boundaries_and_zero_length_edges() {
-    let along = |meters: f64| line(&[(139.0, 35.0), (139.0, 35.0 + meters / METERS_PER_DEGREE)]);
-    for (meters, count) in [(74.9, 1), (75.1, 2), (149.9, 2), (150.1, 3), (0.0, 1)] {
+    let along = |lat: f64| line(&[(139.0, 35.0), (139.0, lat)]);
+    // 南北の辺の長さは (lat−35)×K。75m・150mちょうど以下となる最大の緯度と、その直上
+    let length = |lat: f64| (lat - 35.0) * METERS_PER_DEGREE;
+    for (limit, below, above) in [(75.0, 1, 2), (150.0, 2, 3)] {
+        let mut lat = 35.0 + (limit - 0.001) / METERS_PER_DEGREE;
+        while length(next_up(lat)) <= limit {
+            lat = next_up(lat);
+        }
+        assert!(length(lat) <= limit && length(next_up(lat)) > limit);
         assert_eq!(
-            Subdivision::new(&along(meters)).segments.len(),
-            count,
-            "{meters}m"
+            Subdivision::new(&along(lat)).segments.len(),
+            below,
+            "{limit}m以下"
+        );
+        assert_eq!(
+            Subdivision::new(&along(next_up(lat))).segments.len(),
+            above,
+            "{limit}m超"
         );
     }
+    assert_eq!(Subdivision::new(&along(35.0)).segments.len(), 1, "0m");
     // 重複頂点（長さ0の辺）も1本残し、sidを数える
     let route = line(&[(139.0, 35.0), (139.0, 35.0), (139.0 + 100.0 / KX35, 35.0)]);
     let subdivision = Subdivision::new(&route);

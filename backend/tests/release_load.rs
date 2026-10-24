@@ -167,6 +167,15 @@ fn malformed_accident_csv_stops_loading() {
             format!("{header}\n{}\n", row("1", "0").replacen("35.0", "15.0", 1)),
             1,
         ),
+        (
+            // IDと件数が整合していても、死者・負傷者がともに0の事故は受け付けない
+            "人数0",
+            format!(
+                "{header}\n{}\n",
+                row("1", "0").replace(",0,1,2025,", ",0,0,2025,")
+            ),
+            1,
+        ),
     ] {
         let (_r, dir) = copy_release();
         replace_accidents(dir.path(), &text, rows);

@@ -64,6 +64,11 @@ fn normalize(
 
     for (a, e) in actual.candidates.iter_mut().zip(&expected.candidates) {
         snap_points(&mut a.path.coordinates, &e.path.coordinates);
+        snap(
+            &mut a.path.distance_m,
+            e.path.distance_m,
+            DISTANCE_TOLERANCE_M,
+        );
         for (p, q) in a.accident_points.iter_mut().zip(&e.accident_points) {
             snap_point(&mut p.position, q.position);
         }
