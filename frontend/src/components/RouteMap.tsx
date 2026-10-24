@@ -593,7 +593,7 @@ export function RouteMap(props: RouteMapProps) {
       )}
       {!disabled && !styleUrl && (
         <div className="map-preview-label">
-          地図プレビュー<small>模式図・実在道路ではありません</small>
+          地図プレビュー
         </div>
       )}
       {!disabled && !styleUrl && (

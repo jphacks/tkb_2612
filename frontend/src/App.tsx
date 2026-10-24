@@ -22,7 +22,6 @@ import {
 import type {
   ConditionValues,
   ConditionsResponse,
-  HealthResponse,
   RouteResponse,
   Scenario,
 } from "./lib/types";
@@ -69,12 +68,10 @@ export default function App() {
   const autoRef = useRef(auto);
   const [departure, setDeparture] = useState<"now" | "custom">("now");
   const [dateTime, setDateTime] = useState(() => toTokyoInput(new Date()));
-  const [conditions, setConditions] = useState<ConditionsResponse | null>(null);
   const [conditionBusy, setConditionBusy] = useState(false);
   const [conditionWarning, setConditionWarning] = useState("");
   const [conditionRevision, setConditionRevision] = useState(0);
   const lastAutoAt = useRef(0);
-  const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthWarning, setHealthWarning] = useState("");
   const [dataBlocked, setDataBlocked] = useState(false);
   const [healthRevision, setHealthRevision] = useState(0);
@@ -105,8 +102,7 @@ export default function App() {
     const abort = new AbortController();
     setHealthWarning("");
     getHealth(abort.signal)
-      .then((data) => {
-        setHealth(data);
+      .then(() => {
         setDataBlocked(false);
       })
       .catch((failure) => {
@@ -209,7 +205,6 @@ export default function App() {
       }
       if (signal.aborted || generation !== conditionGeneration.current)
         throw new DOMException("キャンセル", "AbortError");
-      setConditions(data);
       setConditionWarning(warning);
       const next = { ...valuesRef.current };
       if (autoRef.current.period) next.period = data?.period ?? "all";
@@ -410,7 +405,6 @@ export default function App() {
       departure={departure}
       dateTime={dateTime}
       onDeparture={changeDeparture}
-      conditionData={conditions}
       busy={conditionBusy}
       warning={conditionWarning}
       compact={page === "results"}
@@ -470,17 +464,9 @@ export default function App() {
         </header>
         {page !== "results" ? (
           <main className={`form-page ${page}`}>
-            <div className="page-kicker">
-              {page === "places" ? "01 / 地点を入力" : "02 / 条件を設定"}
-            </div>
             <h1 ref={heading} tabIndex={-1}>
-              {page === "places" ? "どこへ行きますか？" : "移動の条件を選ぶ"}
+              {page === "places" ? "地点を入力" : "条件を設定"}
             </h1>
-            <p className="page-description">
-              {page === "places"
-                ? "最短時間と、事故履歴を考慮した経路を比較します。"
-                : "移動手段や天気を指定して、経路を比較できます。"}
-            </p>
             {page === "places" ? (
               <div className="place-form">
                 {places}
@@ -495,26 +481,6 @@ export default function App() {
               </div>
             ) : (
               <>
-                <div className="trip-summary">
-                  <MapPin size={18} />
-                  <div>
-                    <span>{origin.text}</span>
-                    <ArrowRight size={14} />
-                    <span>{dest.text}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="text-button"
-                    onClick={() => setPage("places")}
-                  >
-                    変更
-                  </button>
-                </div>
-                {isDemo && (
-                  <p className="demo-note">
-                    デモ条件：天気は固定値。祝日データは網羅していません。
-                  </p>
-                )}
                 {fields}
                 {error && (
                   <p className="notice warning" role="alert">
@@ -553,15 +519,6 @@ export default function App() {
                 </button>
               </div>
             )}
-            <p className="form-footnote">
-              {isDemo
-                ? "架空の経路・事故データを使用しています。"
-                : health
-                  ? `使用データ：${health.data_years.join("・")}年`
-                  : "データの準備状況を確認しています。"}
-              <br />
-              過去の事故履歴に基づく比較であり、安全を保証するものではありません。
-            </p>
           </main>
         ) : (
           <main className="result-page">
@@ -719,7 +676,6 @@ export default function App() {
               デモ状態切替
             </summary>
             <div className="demo-options">
-              <p>表示・操作を確認できます</p>
               {scenarios.map((item) => (
                 <button
                   key={item.id}

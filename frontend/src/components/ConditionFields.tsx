@@ -16,13 +16,10 @@ import {
 } from "lucide-react";
 import type {
   ConditionValues,
-  ConditionsResponse,
   DayType,
   Period,
   Weather,
 } from "../lib/types";
-import { isDemo } from "../api/client";
-import { toTokyoInput } from "../lib/format";
 
 export type AutoFields = {
   period: boolean;
@@ -37,7 +34,6 @@ type Props = {
   departure: "now" | "custom";
   dateTime: string;
   onDeparture: (mode: "now" | "custom", dateTime: string) => void;
-  conditionData: ConditionsResponse | null;
   busy: boolean;
   warning: string;
   compact?: boolean;
@@ -101,7 +97,6 @@ export default function ConditionFields({
   departure,
   dateTime,
   onDeparture,
-  conditionData,
   busy,
   warning,
   compact = false,
@@ -159,9 +154,6 @@ export default function ConditionFields({
             onChange={(event) => onDeparture("custom", event.target.value)}
           />
         )}
-        <p className="field-help">
-          出発日時から時間帯・曜日を設定します。各項目は変更できます。
-        </p>
       </fieldset>
       <fieldset>
         <legend>移動手段</legend>
@@ -199,13 +191,6 @@ export default function ConditionFields({
         >
           {values.weather === "all" && <Check size={14} />}指定しない
         </button>
-        {auto.weather && conditionData?.weather_source && (
-          <p className="field-help">
-            {isDemo
-              ? "天気は固定デモ値（外部通信なし）"
-              : `${conditionData.weather_source.provider} / ${toTokyoInput(new Date(conditionData.weather_source.target_time)).replace("T", " ")} 日本時間 / ${conditionData.weather_source.kind === "forecast" ? "予報" : "現在天気"}のモデル推定値。事故時の観測値とは異なります。`}
-          </p>
-        )}
       </fieldset>
       <fieldset>
         <legend className="sr-only">時間帯</legend>
@@ -251,17 +236,9 @@ export default function ConditionFields({
             </button>
           ))}
         </div>
-        {auto.day_type && conditionData && (
-          <p className="field-help">
-            {conditionData.day_type_reason}
-            {!conditionData.holiday_table_covered &&
-              "（祝日データの対象範囲外）"}
-          </p>
-        )}
       </fieldset>
       <fieldset className="detour-field">
         <legend>何分まで遠回りできますか？</legend>
-        <p className="field-help">最短時間からの追加分</p>
         <div className="range-value">
           <output htmlFor={compact ? "detour-compact" : "detour"}>
             {values.max_detour_min}

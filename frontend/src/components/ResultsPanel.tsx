@@ -172,7 +172,6 @@ export function ResultsPanel({
                   <AlertTriangle size={18} aria-hidden="true" />
                   <span>
                     <b>区間 {section.properties.segment_index + 1}</b>
-                    <span>この区間付近に過去の事故記録があります</span>
                   </span>
                   <ArrowUpRight size={16} aria-hidden="true" />
                 </button>
@@ -181,13 +180,7 @@ export function ResultsPanel({
           </ul>
         ) : (
           <p className="result-no-sections">
-            表示対象の注意区間はありません。事故記録が存在しないことを示すものではありません。
-          </p>
-        )}
-        {selected.high_risk_total > sections.length && (
-          <p className="result-muted result-cap-note">
-            全{selected.high_risk_total}区間中、重みの高い{sections.length}
-            区間を表示しています。
+            表示対象の注意区間はありません。
           </p>
         )}
         <label className="result-toggle-row">
@@ -202,8 +195,6 @@ export function ResultsPanel({
         </label>
       </section>
 
-      <p className="result-risk-note">{result.risk_note}</p>
-
       <details className="result-details">
         <summary>
           <span>指標と詳細</span>
@@ -214,9 +205,6 @@ export function ResultsPanel({
           <p className="result-applied-conditions">
             {modeLabels[conditions.mode]} / {conditions.period} /{" "}
             {conditions.day_type} / {conditions.weather}
-          </p>
-          <p className="result-muted">
-            条件の自動緩和は行っていません。天候は事故件数を絞らず、重み付けに使用します。
           </p>
 
           <h3>選択経路の集計</h3>
@@ -262,12 +250,6 @@ export function ResultsPanel({
               </dd>
             </div>
           </dl>
-          <p className="result-muted">
-            事故点は最大250件、注意区間は重みの高い順に最大100区間を表示します。集計値は表示上限で間引く前の値です。
-          </p>
-          <p className="result-muted">
-            区間の重みは死者×10＋負傷者の合計です。経路の重みは、さらに距離と天候で重み付けしています。
-          </p>
 
           <h3>指定天候と一致する事故</h3>
           {selected.weather_match ? (
@@ -332,9 +314,6 @@ export function ResultsPanel({
               <dd>{number.format(result.aggregation_ms)}ms</dd>
             </div>
           </dl>
-          <p className="result-muted">
-            重み減少率は事故考慮経路と最短時間経路の比較です。基準の重みが0、または事故考慮経路がない場合は算出不可です。集計・選定時間には外部通信と転送を含みません。
-          </p>
 
           <h3>全候補の比較</h3>
           <div

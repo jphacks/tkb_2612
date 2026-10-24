@@ -50,7 +50,7 @@ describe("ResultsPanel", () => {
     const section = considered.high_risk_sections.features[0];
     fireEvent.click(
       screen.getByRole("button", {
-        name: new RegExp(`区間 ${section.properties.segment_index + 1} `),
+        name: `区間 ${section.properties.segment_index + 1}`,
       }),
     );
     expect(props.onSelectSection).toHaveBeenCalledWith(section.id);
@@ -72,7 +72,7 @@ describe("ResultsPanel", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("算出不可")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /この区間付近/ }),
+      screen.queryByRole("button", { name: /^区間 \d+$/ }),
     ).not.toBeInTheDocument();
   });
 
@@ -89,7 +89,7 @@ describe("ResultsPanel", () => {
     );
   });
 
-  it("does not present a percentage when the baseline is zero and exposes result limits", () => {
+  it("does not present a percentage when the baseline is zero and exposes section totals", () => {
     const result = createDemoRouteResponse(request);
     result.candidates[0].weighted_risk = 0;
     result.risk_reduction_percent = 100;
@@ -97,10 +97,7 @@ describe("ResultsPanel", () => {
     renderResult(result);
     expect(screen.getByText("算出不可")).toBeInTheDocument();
     expect(screen.queryByText("100%")).not.toBeInTheDocument();
-    expect(
-      screen.getByText("全120区間中、重みの高い1区間を表示しています。"),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/事故点は最大250件/)).toBeInTheDocument();
+    expect(screen.getByText("1 / 120区間")).toBeInTheDocument();
   });
 
   it("selects an alternate candidate from the comparison table", () => {

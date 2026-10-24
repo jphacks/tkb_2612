@@ -136,7 +136,7 @@ export default function LocationInput({
           aria-activedescendant={
             open && active >= 0 ? `${id}-${active}` : undefined
           }
-          aria-describedby={`${id}-help`}
+          aria-describedby={value.place ? `${id}-help` : undefined}
           onChange={(event) => edit(event.target.value)}
           onCompositionStart={() => {
             isComposing.current = true;
@@ -208,21 +208,12 @@ export default function LocationInput({
           </button>
         )}
       </div>
-      <div
-        id={`${id}-help`}
-        className={`field-help ${value.place ? "confirmed" : ""}`}
-      >
-        {value.place ? (
-          <>
-            <Check size={14} />
-            地点を確定しました
-          </>
-        ) : isDemo ? (
-          "2文字以上でデモ候補を表示。候補を選んで確定してください。"
-        ) : (
-          "2文字以上入力し、Enterまたは検索ボタンで候補を表示。"
-        )}
-      </div>
+      {value.place && (
+        <div id={`${id}-help`} className="field-help confirmed">
+          <Check size={14} />
+          地点を確定しました
+        </div>
+      )}
       {open && !value.place && (
         <div className="suggestions">
           <div className="suggestion-heading">
