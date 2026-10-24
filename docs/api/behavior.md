@@ -2,7 +2,7 @@
 
 ## 1. 適用範囲と根拠
 
-2026-10-24のPythonプロトタイプを基準とする。時間帯の5区分化、曜日区分、`/api/conditions` は [frontend-spec.md](../frontend-spec.md) 12章の依存事項を受けた移行契約（api_version 2.0）である。数値・候補順・集計対象の互換性の正本は本書、HTTPとJSONの正本は [openapi.yaml](openapi.yaml)。フロントの責務は [frontend-spec.md](../frontend-spec.md)、配置・運用は [architecture.md](../architecture.md) に定義する。本作業は文書のみで、`app/` と `accident/` は変更しない。
+2026-10-24のPythonプロトタイプを基準とする。数値・候補順・集計対象の互換性の正本は本書、HTTPとJSONの正本は [openapi.yaml](openapi.yaml)。フロントの責務は [frontend-spec.md](../frontend-spec.md)、配置・運用は [architecture.md](../architecture.md) に定義する。本作業は文書のみで、`app/` と `accident/` は変更しない。
 
 根拠は [server.py](../../app/server.py) の `route_request / collect_candidates / AccidentIndex / Geocoder / Handler`、[common.py](../../app/common.py)、[prepare_data.py](../../app/prepare_data.py)、[test_server.py](../../app/test_server.py)、[test_prepare_data.py](../../app/test_prepare_data.py)、[README.md](../../app/README.md)、[VALIDATION.md](../../app/VALIDATION.md)、[codebook_notes.md](../../app/codebook_notes.md)、[app.js](../../app/static/app.js)。説明文より実コードの条件分岐を優先した。
 
