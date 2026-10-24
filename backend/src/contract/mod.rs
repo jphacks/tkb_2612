@@ -28,4 +28,6 @@ pub use engine::{
     RouteQuery,
 };
 pub use geo::{LatLon, LonLat};
-pub use routing::{RoutedPath, Router, RoutingError, RoutingRequest};
+pub use routing::{
+    MalformedRoute, ProviderRoute, RoutedPath, Router, RoutingError, RoutingRequest,
+};

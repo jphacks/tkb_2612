@@ -4,6 +4,7 @@
 //! - 非同期処理（上流待ち）は、③が期限付きで待つか、要求のfutureが破棄されて止まる。
 //! - CPU処理（集計）はfutureの破棄では止まらないので、②が [`CancelToken::check`] を
 //!   定期的に呼んで止まる。③は応答を返さずに終わる経路で [`CancelGuard`] を使い、必ず取消す。
+//! - 結果を採用する直前に③が [`CancelToken::settle`] を呼び、期限後の結果を捨てる。
 //!
 //! HTTP応答への変換は③の責務（README.mdの対応表）。
 
@@ -88,6 +89,17 @@ impl CancelToken {
         match self.inner.deadline {
             Some(deadline) if Instant::now() >= deadline => Err(Interrupt::DeadlineExceeded),
             _ => Ok(()),
+        }
+    }
+
+    /// 結果を採用する直前に呼ぶ。期限切れ・取消し済みなら、成功・失敗を問わず中断に置き換える。
+    ///
+    /// 処理の完了と期限切れが同時に観測された場合（`timeout_at` は処理側を先にpollする）
+    /// も、期限後の結果を200にしないため。③はJSONの準備と圧縮が終わった時点でこれを呼ぶ。
+    pub fn settle<T, E: From<Interrupt>>(&self, result: Result<T, E>) -> Result<T, E> {
+        match self.check() {
+            Err(interrupt) => Err(E::from(interrupt)),
+            Ok(()) => result,
         }
     }
 

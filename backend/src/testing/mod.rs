@@ -12,4 +12,4 @@ pub mod router;
 
 pub use calendar::FixedCalendar;
 pub use engine::{StubEngine, StubEvaluation};
-pub use router::{ScriptedRouter, StallingRouter};
+pub use router::{RouterResponse, ScriptedRouter, StallingRouter, valid_routes};

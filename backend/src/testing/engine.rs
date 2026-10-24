@@ -16,11 +16,14 @@ pub enum StubEvaluation {
     Fixed(Box<RouteOutcome>),
     /// 期限切れか取消しまでCPU処理を続ける（中断の伝達の検証用）。
     SpinUntilInterrupted,
+    /// 期限切れの後に、それを見落として結果を返す（完了と期限切れが重なる場合の検証用）。
+    ReturnAfterInterrupt(Box<RouteOutcome>),
 }
 
 /// 計算本体の代わりに、初回の経路取得だけを行い、決めた結果を返す。
 ///
-/// 候補の検証・追加候補・重複排除・集計は行わない。
+/// 初回の結果に [`MalformedRoute`](crate::contract::MalformedRoute) があれば `ExternalApi`。
+/// 値の検証・追加候補・重複排除・集計は行わない。
 #[derive(Debug)]
 pub struct StubEngine {
     dataset: DatasetInfo,
@@ -60,6 +63,8 @@ impl Drop for FinishFlag<'_> {
 }
 
 const SPIN_INTERVAL: Duration = Duration::from_millis(1);
+/// `ReturnAfterInterrupt` が期限切れから結果を返すまでの時間。
+pub const LATE_RETURN: Duration = Duration::from_millis(20);
 
 impl RouteEngine for StubEngine {
     fn dataset(&self) -> &DatasetInfo {
@@ -80,8 +85,13 @@ impl RouteEngine for StubEngine {
                 mode: query.mode(),
                 via: None,
             };
-            let mut routes = router.route(&request, cancel).await?;
-            routes.truncate(MAX_ROUTES_PER_CALL);
+            let routes = router
+                .route(&request, cancel)
+                .await?
+                .into_iter()
+                .take(MAX_ROUTES_PER_CALL)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| EngineError::ExternalApi)?;
             if routes.is_empty() {
                 return Err(EngineError::NoRoute);
             }
@@ -109,6 +119,13 @@ impl RouteEngine for StubEngine {
                 cancel.check()?;
                 std::thread::sleep(SPIN_INTERVAL);
             },
+            StubEvaluation::ReturnAfterInterrupt(outcome) => {
+                while cancel.check().is_ok() {
+                    std::thread::sleep(SPIN_INTERVAL);
+                }
+                std::thread::sleep(LATE_RETURN);
+                Ok((**outcome).clone())
+            }
         }
     }
 }

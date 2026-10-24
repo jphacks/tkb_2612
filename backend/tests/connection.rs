@@ -6,14 +6,17 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use accident_route_backend::contract::{
-    CancelToken, DatasetInfo, EngineError, Interrupt, Mode, RouteEngine, RouteOutcome, RouteQuery,
-    Router, RoutingError,
+    CancelToken, DatasetInfo, EngineError, Interrupt, MalformedRoute, Mode, RouteEngine,
+    RouteOutcome, RouteQuery, Router, RoutingError, RoutingRequest,
 };
+use accident_route_backend::testing::engine::LATE_RETURN;
 use accident_route_backend::testing::fixtures::{
     check_outcome_invariants, expected_route_outcome, fixture_dataset_info, route_example,
     route_example_accidents, route_examples, route_response_names,
 };
-use accident_route_backend::testing::{ScriptedRouter, StallingRouter, StubEngine, StubEvaluation};
+use accident_route_backend::testing::{
+    ScriptedRouter, StallingRouter, StubEngine, StubEvaluation, valid_routes,
+};
 
 /// ③のrouteハンドラの呼出し順。
 ///
@@ -40,6 +43,9 @@ async fn run_route(
         Ok(result) => result,
         Err(_) => Err(EngineError::Interrupted(Interrupt::DeadlineExceeded)),
     };
+    // 完了と期限切れが同時に観測されたら期限切れを優先する。
+    // 実際のハンドラではJSONの準備・圧縮の後に呼ぶ。
+    let result = cancel.settle(result);
     // 期限切れ等で集計が残っていればガードの破棄で止める。正常終了だけ解除する。
     if result.is_ok() {
         guard.disarm();
@@ -127,29 +133,95 @@ fn no_accidents_has_no_safest_route() {
     assert!(outcome.candidates[0].navigation.is_some());
 }
 
+#[test]
+fn invariant_check_rejects_broken_outcomes() {
+    let rejects = |name: &str, broken: &dyn Fn(&mut RouteOutcome), message: &str| {
+        let mut outcome = expected_route_outcome(name);
+        broken(&mut outcome);
+        let error = check_outcome_invariants(&outcome).expect_err(message);
+        assert!(error.contains(message), "{name}: {error}");
+    };
+    // 全候補0件なのにsafestがある（選定候補のnavigationは揃えておく）
+    rejects(
+        "noAccidents",
+        &|o| {
+            o.safest = Some(0);
+            o.extra_minutes = Some(0.0);
+        },
+        "全候補で集合Bが空なのにsafestがある",
+    );
+    rejects(
+        "twoSelected",
+        &|o| {
+            o.safest = None;
+            o.extra_minutes = None;
+            o.risk_reduction_percent = None;
+        },
+        "集合Bが空でない候補があるのにsafestがnull",
+    );
+    rejects(
+        "twoSelected",
+        &|o| o.extra_minutes = None,
+        "extra_minutesの有無",
+    );
+    rejects("twoSelected", &|o| o.safest = Some(9), "safestが候補にない");
+    rejects(
+        "twoSelected",
+        &|o| o.candidates[2].navigation = o.candidates[0].navigation.clone(),
+        "未選定なのにnavigationがある",
+    );
+    rejects(
+        "twoSelected",
+        &|o| o.candidates[1].navigation = None,
+        "選定候補なのにnavigationがない",
+    );
+    rejects(
+        "singleRoute",
+        &|o| o.candidates[0].accident_points.clear(),
+        "事故点数",
+    );
+}
+
 // ---- ②：OSRMなしで候補生成を検証する --------------------------------------------
 
 #[tokio::test]
 async fn scripted_router_returns_fixture_routes_and_records_requests() {
     let example = route_example("twoSelected");
-    let router = ScriptedRouter::new([Ok(example.routes.clone()), Err(RoutingError::ExternalApi)]);
+    let (a, b) = (example.routes[0].clone(), example.routes[1].clone());
+    // 追加の呼出しで、正常な経路の後に形の不正な経路が来る場合
+    let partial = vec![Ok(b.clone()), Err(MalformedRoute)];
+    let router = ScriptedRouter::new([
+        valid_routes(&example.routes),
+        Ok(partial.clone()),
+        Err(RoutingError::ExternalApi),
+    ]);
     let cancel = CancelToken::unbounded();
-    let initial = accident_route_backend::contract::RoutingRequest {
+    let initial = RoutingRequest {
         origin: example.query.origin(),
         dest: example.query.dest(),
         mode: Mode::Walk,
         via: None,
     };
-    assert_eq!(router.route(&initial, &cancel).await, Ok(example.routes));
-    let left = accident_route_backend::contract::RoutingRequest {
+    let initial_routes = router.route(&initial, &cancel).await.unwrap();
+    assert_eq!(initial_routes[..2], [Ok(a), Ok(b.clone())]);
+    let left = RoutingRequest {
         via: Some(example.query.origin()),
         ..initial
     };
+    let right = RoutingRequest {
+        via: Some(example.query.dest()),
+        ..initial
+    };
+    // 不正な経路の前の正常な経路は②が受け取れる
+    let left_routes = router.route(&left, &cancel).await.unwrap();
+    assert_eq!(left_routes, partial);
+    let valid_prefix: Vec<_> = left_routes.iter().map_while(|r| r.clone().ok()).collect();
+    assert_eq!(valid_prefix, [b]);
     assert_eq!(
-        router.route(&left, &cancel).await,
+        router.route(&right, &cancel).await,
         Err(RoutingError::ExternalApi)
     );
-    assert_eq!(router.calls(), [initial, left]);
+    assert_eq!(router.calls(), [initial, left, right]);
     assert_eq!(router.remaining(), 0);
 
     // 送信前に中断した呼出しは上流へ届かない
@@ -158,7 +230,7 @@ async fn scripted_router_returns_fixture_routes_and_records_requests() {
         router.route(&initial, &cancel).await,
         Err(RoutingError::Interrupted(Interrupt::Cancelled))
     );
-    assert_eq!(router.calls().len(), 2);
+    assert_eq!(router.calls().len(), 3);
 }
 
 #[tokio::test]
@@ -166,7 +238,7 @@ async fn scripted_router_returns_fixture_routes_and_records_requests() {
 async fn scripted_router_rejects_unexpected_calls() {
     let example = route_example("singleRoute");
     let router = ScriptedRouter::new([]);
-    let request = accident_route_backend::contract::RoutingRequest {
+    let request = RoutingRequest {
         origin: example.query.origin(),
         dest: example.query.dest(),
         mode: Mode::Walk,
@@ -182,7 +254,7 @@ async fn stub_engine_returns_fixture_outcome_through_handler_flow() {
     for name in route_response_names() {
         let example = route_example(&name);
         let engine = stub(fixed(&name));
-        let router = Arc::new(ScriptedRouter::new([Ok(example.routes.clone())]));
+        let router = Arc::new(ScriptedRouter::new([valid_routes(&example.routes)]));
         let cancel = CancelToken::with_timeout(Duration::from_secs(35));
         let outcome = run_route(
             engine.clone(),
@@ -226,6 +298,19 @@ async fn upstream_errors_surface_as_engine_errors() {
     }
 }
 
+#[tokio::test]
+async fn malformed_route_in_initial_call_is_external_api_error() {
+    let example = route_example("twoSelected");
+    // 正常な経路が先にあっても、初回の呼出しでは要求全体の失敗にする
+    let response = Ok(vec![Ok(example.routes[0].clone()), Err(MalformedRoute)]);
+    let engine = stub(fixed("twoSelected"));
+    let router = Arc::new(ScriptedRouter::new([response]));
+    let cancel = CancelToken::with_timeout(Duration::from_secs(35));
+    let result = run_route(engine.clone(), router, example.query, cancel).await;
+    assert_eq!(result, Err(EngineError::ExternalApi));
+    assert!(!engine.evaluate_started());
+}
+
 // ---- 中断 ------------------------------------------------------------------
 
 const SHORT: Duration = Duration::from_millis(50);
@@ -253,7 +338,7 @@ async fn deadline_while_waiting_upstream_is_deadline_exceeded() {
 async fn deadline_during_cpu_aggregation_stops_the_blocking_task() {
     let example = route_example("singleRoute");
     let engine = stub(StubEvaluation::SpinUntilInterrupted);
-    let router = Arc::new(ScriptedRouter::new([Ok(example.routes.clone())]));
+    let router = Arc::new(ScriptedRouter::new([valid_routes(&example.routes)]));
     let started = Instant::now();
     let cancel = CancelToken::with_timeout(SHORT);
     let result = run_route(engine.clone(), router, example.query, cancel).await;
@@ -265,11 +350,37 @@ async fn deadline_during_cpu_aggregation_stops_the_blocking_task() {
     assert!(started.elapsed() < SHORT + STOP_MARGIN);
 }
 
+/// 集計の完了と期限切れを、ハンドラが同時に観測する場合。
+/// 期限後に完了した結果を200にせず、期限切れを優先する（behavior.md 5章）。
+#[tokio::test(flavor = "current_thread")]
+async fn completion_observed_after_deadline_is_deadline_exceeded() {
+    let example = route_example("singleRoute");
+    let engine = stub(StubEvaluation::ReturnAfterInterrupt(Box::new(
+        expected_route_outcome("singleRoute"),
+    )));
+    let router = Arc::new(ScriptedRouter::new([valid_routes(&example.routes)]));
+    let cancel = CancelToken::with_timeout(SHORT);
+    let deadline = cancel.deadline().unwrap();
+    // 期限の直前から集計の完了後までランタイムのスレッドを止め、
+    // 再開時にタイマーと集計結果の両方が準備済みになるようにする。
+    let blocker = tokio::spawn(async move {
+        tokio::time::sleep_until((deadline - Duration::from_millis(10)).into()).await;
+        std::thread::sleep(Duration::from_millis(10) + LATE_RETURN * 3);
+    });
+    let result = run_route(engine.clone(), router, example.query, cancel.clone()).await;
+    blocker.await.unwrap();
+    assert!(engine.evaluate_finished());
+    assert_eq!(
+        result,
+        Err(EngineError::Interrupted(Interrupt::DeadlineExceeded))
+    );
+}
+
 #[tokio::test]
 async fn dropping_the_request_cancels_the_blocking_task() {
     let example = route_example("singleRoute");
     let engine = stub(StubEvaluation::SpinUntilInterrupted);
-    let router = Arc::new(ScriptedRouter::new([Ok(example.routes.clone())]));
+    let router = Arc::new(ScriptedRouter::new([valid_routes(&example.routes)]));
     let cancel = CancelToken::with_timeout(Duration::from_secs(35));
     let task = tokio::spawn(run_route(
         engine.clone(),

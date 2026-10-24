@@ -151,20 +151,24 @@ pub fn check_outcome_invariants(outcome: &RouteOutcome) -> Result<(), String> {
     if outcome.fastest >= n {
         return Err("fastestが候補にない".into());
     }
-    match outcome.safest {
-        Some(s) if s >= n => return Err("safestが候補にない".into()),
-        None if outcome.extra_minutes.is_some() || outcome.risk_reduction_percent.is_some() => {
-            return Err("safestがnullなのにextra_minutes/risk_reduction_percentがある".into());
-        }
+    if outcome.safest.is_some_and(|s| s >= n) {
+        return Err("safestが候補にない".into());
+    }
+    // safestがnullになるのは、全候補で集合Bが空のときだけ（behavior.md 8章）
+    let any_accident = outcome
+        .candidates
+        .iter()
+        .any(|c| c.totals.accident_count > 0);
+    match (outcome.safest.is_some(), any_accident) {
+        (false, true) => return Err("集合Bが空でない候補があるのにsafestがnull".into()),
+        (true, false) => return Err("全候補で集合Bが空なのにsafestがある".into()),
         _ => {}
     }
-    if outcome.safest.is_none()
-        && outcome
-            .candidates
-            .iter()
-            .any(|c| c.totals.accident_count > 0)
-    {
-        return Err("集合Bが空でない候補があるのにsafestがnull".into());
+    if outcome.extra_minutes.is_some() != outcome.safest.is_some() {
+        return Err("extra_minutesの有無がsafestの有無と一致しない".into());
+    }
+    if outcome.safest.is_none() && outcome.risk_reduction_percent.is_some() {
+        return Err("safestがnullなのにrisk_reduction_percentがある".into());
     }
     for (i, c) in outcome.candidates.iter().enumerate() {
         let id = format!("route-{}", i + 1);

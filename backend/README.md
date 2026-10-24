@@ -12,7 +12,7 @@
 | `Mode`・`Period`・`Weather`・`DayType`、コードと日本語ラベル、`Period::from_hour`、`ConditionFilter` | `src/contract/conditions.rs` | 共有 |
 | 時間帯・曜日判定の入口 `Calendar`、`TokyoMinute`、`DayClassification` | `src/contract/calendar.rs` | 実装は②、利用は②（前処理）と③（conditions） |
 | 期限・キャンセル `CancelToken`・`Interrupt`・`CancelGuard` | `src/contract/cancel.rs` | ③が作り、②とアダプタが確認する |
-| 経路取得 `Router`・`RoutingRequest`・`RoutedPath`・`RoutingError` | `src/contract/routing.rs` | 実装は③、呼び出すのは② |
+| 経路取得 `Router`・`RoutingRequest`・`RoutedPath`・`ProviderRoute`・`MalformedRoute`・`RoutingError` | `src/contract/routing.rs` | 実装は③、呼び出すのは② |
 | 計算の入口 `RouteEngine`、入力 `RouteQuery`、結果 `RouteOutcome`、`EngineError`、`DatasetInfo` | `src/contract/engine.rs` | 実装は②、呼び出すのは③ |
 | releaseの読込 `data::load_calendar`・`data::load_engine` | `src/data/mod.rs` | 実装は②（現在は常に失敗する仮実装）、呼び出すのは③ |
 | スタブとfixtureの読込 | `src/testing/` | 共有（テスト専用） |
@@ -48,7 +48,7 @@ providers ──> contract
 | 処理 | ② | ③ |
 |---|---|---|
 | route入力 | — | JSON・Content-Type・型・列挙・互換入力（整数コード、null、`時間帯`、`hour`）の解釈。`RouteQuery::new` で座標・直線距離・許容時間を検証する（`validate_endpoints` を先に呼ぶと、behavior.md 4章の検証順を守れる） |
-| 経路取得 | 追加候補の要否、左右の経由点、呼出し順（初回→左→右）、値と頂点数の検証、80km判定、重複排除、並べ替え、警告 | URLの組立て、識別UA、上流ゲート、8秒の通信期限、サイズ上限、JSON構造の解釈、提供元のエラーの変換。先頭6本までを提供元の順で返す |
+| 経路取得 | 追加候補の要否、左右の経由点、呼出し順（初回→左→右）、値と頂点数の検証、80km判定、重複排除、並べ替え、警告 | URLの組立て、識別UA、上流ゲート、8秒の通信期限、サイズ上限、JSON構造の解釈、提供元のエラーの変換。先頭6本までを提供元の順で1本ずつ解釈して返す |
 | 計算 | 事故集計、選定、ナビ区間、説明文、計算中の中断 | `spawn_blocking` での実行、CPU同時数の上限、navigationのサイズ（5,000,000バイト）とJSONの安全整数範囲の検査 |
 | conditions | `Calendar` の実装（祝日表の読込、判定） | datetimeの検証とAsia/Tokyoへの換算、`TokyoMinute` の作成、天候の取得 |
 | health | `DatasetInfo` の提供 | 応答の組立て、未ready時の503 |
@@ -76,8 +76,12 @@ let result = tokio::time::timeout_at(deadline.into(), async {
         .await
         .map_err(|e| EngineError::ContractViolation(e.to_string()))?
 }).await.unwrap_or(Err(EngineError::Interrupted(Interrupt::DeadlineExceeded)));
+// JSONの準備・圧縮の後、応答を返す直前に呼ぶ。期限後に完了した結果を200にしない
+let result = cancel.settle(result);
 if result.is_ok() { guard.disarm(); }
 ```
+
+`timeout_at` は処理側を先にpollするので、完了と期限切れが同時に観測されると `Ok` を返します。そのため最後に `settle` で確認します。
 
 conditionsでは `calendar.classify(TokyoMinute::from_local(jst_naive))` を呼びます。結果の `period` と `day.reason` / `day.day_type()` / `day.holiday_table_covered` をそのまま返します。
 
@@ -86,6 +90,8 @@ conditionsでは `calendar.classify(TokyoMinute::from_local(jst_naive))` を呼�
 - ③が要求ごとに `CancelToken` を作ります。route/geocodeは受付から35秒で、待ち行列・集計・JSONの準備・圧縮を含みます。
 - **非同期の待ち（上流）**：③は期限付きで待ちます。アダプタは、送信の前に `cancel.check()` を確認します。待つ時間の上限は `min(8秒, cancel.remaining())` です。要求全体の期限で打ち切った場合は、`ExternalApi` ではなく `Interrupted(DeadlineExceeded)` を返します。
 - **CPU処理（集計）**：futureを破棄しても止まりません。②は `evaluate` の中で、少なくとも約10msごとに `cancel.check()?` を呼びます（例：ループ1024回ごと、候補ごと）。③は `CancelGuard` を使い、クライアントの切断や期限切れで必ず取り消します。
+- **結果の採用**：応答を返す直前に `cancel.settle(result)` を呼びます。期限切れ・取消し済みなら、計算が成功していても中断として扱います。
+- **不正な経路**：アダプタは、形を解釈できない経路（頂点が数値2個の `[lon, lat]` でない等）を呼出し全体の失敗にせず、その位置に `Err(MalformedRoute)` を置きます。②はそこで検査を止め、初回の呼出しなら要求全体を `ExternalApi` に、追加の呼出しならそれより前の正常な経路を残して警告にします（behavior.md 5章）。
 - **追加候補の失敗**：`RoutingError::aborts_request()` が真の失敗（`Busy`・`Interrupted`）は、追加候補の取得中でも警告にせず、要求全体を失敗にします。
 
 ## エラーとHTTP応答
@@ -110,7 +116,7 @@ conditionsでは、天候の取得が失敗・期限切れ・混雑になって�
 
 | 用途 | 使うもの |
 |---|---|
-| ②がOSRMなしで候補生成を検証する | `testing::ScriptedRouter`（呼出し順の応答と、受けた要求の記録。想定外の呼出しはpanic） |
+| ②がOSRMなしで候補生成を検証する | `testing::ScriptedRouter`（呼出し順の応答と、受けた要求の記録。想定外の呼出しはpanic）。全経路が正常な応答は `testing::valid_routes(&routes)` で作る |
 | ②の計算結果の期待値 | `testing::fixtures::route_example(name)` が入力（事故・要求・固定経路）を、`expected_route_outcome(name)` が期待値を返す。`aggregation_ms` は比較から除く |
 | ③が計算本体なしでハンドラを検証する | `testing::StubEngine`（`Fixed` は期待値を返し、`SpinUntilInterrupted` は中断されるまで集計を続ける）、`testing::FixedCalendar` |
 | ③が期限を検証する | `testing::StallingRouter`（期限か取消しまで応答しない） |
@@ -140,8 +146,8 @@ python3 -B backend/scripts/extract_route_examples.py          # openapi.yamlの�
 
 `cargo test` が検査するのは次の内容です。
 
-- `tests/contract_types.rs`：コードとラベル、時間帯の境界、直線距離と許容時間の境界、期限とキャンセルの規則
-- `tests/connection.rs`：fixtureの整合、スタブを経由した接続、上流で待っている間の期限切れ、集計中の期限切れ、要求の破棄による取消し
+- `tests/contract_types.rs`：コードとラベル、時間帯の境界、直線距離と許容時間の境界、期限とキャンセルの規則（`settle` を含む）
+- `tests/connection.rs`：fixtureの整合と相関制約（崩した結果を拒否すること）、スタブを経由した接続、不正な経路、上流で待っている間の期限切れ、集計中の期限切れ、完了と期限切れの同時観測、要求の破棄による取消し
 - `tests/boundaries.rs`：依存方向
 
 ## 範囲外

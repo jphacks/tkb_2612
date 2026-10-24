@@ -6,6 +6,10 @@
 //! - ②：追加候補の要否、左右経由点の計算、呼出し順（初回→左→右）、値の検証、
 //!   80km判定、重複排除、並べ替え、警告。
 //!
+//! 不正な経路（[`MalformedRoute`] と、②の値の検証で弾いたもの）の扱いは②が決める。
+//! 初回の呼出しでは要求全体を `ExternalApi` にし、追加の呼出しではそれより前の正常な
+//! 経路を残して警告にする。
+//!
 //! 1回の `route` 呼出しが上流1通信に対応する。アダプタは再試行しない。
 
 use super::BoxFuture;
@@ -36,12 +40,26 @@ pub struct RoutedPath {
     pub coordinates: Vec<LonLat>,
 }
 
+/// 提供元の1経路が、型として解釈できない形だった。
+///
+/// geometryがLineStringでない、頂点が数値2個の `[lon, lat]` でない（標高つきを含む）、
+/// duration・distanceが数値でない、など。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MalformedRoute;
+
+/// アダプタが返す1経路分の結果。
+///
+/// 1経路の形の不正は呼出し全体の失敗にせず、その位置に置く。追加候補の取得では、
+/// 不正な経路より前の正常な経路を②が残すため（behavior.md 5章）。
+pub type ProviderRoute = Result<RoutedPath, MalformedRoute>;
+
 /// 経路取得の失敗。HTTP応答への変換は③が行う。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RoutingError {
     /// 提供元が経路なしと答えた（OSRMのcodeがOk以外、routesが空、外枠がobjectでない）。
     NoRoute,
-    /// 通信失敗・上流HTTP失敗（429を含む）・8秒の通信期限切れ・サイズ超過・JSON構造の不正。
+    /// 通信失敗・上流HTTP失敗（429を含む）・8秒の通信期限切れ・サイズ超過・
+    /// JSONの解析失敗や外枠の構造の不正（routesが配列でない等）。1経路の形の不正は含まない。
     ExternalApi,
     /// 待ち行列の満杯、共有上流ゲートの読取失敗・競合未解消。
     Busy,
@@ -68,9 +86,10 @@ impl From<Interrupt> for RoutingError {
 /// 経路提供元のアダプタ。
 ///
 /// 実装の約束：
-/// - 成功時は提供元の順序のまま、先頭 [`MAX_ROUTES_PER_CALL`] 本までを返す。
-/// - 解釈した各経路の座標が数値2個の `[lon, lat]` でなければ（標高つきを含む）`ExternalApi`。
-///   数値の範囲・頂点数・距離の検証は②が行うので、アダプタでは弾かない。
+/// - 成功時は提供元の順序のまま、先頭 [`MAX_ROUTES_PER_CALL`] 本までを1本ずつ解釈して返す。
+/// - 形を解釈できない経路は、その位置に `Err(MalformedRoute)` を置く。②はそこで検査を
+///   止めるので、それより後の経路は返さなくてよい。
+/// - 数値の範囲・頂点数・距離の検証は②が行うので、アダプタでは弾かない。
 /// - 送信前に `cancel.check()` を確認し、待ち時間の上限は `min(通信期限, cancel.remaining())`。
 ///   要求全体の期限で打ち切った場合は `ExternalApi` ではなく `Interrupted(DeadlineExceeded)` を返す。
 pub trait Router: Send + Sync {
@@ -78,5 +97,5 @@ pub trait Router: Send + Sync {
         &'a self,
         request: &'a RoutingRequest,
         cancel: &'a CancelToken,
-    ) -> BoxFuture<'a, Result<Vec<RoutedPath>, RoutingError>>;
+    ) -> BoxFuture<'a, Result<Vec<ProviderRoute>, RoutingError>>;
 }

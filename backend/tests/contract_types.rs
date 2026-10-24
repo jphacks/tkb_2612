@@ -181,6 +181,31 @@ fn cancel_token_reports_cancel_before_deadline() {
 }
 
 #[test]
+fn settle_prefers_interrupt_over_late_results() {
+    let live = CancelToken::with_timeout(Duration::from_secs(60));
+    assert_eq!(live.settle::<_, EngineError>(Ok(1)), Ok(1));
+    assert_eq!(
+        live.settle::<i32, _>(Err(EngineError::NoRoute)),
+        Err(EngineError::NoRoute)
+    );
+
+    let expired = CancelToken::with_deadline(Instant::now() - Duration::from_millis(1));
+    let deadline = Err(EngineError::Interrupted(Interrupt::DeadlineExceeded));
+    assert_eq!(expired.settle::<_, EngineError>(Ok(1)), deadline);
+    assert_eq!(
+        expired.settle::<i32, _>(Err(EngineError::ExternalApi)),
+        deadline
+    );
+
+    let cancelled = CancelToken::unbounded();
+    cancelled.cancel();
+    assert_eq!(
+        cancelled.settle::<_, RoutingError>(Ok(1)),
+        Err(RoutingError::Interrupted(Interrupt::Cancelled))
+    );
+}
+
+#[test]
 fn cancel_guard_cancels_on_drop_unless_disarmed() {
     let token = CancelToken::unbounded();
     drop(token.cancel_on_drop());

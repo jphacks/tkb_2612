@@ -5,7 +5,17 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use crate::contract::{BoxFuture, CancelToken, RoutedPath, Router, RoutingError, RoutingRequest};
+use crate::contract::{
+    BoxFuture, CancelToken, ProviderRoute, RoutedPath, Router, RoutingError, RoutingRequest,
+};
+
+/// 応答の1回分。
+pub type RouterResponse = Result<Vec<ProviderRoute>, RoutingError>;
+
+/// すべて正常な経路の応答。
+pub fn valid_routes(routes: &[RoutedPath]) -> RouterResponse {
+    Ok(routes.iter().cloned().map(Ok).collect())
+}
 
 /// 呼出し順に決めた応答を返し、受けた要求を記録する。
 ///
@@ -13,12 +23,12 @@ use crate::contract::{BoxFuture, CancelToken, RoutedPath, Router, RoutingError, 
 /// 送信前に `cancel.check()` で止まった要求は記録しない。
 #[derive(Debug, Default)]
 pub struct ScriptedRouter {
-    script: Mutex<VecDeque<Result<Vec<RoutedPath>, RoutingError>>>,
+    script: Mutex<VecDeque<RouterResponse>>,
     calls: Mutex<Vec<RoutingRequest>>,
 }
 
 impl ScriptedRouter {
-    pub fn new(responses: impl IntoIterator<Item = Result<Vec<RoutedPath>, RoutingError>>) -> Self {
+    pub fn new(responses: impl IntoIterator<Item = RouterResponse>) -> Self {
         Self {
             script: Mutex::new(responses.into_iter().collect()),
             calls: Mutex::new(Vec::new()),
@@ -41,7 +51,7 @@ impl Router for ScriptedRouter {
         &'a self,
         request: &'a RoutingRequest,
         cancel: &'a CancelToken,
-    ) -> BoxFuture<'a, Result<Vec<RoutedPath>, RoutingError>> {
+    ) -> BoxFuture<'a, RouterResponse> {
         Box::pin(async move {
             cancel.check()?;
             self.calls.lock().unwrap().push(*request);
@@ -78,7 +88,7 @@ impl Router for StallingRouter {
         &'a self,
         _request: &'a RoutingRequest,
         cancel: &'a CancelToken,
-    ) -> BoxFuture<'a, Result<Vec<RoutedPath>, RoutingError>> {
+    ) -> BoxFuture<'a, RouterResponse> {
         Box::pin(async move {
             self.calls.fetch_add(1, Ordering::SeqCst);
             loop {
