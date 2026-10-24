@@ -128,13 +128,17 @@ pub fn expected_route_outcome(name: &str) -> RouteOutcome {
     parse_route_response(&route_response_json(name))
 }
 
-/// 応答例の集計に使った人工データの識別情報。
+/// 既存3例（`singleRoute`・`noAccidents`・`twoSelected`）が共有する人工事故の件数（ID 0〜2）。
+/// 間引きの例のための大量の事故（ID 3〜）は数えない。
+const BASE_ACCIDENT_COUNT: u64 = 3;
+
+/// 応答例の集計に使った人工データの識別情報。`accidents` は既存3例の人工事故3件。
 pub fn fixture_dataset_info() -> DatasetInfo {
     let zero = "0".repeat(64);
     DatasetInfo {
         release_id: zero.clone(),
         dataset_id: zero,
-        accidents: route_example_accidents().len() as u64,
+        accidents: BASE_ACCIDENT_COUNT,
         data_years: vec![2025],
         load_seconds: 0.0,
         grid_cells: None,
