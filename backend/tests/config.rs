@@ -5,7 +5,11 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use accident_route_backend::config::{Attribution, Config, ConfigError, GateBackend, repo_root};
+use accident_route_backend::config::{
+    Attribution, Config, ConfigError, GateBackend, MAX_CONDITIONS_TIMEOUT_MS, MAX_DURATION_MS,
+    MAX_ROUTE_TRANSFER_TIMEOUT_MS, MAX_UPSTREAM_BYTES, MAX_UPSTREAM_QUEUE_CAPACITY,
+    MAX_WEATHER_CACHE_TTL_SEC, MAX_WEATHER_FORECAST_DAYS, repo_root,
+};
 
 struct Env {
     _temp: tempfile::TempDir,
@@ -235,6 +239,33 @@ fn invalid_values_are_rejected_with_the_variable_name() {
     for (name, value) in cases {
         let error = env().with(name, value).error();
         assert_eq!(error.variable, name, "{name}={value}");
+    }
+}
+
+/// 6章が上限を定めない数値は、名前つきの上限（暫定）まで受け付け、超えたら変数名つきで失敗する。
+#[test]
+fn numeric_upper_bounds_are_inclusive() {
+    let cases = [
+        ("UPSTREAM_TIMEOUT_MS", MAX_DURATION_MS),
+        ("ROUTING_MIN_INTERVAL_MS", MAX_DURATION_MS),
+        ("GEOCODING_MIN_INTERVAL_MS", MAX_DURATION_MS),
+        ("REQUEST_TIMEOUT_MS", MAX_DURATION_MS),
+        ("WEATHER_TIMEOUT_MS", MAX_DURATION_MS),
+        ("WEATHER_MIN_INTERVAL_MS", MAX_DURATION_MS),
+        ("ROUTE_TRANSFER_TIMEOUT_MS", MAX_ROUTE_TRANSFER_TIMEOUT_MS),
+        ("UPSTREAM_MAX_BYTES", MAX_UPSTREAM_BYTES),
+        ("UPSTREAM_QUEUE_CAPACITY", MAX_UPSTREAM_QUEUE_CAPACITY),
+        ("WEATHER_CACHE_TTL_SEC", MAX_WEATHER_CACHE_TTL_SEC),
+        ("WEATHER_FORECAST_DAYS", MAX_WEATHER_FORECAST_DAYS),
+        ("CONDITIONS_TIMEOUT_MS", MAX_CONDITIONS_TIMEOUT_MS),
+    ];
+    for (name, max) in cases {
+        assert!(
+            env().with(name, &max.to_string()).load().is_ok(),
+            "{name}={max}"
+        );
+        let error = env().with(name, &(max + 1).to_string()).error();
+        assert_eq!(error.variable, name, "{name}={}", max + 1);
     }
 }
 

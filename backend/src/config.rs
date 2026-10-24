@@ -15,6 +15,23 @@ use std::time::Duration;
 
 use serde_json::Value;
 
+// 6章が上限を定めない数値の受付範囲（暫定。未決）。誤設定（単位の取り違え・桁の誤り）を
+// 起動時に止めるためのもので、運用上の推奨値ではない。
+/// 時間の設定（`*_MS`）の上限：10分。
+pub const MAX_DURATION_MS: u64 = 600_000;
+/// `ROUTE_TRANSFER_TIMEOUT_MS` の上限：1時間。
+pub const MAX_ROUTE_TRANSFER_TIMEOUT_MS: u64 = 3_600_000;
+/// `UPSTREAM_MAX_BYTES` の上限：4 GiB。
+pub const MAX_UPSTREAM_BYTES: u64 = 1 << 32;
+/// `UPSTREAM_QUEUE_CAPACITY` の上限。
+pub const MAX_UPSTREAM_QUEUE_CAPACITY: u64 = 10_000;
+/// `WEATHER_CACHE_TTL_SEC` の上限：1日。
+pub const MAX_WEATHER_CACHE_TTL_SEC: u64 = 86_400;
+/// `WEATHER_FORECAST_DAYS` の範囲（6章：1〜16）。
+pub const MAX_WEATHER_FORECAST_DAYS: u64 = 16;
+/// `CONDITIONS_TIMEOUT_MS` の上限（6章：クライアントの10秒より短くする）。
+pub const MAX_CONDITIONS_TIMEOUT_MS: u64 = 9_999;
+
 /// 秘密値。`Debug` で中身を出さない。
 #[derive(Clone, PartialEq, Eq)]
 pub struct Secret(String);
@@ -122,7 +139,7 @@ impl Config {
             return Err(env.error("EXTERNAL_USER_AGENT", "ヘッダーに使えない文字があります"));
         }
         let routing_attribution = env.required("ROUTING_ATTRIBUTION")?;
-        let upstream_timeout = env.millis("UPSTREAM_TIMEOUT_MS", 8_000, 1, 600_000)?;
+        let upstream_timeout = env.millis("UPSTREAM_TIMEOUT_MS", 8_000, 1, MAX_DURATION_MS)?;
         Ok(Self {
             bind: env.bind()?,
             accident_data_dir: env.path("ACCIDENT_DATA_DIR", "backend/data/current")?,
@@ -139,17 +156,36 @@ impl Config {
             routing_attribution,
             geocoding_attribution: env.attribution("GEOCODING_ATTRIBUTION")?,
             upstream_timeout,
-            upstream_max_bytes: env.integer("UPSTREAM_MAX_BYTES", 12_000_000, 1, 1 << 32)? as usize,
-            routing_min_interval: env.millis("ROUTING_MIN_INTERVAL_MS", 1_050, 0, 600_000)?,
-            geocoding_min_interval: env.millis("GEOCODING_MIN_INTERVAL_MS", 1_050, 0, 600_000)?,
-            upstream_queue_capacity: env.integer("UPSTREAM_QUEUE_CAPACITY", 16, 1, 10_000)?
-                as usize,
-            request_timeout: env.millis("REQUEST_TIMEOUT_MS", 35_000, 1, 600_000)?,
+            upstream_max_bytes: env.integer(
+                "UPSTREAM_MAX_BYTES",
+                12_000_000,
+                1,
+                MAX_UPSTREAM_BYTES,
+            )? as usize,
+            routing_min_interval: env.millis(
+                "ROUTING_MIN_INTERVAL_MS",
+                1_050,
+                0,
+                MAX_DURATION_MS,
+            )?,
+            geocoding_min_interval: env.millis(
+                "GEOCODING_MIN_INTERVAL_MS",
+                1_050,
+                0,
+                MAX_DURATION_MS,
+            )?,
+            upstream_queue_capacity: env.integer(
+                "UPSTREAM_QUEUE_CAPACITY",
+                16,
+                1,
+                MAX_UPSTREAM_QUEUE_CAPACITY,
+            )? as usize,
+            request_timeout: env.millis("REQUEST_TIMEOUT_MS", 35_000, 1, MAX_DURATION_MS)?,
             route_transfer_timeout: env.millis(
                 "ROUTE_TRANSFER_TIMEOUT_MS",
                 120_000,
                 1,
-                3_600_000,
+                MAX_ROUTE_TRANSFER_TIMEOUT_MS,
             )?,
             upstream_gate: match env.optional("UPSTREAM_GATE")?.as_deref() {
                 None | Some("firestore") => GateBackend::Firestore,
@@ -160,17 +196,27 @@ impl Config {
             },
             open_meteo_base_url: env.base_url("OPEN_METEO_BASE_URL")?,
             open_meteo_api_key: env.secret_file("OPEN_METEO_API_KEY_FILE")?,
-            weather_timeout: env.millis("WEATHER_TIMEOUT_MS", 5_000, 1, 600_000)?,
-            weather_forecast_days: env.integer("WEATHER_FORECAST_DAYS", 7, 1, 16)? as u8,
+            weather_timeout: env.millis("WEATHER_TIMEOUT_MS", 5_000, 1, MAX_DURATION_MS)?,
+            weather_forecast_days: env.integer(
+                "WEATHER_FORECAST_DAYS",
+                7,
+                1,
+                MAX_WEATHER_FORECAST_DAYS,
+            )? as u8,
             weather_cache_ttl: Duration::from_secs(env.integer(
                 "WEATHER_CACHE_TTL_SEC",
                 600,
                 0,
-                86_400,
+                MAX_WEATHER_CACHE_TTL_SEC,
             )?),
-            weather_min_interval: env.millis("WEATHER_MIN_INTERVAL_MS", 200, 0, 600_000)?,
+            weather_min_interval: env.millis("WEATHER_MIN_INTERVAL_MS", 200, 0, MAX_DURATION_MS)?,
             // クライアントの10秒より短くする
-            conditions_timeout: env.millis("CONDITIONS_TIMEOUT_MS", 8_000, 1, 9_999)?,
+            conditions_timeout: env.millis(
+                "CONDITIONS_TIMEOUT_MS",
+                8_000,
+                1,
+                MAX_CONDITIONS_TIMEOUT_MS,
+            )?,
             rust_log: env
                 .optional("RUST_LOG")?
                 .unwrap_or_else(|| "info".to_owned()),

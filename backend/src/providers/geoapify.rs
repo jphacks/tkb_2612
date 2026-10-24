@@ -118,7 +118,12 @@ impl Geocoder for GeoapifyGeocoder {
             lease.ensure_valid().map_err(gate_error)?;
             let fetched = self
                 .client
-                .get(self.url(q), self.timeout, self.max_bytes, cancel)
+                .get(
+                    self.url(q),
+                    self.timeout.min(lease.remaining()),
+                    self.max_bytes,
+                    cancel,
+                )
                 .await;
             lease.release().await;
             let body = fetched.map_err(|e| match e {

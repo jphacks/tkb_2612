@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::contract::BoxFuture;
+use crate::providers::clock::Clock;
 use crate::providers::gate::{Decision, GateOp, GateState, GateStore, StoreError, apply};
 
 /// ゲートの状態を置くコレクション（暫定）。
@@ -26,6 +27,10 @@ pub const DATABASE: &str = "(default)";
 pub const MAX_ATTEMPTS: usize = 3;
 /// Firestore・メタデータサーバへの1通信の期限。
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(2);
+/// 判定（`batchGet` の後）から `commit` の応答を受け取るまでに許す遅れ（暫定。仕様に値が無く、
+/// 統括の決定待ち）。共有状態にはこの分だけ遅い開始時刻を記録し、これを超えて届いた許可では
+/// 送信しない（[`GateStore::start_reserve`]）。
+pub const START_RESERVE: Duration = Duration::from_millis(500);
 
 const API_ROOT: &str = "https://firestore.googleapis.com/v1/";
 const METADATA_ROOT: &str = "http://metadata.google.internal/computeMetadata/v1/";
@@ -36,8 +41,14 @@ pub trait TokenSource: Send + Sync {
 }
 
 /// 固定のトークン（テスト用の偽Firestoreへ接続するとき等）。
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct StaticToken(pub String);
+
+impl std::fmt::Debug for StaticToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("StaticToken(..)")
+    }
+}
 
 impl TokenSource for StaticToken {
     fn token(&self) -> BoxFuture<'_, Result<String, StoreError>> {
@@ -46,10 +57,16 @@ impl TokenSource for StaticToken {
 }
 
 /// Cloud Runのメタデータサーバからサービスアカウントのトークンを得る。期限前に取り直す。
-#[derive(Debug)]
 pub struct MetadataToken {
     client: reqwest::Client,
     cached: tokio::sync::Mutex<Option<(String, Instant)>>,
+}
+
+/// キャッシュしたトークンを表示しない。
+impl std::fmt::Debug for MetadataToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MetadataToken").finish_non_exhaustive()
+    }
 }
 
 impl MetadataToken {
@@ -120,6 +137,7 @@ pub struct FirestoreGateStore {
     /// `projects/{p}/databases/{d}/documents`
     documents_name: String,
     tokens: Arc<dyn TokenSource>,
+    start_reserve: Duration,
 }
 
 impl std::fmt::Debug for FirestoreGateStore {
@@ -155,7 +173,14 @@ impl FirestoreGateStore {
             documents_url: format!("{}/{documents_name}", api_root.trim_end_matches('/')),
             documents_name,
             tokens,
+            start_reserve: START_RESERVE,
         }
+    }
+
+    /// 判定から応答受取りまでに許す遅れを変える（テスト用）。
+    pub fn with_start_reserve(mut self, reserve: Duration) -> Self {
+        self.start_reserve = reserve;
+        self
     }
 
     async fn call(&self, token: &str, method: &str, body: Value) -> Result<Value, CallError> {
@@ -178,7 +203,12 @@ impl FirestoreGateStore {
         response.json().await.map_err(|_| CallError::Failed)
     }
 
-    async fn attempt(&self, key: &str, op: GateOp<'_>, now_ms: i64) -> Result<Attempt, StoreError> {
+    async fn attempt(
+        &self,
+        key: &str,
+        op: GateOp<'_>,
+        clock: &dyn Clock,
+    ) -> Result<Attempt, StoreError> {
         let token = self.tokens.token().await?;
         let begun = self
             .call(
@@ -195,7 +225,7 @@ impl FirestoreGateStore {
             .to_owned();
         let name = format!("{}/{COLLECTION}/{key}", self.documents_name);
         let result = self
-            .read_apply_commit(&token, &transaction, &name, op, now_ms)
+            .read_apply_commit(&token, &transaction, &name, op, clock)
             .await;
         if !matches!(result, Ok(Attempt::Done(_))) {
             // 失敗・競合したトランザクションは捨てる（失敗しても期限で消える）
@@ -212,7 +242,7 @@ impl FirestoreGateStore {
         transaction: &str,
         name: &str,
         op: GateOp<'_>,
-        now_ms: i64,
+        clock: &dyn Clock,
     ) -> Result<Attempt, StoreError> {
         let read = match self
             .call(
@@ -228,7 +258,8 @@ impl FirestoreGateStore {
         };
         let before = parse_batch_get(&read).ok_or(StoreError)?;
         let mut state = before.clone();
-        let decision = apply(&mut state, op, now_ms);
+        // 判定の時刻は読取りの後に読む（トークン取得・読取りの遅れを開始時刻に含めない）
+        let decision = apply(&mut state, op, clock.now_ms());
         if state == before {
             // 書き込みが不要（待ち・上限到達で状態が変わらない）
             let _ = self
@@ -280,16 +311,20 @@ impl GateStore for FirestoreGateStore {
         &'a self,
         key: &'a str,
         op: GateOp<'a>,
-        now_ms: i64,
+        clock: &'a dyn Clock,
     ) -> BoxFuture<'a, Result<Decision, StoreError>> {
         Box::pin(async move {
             for _ in 0..MAX_ATTEMPTS {
-                match self.attempt(key, op, now_ms).await? {
+                match self.attempt(key, op, clock).await? {
                     Attempt::Done(decision) => return Ok(decision),
                     Attempt::Conflict => continue,
                 }
             }
             Err(StoreError)
         })
+    }
+
+    fn start_reserve(&self) -> Duration {
+        self.start_reserve
     }
 }

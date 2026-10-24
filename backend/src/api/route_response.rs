@@ -23,6 +23,12 @@ use crate::contract::{
 pub const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 /// 選定経路分のnavigationの合計（空白なしUTF-8 JSON）の上限。
 pub const MAX_NAVIGATION_BYTES: u64 = 5_000_000;
+/// OpenAPIの `NavigationData`・`NavigationSection` の範囲。
+pub const NAV_PROJECTION_LAT_RANGE: std::ops::RangeInclusive<f64> = 20.0..=46.0;
+pub const NAV_MAX_LENGTH_M: f64 = 110_000.0;
+pub const NAV_MAX_VERTICES: usize = 15_000;
+pub const NAV_MAX_SECTIONS: usize = 8_233;
+pub const NAV_MAX_SEGMENT_INDEX: u32 = 16_465;
 
 /// 変換できない結果（内部契約違反）。内容は内部の説明で、応答には出さない。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,9 +241,22 @@ fn check_navigation(
 ) -> Result<(), InvalidOutcome> {
     finite(nav.projection_lat_deg, id)?;
     finite_non_negative(nav.length_m, id)?;
+    if !NAV_PROJECTION_LAT_RANGE.contains(&nav.projection_lat_deg) {
+        return violation(format!("{id}: projection_lat_degが範囲外"));
+    }
+    // 頂点の距離は非減少で末尾がlength_mなので、各距離・区間の端もこの上限以下になる
+    if nav.length_m > NAV_MAX_LENGTH_M {
+        return violation(format!("{id}: length_mが範囲外"));
+    }
     let d = &nav.vertex_distances_m;
     if d.len() != c.path.coordinates.len() {
         return violation(format!("{id}: vertex_distances_mの長さが頂点数と異なる"));
+    }
+    if !(2..=NAV_MAX_VERTICES).contains(&d.len()) {
+        return violation(format!("{id}: vertex_distances_mの長さが範囲外"));
+    }
+    if nav.sections.len() > NAV_MAX_SECTIONS {
+        return violation(format!("{id}: ナビ区間数が範囲外"));
     }
     for v in d {
         finite_non_negative(*v, id)?;
@@ -255,6 +274,7 @@ fn check_navigation(
         finite(s.end_m, id)?;
         safe(s.severity_weight, id)?;
         if s.start_segment_index > s.end_segment_index
+            || s.end_segment_index > NAV_MAX_SEGMENT_INDEX
             || !(0.0 <= s.start_m && s.start_m <= s.end_m && s.end_m <= nav.length_m)
             || s.severity_weight < 3
         {

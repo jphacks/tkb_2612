@@ -8,9 +8,10 @@ mod common;
 use std::sync::Arc;
 
 use accident_route_backend::api::route_response::{
-    MAX_NAVIGATION_BYTES, MAX_SAFE_INTEGER, render_route_response,
+    MAX_NAVIGATION_BYTES, MAX_SAFE_INTEGER, NAV_MAX_SECTIONS, NAV_MAX_VERTICES,
+    render_route_response,
 };
-use accident_route_backend::contract::{LonLat, RouteOutcome};
+use accident_route_backend::contract::{LonLat, NavigationData, NavigationSection, RouteOutcome};
 use accident_route_backend::testing::fixtures::{
     check_outcome_invariants, expected_route_outcome, fixture_dataset_info, route_example,
     route_response_json, route_response_names,
@@ -93,6 +94,8 @@ fn json_safe_integer_overflow_is_rejected() {
     assert!(render_route_response(&unsafe_integer_outcome()).is_err());
 }
 
+/// 5,000,000バイトを超えるnavigationは拒否する。OpenAPIの範囲（頂点15,000・区間8,233）内では
+/// 選定2本の合計は約3.7MBに収まるので、超える結果は頂点数の範囲外でもある。
 #[test]
 fn navigation_over_five_megabytes_is_rejected() {
     let outcome = oversized_navigation_outcome();
@@ -103,6 +106,91 @@ fn navigation_over_five_megabytes_is_rejected() {
     let bytes = serde_json::to_vec(&nav.vertex_distances_m).unwrap().len() as u64;
     assert!(bytes > MAX_NAVIGATION_BYTES, "{bytes}");
     assert!(render_route_response(&outcome).is_err());
+}
+
+fn rejection(outcome: &RouteOutcome) -> String {
+    render_route_response(outcome)
+        .expect_err("契約違反として拒否するはず")
+        .0
+}
+
+/// OpenAPIの `NavigationData`・`NavigationSection` の範囲外は拒否する（500）。
+#[test]
+fn navigation_outside_the_openapi_ranges_is_rejected() {
+    let base = expected_route_outcome("twoSelected");
+    let selected = base.safest.unwrap();
+    let with = |edit: &dyn Fn(&mut NavigationData)| {
+        let mut outcome = base.clone();
+        edit(outcome.candidates[selected].navigation.as_mut().unwrap());
+        outcome
+    };
+    assert!(
+        !base.candidates[selected]
+            .navigation
+            .as_ref()
+            .unwrap()
+            .sections
+            .is_empty()
+    );
+    for lat in [19.999, 46.001] {
+        let message = rejection(&with(&|n| n.projection_lat_deg = lat));
+        assert!(message.contains("projection_lat_deg"), "{message}");
+    }
+    for lat in [20.0, 46.0] {
+        assert!(render_route_response(&with(&|n| n.projection_lat_deg = lat)).is_ok());
+    }
+    let message = rejection(&with(&|n| {
+        let scale = 110_000.5 / n.length_m;
+        for d in &mut n.vertex_distances_m {
+            *d *= scale;
+        }
+        n.length_m = *n.vertex_distances_m.last().unwrap();
+    }));
+    assert!(message.contains("length_m"), "{message}");
+    // sidの上限16,465（区間を後ろへずらす。相関検査だけでは通ってしまう）
+    let message = rejection(&with(&|n| {
+        for s in &mut n.sections {
+            s.start_segment_index += 20_000;
+            s.end_segment_index += 20_000;
+        }
+    }));
+    assert!(message.contains("ナビ区間が不正"), "{message}");
+    let message = rejection(&with(&|n| {
+        let template = n.sections[0];
+        let total: u64 = n
+            .sections
+            .iter()
+            .map(|s| u64::from(s.end_segment_index - s.start_segment_index) + 1)
+            .sum();
+        assert_eq!(total, 1, "このfixtureでは1区間1本");
+        n.sections = (0..NAV_MAX_SECTIONS as u32 + 1)
+            .map(|j| NavigationSection {
+                start_segment_index: j * 2,
+                end_segment_index: j * 2,
+                ..template
+            })
+            .collect();
+    }));
+    assert!(message.contains("ナビ区間数"), "{message}");
+}
+
+/// 頂点数の上限15,000（navigationの頂点距離は頂点と同数）。
+#[test]
+fn navigation_vertex_count_is_bounded() {
+    let mut outcome = expected_route_outcome("noAccidents");
+    let candidate = &mut outcome.candidates[outcome.fastest];
+    let n = NAV_MAX_VERTICES + 1;
+    candidate.path.coordinates = (0..n)
+        .map(|i| LonLat::new(139.0 + i as f64 * 1e-6, 35.0))
+        .collect();
+    let nav = candidate.navigation.as_mut().unwrap();
+    nav.vertex_distances_m = (0..n).map(|i| i as f64 * 0.1).collect();
+    nav.length_m = *nav.vertex_distances_m.last().unwrap();
+    let message = rejection(&outcome);
+    assert!(
+        message.contains("vertex_distances_mの長さが範囲外"),
+        "{message}"
+    );
 }
 
 #[test]

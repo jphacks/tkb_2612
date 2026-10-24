@@ -96,11 +96,11 @@ gcloud run deploy $SERVICE \
   --set-env-vars=OSRM_WALK_BASE_URL=…,OSRM_BIKE_BASE_URL=…,OSRM_CAR_BASE_URL=… \
   --set-env-vars=GEOAPIFY_BASE_URL=https://api.geoapify.com,OPEN_METEO_BASE_URL=… \
   --set-env-vars=EXTERNAL_USER_AGENT=…,ROUTING_ATTRIBUTION=… \
-  --set-env-vars=^@^GEOCODING_ATTRIBUTION=[{"text":"Powered by Geoapify","url":"https://www.geoapify.com/"}]
+  '--set-env-vars=^@^GEOCODING_ATTRIBUTION=[{"text":"Powered by Geoapify","url":"https://www.geoapify.com/"}]'
 ```
 
 - 環境変数はarchitecture.md 6章の表のとおりです。必須の不足・不正は起動に失敗し、ログには変数名だけが出ます（値は出しません）。`BACKEND_BIND`・`UPSTREAM_GATE` は設定しません（`0.0.0.0:$PORT`、`firestore`）。
-- `GEOCODING_ATTRIBUTION` はカンマを含むので、区切り文字を変える記法（`^@^`）か `--env-vars-file` を使います。
+- `GEOCODING_ATTRIBUTION` はカンマを含むので、区切り文字を変える記法（`^@^`）か `--env-vars-file` を使います。`"`・`[`・`{` をシェルに解釈させないよう、引数全体を単引用符で囲みます。
 - 有償のOpen-Meteoでは `--set-secrets=/secrets/open-meteo/key=open-meteo-api-key:latest` と `OPEN_METEO_API_KEY_FILE=/secrets/open-meteo/key` を足します。
 - releaseの差し替えは、新しいイメージで新リビジョンを作り、startup probeの成功後にトラフィックを移します。失敗したら旧リビジョンへ戻します。
 

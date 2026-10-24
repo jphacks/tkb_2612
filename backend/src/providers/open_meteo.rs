@@ -172,7 +172,12 @@ impl WeatherProvider for OpenMeteoProvider {
             );
             let fetched = self
                 .client
-                .get(url, self.timeout, self.max_bytes, cancel)
+                .get(
+                    url,
+                    self.timeout.min(lease.remaining()),
+                    self.max_bytes,
+                    cancel,
+                )
                 .await;
             lease.release().await;
             let body = fetched.map_err(|e| match e {

@@ -5,10 +5,15 @@
 //! `env.sh` にも書く）。外部のネットワークには通信しない。手順は README.md「C4のローカル起動」。
 //!
 //! ```text
-//! cargo run --example dev_stack                          # 偽上流だけ（Ctrl-Cで停止）
-//! cargo run --example dev_stack -- --simple              # 簡易モード（C4の合格には使えない）
-//! cargo run --example dev_stack -- --simple noAccidents  # 簡易モードで返す例を選ぶ
+//! cargo run --example dev_stack                            # 偽上流だけ（Ctrl-Cで停止）
+//! cargo run --example dev_stack -- --example twoSelected   # 偽OSRMが返す例を選ぶ
+//! cargo run --example dev_stack -- --simple                # 簡易モード（C4の合格には使えない）
+//! cargo run --example dev_stack -- --simple noAccidents    # 簡易モードで返す例を選ぶ
 //! ```
+//!
+//! fixtureの例はどれも出発地・目的地が同じなので、座標だけでは例を区別できない。
+//! `--example` を付けると、偽OSRMはmodeが一致する限りその例の経路を返す（付けなければ、
+//! 座標とmodeが一致する最初の例）。
 //!
 //! 簡易モードは、人工release（②）が無い間の予行用に、`StubEngine`（`Fixed`）と
 //! `FixedCalendar` で APIサーバを `127.0.0.1:8000` に起動する。経路はどの入力でも
@@ -43,17 +48,18 @@ const EMPTY_QUERY_MARKER: &str = "該当なし";
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let simple = match args.as_slice() {
-        [] => None,
-        [flag] if flag == "--simple" => Some(DEFAULT_EXAMPLE.to_owned()),
-        [flag, name] if flag == "--simple" => Some(name.clone()),
+    let (simple, selected) = match args.as_slice() {
+        [] => (false, None),
+        [flag, name] if flag == "--example" => (false, Some(name.clone())),
+        [flag] if flag == "--simple" => (true, Some(DEFAULT_EXAMPLE.to_owned())),
+        [flag, name] if flag == "--simple" => (true, Some(name.clone())),
         _ => {
-            eprintln!("使い方: dev_stack [--simple [例の名前]]");
+            eprintln!("使い方: dev_stack [--example 例の名前 | --simple [例の名前]]");
             return std::process::ExitCode::FAILURE;
         }
     };
     let examples = Arc::new(route_examples());
-    if let Some(name) = &simple
+    if let Some(name) = &selected
         && !examples.iter().any(|e| &e.name == name)
     {
         let names: Vec<&str> = examples.iter().map(|e| e.name.as_str()).collect();
@@ -63,7 +69,8 @@ async fn main() -> std::process::ExitCode {
 
     let osrm = start(axum::Router::new().fallback({
         let examples = examples.clone();
-        move |uri: Uri| async move { fake_osrm(&uri, &examples) }
+        let selected = selected.clone();
+        move |uri: Uri| async move { fake_osrm(&uri, &examples, selected.as_deref()) }
     }))
     .await;
     let geoapify = start(axum::Router::new().fallback({
@@ -87,7 +94,7 @@ async fn main() -> std::process::ExitCode {
     print!("{script}");
     eprintln!("# 偽上流を起動しました（同じ内容: {}）", env_file.display());
 
-    match simple {
+    match selected.filter(|_| simple) {
         None => {
             eprintln!(
                 "# 別の端末で上の環境変数を設定し、backendを起動してください。Ctrl-Cで停止します。"
@@ -202,9 +209,10 @@ fn json_response(status: StatusCode, body: &Value) -> Response {
         .into_response()
 }
 
-/// `GET /route/v1/{profile}/{lon,lat;…}`。出発地・目的地・modeが一致する例の固定経路を返す。
+/// `GET /route/v1/{profile}/{lon,lat;…}`。選んだ例（`selected`）のmodeが一致すればその例の、
+/// でなければ出発地・目的地・modeが一致する例の固定経路を返す。
 /// 一致する例が無ければ、同じmodeの最初の例（無ければ最初の例）の経路を返す。
-fn fake_osrm(uri: &Uri, examples: &[RouteExample]) -> Response {
+fn fake_osrm(uri: &Uri, examples: &[RouteExample], selected: Option<&str>) -> Response {
     let segments: Vec<&str> = uri.path().trim_start_matches('/').split('/').collect();
     let [.., "route", "v1", profile, points] = segments.as_slice() else {
         return json_response(StatusCode::NOT_FOUND, &json!({"code": "InvalidUrl"}));
@@ -222,10 +230,13 @@ fn fake_osrm(uri: &Uri, examples: &[RouteExample]) -> Response {
     };
     let example = examples
         .iter()
-        .find(|e| {
-            e.query.mode() == mode
-                && text(e.query.origin()) == *origin
-                && text(e.query.dest()) == *dest
+        .find(|e| Some(e.name.as_str()) == selected && e.query.mode() == mode)
+        .or_else(|| {
+            examples.iter().find(|e| {
+                e.query.mode() == mode
+                    && text(e.query.origin()) == *origin
+                    && text(e.query.dest()) == *dest
+            })
         })
         .or_else(|| examples.iter().find(|e| e.query.mode() == mode))
         .or_else(|| examples.first());

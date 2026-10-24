@@ -4,11 +4,12 @@
 //! （`REQUEST_TIMEOUT_MS`）に収め、期限切れは503 service_busy。キャッシュしない。
 
 use axum::extract::{RawQuery, State};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 
 use crate::api::AppState;
-use crate::api::error::{ApiError, GEOCODING_UNAVAILABLE, json_ok};
+use crate::api::error::{ApiError, GEOCODING_UNAVAILABLE, json_response};
 use crate::api::query::QueryParams;
 use crate::config::Attribution;
 use crate::contract::{CancelToken, Interrupt};
@@ -64,8 +65,11 @@ pub async fn handle(State(state): State<AppState>, RawQuery(query): RawQuery) ->
     let result = tokio::time::timeout_at(deadline, state.geocoder().search(&q, &cancel))
         .await
         .unwrap_or(Err(GeocodeError::Interrupted(Interrupt::DeadlineExceeded)));
-    match cancel.settle(result) {
-        Ok(places) => respond(&places, &state.settings().geocoding_attribution),
+    // JSONの準備までを期限に含め、準備が終わってから結果を採用する
+    let prepared = result.map(|places| serialize(&places, &state.settings().geocoding_attribution));
+    match cancel.settle(prepared) {
+        Ok(Ok(body)) => json_response(StatusCode::OK, body),
+        Ok(Err(_)) => ApiError::Internal.into_response(),
         Err(GeocodeError::ExternalApi) => {
             ApiError::ExternalApi(GEOCODING_UNAVAILABLE).into_response()
         }
@@ -75,8 +79,8 @@ pub async fn handle(State(state): State<AppState>, RawQuery(query): RawQuery) ->
     }
 }
 
-fn respond(places: &[Place], attribution: &[Attribution]) -> Response {
-    json_ok(&GeocodeDto {
+fn serialize(places: &[Place], attribution: &[Attribution]) -> serde_json::Result<Vec<u8>> {
+    serde_json::to_vec(&GeocodeDto {
         results: places
             .iter()
             .map(|p| ResultDto {

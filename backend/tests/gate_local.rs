@@ -14,7 +14,9 @@ use accident_route_backend::contract::{CancelToken, Interrupt};
 use accident_route_backend::providers::gate::{
     Gate, GateError, GatePolicy, GateStore, LocalGateStore, Quota, QuotaPeriod,
 };
-use accident_route_backend::providers::gate_firestore::{FirestoreGateStore, StaticToken};
+use accident_route_backend::providers::gate_firestore::{
+    FirestoreGateStore, START_RESERVE, StaticToken,
+};
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
@@ -51,9 +53,25 @@ struct FakeFirestore {
     /// trueなら全呼出しを500にする
     failing: Mutex<bool>,
     commits: AtomicUsize,
+    /// メソッド名 → その呼出しの処理中に進める時間（Firestoreの応答の遅れを模す）
+    delays: Mutex<HashMap<&'static str, Duration>>,
+    clock: Mutex<Option<Arc<ManualClock>>>,
 }
 
 impl FakeFirestore {
+    /// `method` の呼出しのたびに `clock` を `by` だけ進める。
+    fn delay(&self, clock: &Arc<ManualClock>, method: &'static str, by: Duration) {
+        *self.clock.lock().unwrap() = Some(clock.clone());
+        self.delays.lock().unwrap().insert(method, by);
+    }
+
+    fn advance_for(&self, method: &str) {
+        let by = self.delays.lock().unwrap().get(method).copied();
+        if let (Some(by), Some(clock)) = (by, self.clock.lock().unwrap().as_ref()) {
+            clock.advance(by);
+        }
+    }
+
     fn stored_states(&self) -> Vec<Value> {
         self.docs
             .lock()
@@ -81,6 +99,7 @@ async fn firestore_handler(
         .strip_prefix(prefix)
         .unwrap_or_else(|| panic!("想定外のパス: {path}"));
     let transaction = |body: &Value| body["transaction"].as_str().unwrap().to_owned();
+    fake.advance_for(method);
     match method {
         "beginTransaction" => {
             let id = format!("t{}", fake.next_transaction.fetch_add(1, Ordering::SeqCst));
@@ -189,7 +208,9 @@ async fn acquire_short(gate: &Gate) -> Result<(), GateError> {
 }
 
 /// 1,050ms間隔：直後と1,049ms後は送信できず、1,050ms後に送信できる。
+/// 開始時刻は、保存方式の応答の遅れの許容分（Firestoreは [`START_RESERVE`]）だけ遅く記録する。
 async fn check_interval(store: Arc<dyn GateStore>) {
+    let reserve = store.start_reserve();
     let clock = ManualClock::new(common::fixed_now());
     let gate = Gate::new("osrm", policy(), store, clock.clone());
     let lease = gate.acquire(&CancelToken::unbounded()).await.unwrap();
@@ -198,7 +219,7 @@ async fn check_interval(store: Arc<dyn GateStore>) {
         acquire_short(&gate).await,
         Err(GateError::Interrupted(Interrupt::DeadlineExceeded))
     );
-    clock.advance(Duration::from_millis(1_049));
+    clock.advance(reserve + Duration::from_millis(1_049));
     assert_eq!(
         acquire_short(&gate).await,
         Err(GateError::Interrupted(Interrupt::DeadlineExceeded))
@@ -304,10 +325,12 @@ async fn check_lease_expiry(store: Arc<dyn GateStore>) {
     let clock = ManualClock::new(common::fixed_now());
     let mut policy = policy();
     policy.lease_ttl = Duration::from_secs(10);
+    let reserve = store.start_reserve();
     let gate = Gate::new("osrm", policy, store, clock.clone());
     let old = gate.acquire(&CancelToken::unbounded()).await.unwrap();
     assert_eq!(old.ensure_valid(), Ok(()));
-    clock.advance(Duration::from_secs(10));
+    // リースは記録した開始時刻から10秒
+    clock.advance(reserve + Duration::from_secs(10));
     assert_eq!(
         old.ensure_valid(),
         Err(GateError::Busy),
@@ -518,4 +541,107 @@ async fn leases_are_shared_across_instances() {
         .await;
     assert!(fixture.fake.commits.load(Ordering::SeqCst) >= 4);
     fixture.server.stop().await;
+}
+
+fn stored_state(fixture: &FirestoreFixture) -> Value {
+    let states = fixture.fake.stored_states();
+    assert_eq!(states.len(), 1);
+    states.into_iter().next().unwrap()
+}
+
+/// 判定の後、commitの応答が遅れても（許容分以内）、他のインスタンスは記録した開始時刻
+/// （判定時刻＋許容分）から1,050ms後まで送信できない。リースもそこから10秒。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delay_after_the_decision_is_reserved_in_the_start_time() {
+    let fixture = firestore().await;
+    let clock = ManualClock::new(common::fixed_now());
+    let t0 = common::fixed_now().timestamp_millis();
+    let reserve = START_RESERVE.as_millis() as i64;
+    fixture
+        .fake
+        .delay(&clock, "commit", START_RESERVE - Duration::from_millis(100));
+    let a = Gate::new("osrm", policy(), fixture.store.clone(), clock.clone());
+    let lease = a.acquire(&CancelToken::unbounded()).await.unwrap();
+    assert_eq!(lease.record().expires_at_ms, t0 + reserve + 10_000);
+    assert_eq!(stored_state(&fixture)["last_start_ms"], t0 + reserve);
+    lease.release().await;
+
+    fixture.fake.delay(&clock, "commit", Duration::ZERO);
+    let b = Gate::new("osrm", policy(), fixture.store.clone(), clock.clone());
+    clock.set(common::fixed_now() + chrono::Duration::milliseconds(reserve + 1_049));
+    assert_eq!(
+        acquire_short(&b).await,
+        Err(GateError::Interrupted(Interrupt::DeadlineExceeded))
+    );
+    clock.advance(Duration::from_millis(1));
+    b.acquire(&CancelToken::with_timeout(SHORT))
+        .await
+        .unwrap()
+        .release()
+        .await;
+    fixture.server.stop().await;
+}
+
+/// 許容分を超えて届いた許可では送信せずBusy。取ったリースは返す（件数は消費したまま）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn late_grant_is_not_used() {
+    let fixture = firestore().await;
+    let clock = ManualClock::new(common::fixed_now());
+    fixture
+        .fake
+        .delay(&clock, "commit", START_RESERVE + Duration::from_millis(1));
+    let gate = Gate::new("osrm", policy(), fixture.store.clone(), clock.clone());
+    assert_eq!(
+        gate.acquire(&CancelToken::unbounded()).await.map(drop),
+        Err(GateError::Busy)
+    );
+    let state = stored_state(&fixture);
+    assert_eq!(state["leases"], json!([]), "取ったリースを返している");
+    assert_eq!(state["counters"][0]["count"], 1);
+    fixture.server.stop().await;
+}
+
+/// 判定の時刻は試行ごとに、状態を読んだ後に読む（読取り・競合の再試行の遅れを含めない）。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn each_attempt_reads_the_clock_after_reading_the_state() {
+    let fixture = firestore().await;
+    let clock = ManualClock::new(common::fixed_now());
+    let t0 = common::fixed_now().timestamp_millis();
+    fixture
+        .fake
+        .delay(&clock, "batchGet", Duration::from_millis(300));
+    fixture.fake.conflicts.store(1, Ordering::SeqCst);
+    let gate = Gate::new("osrm", policy(), fixture.store.clone(), clock.clone());
+    let lease = gate.acquire(&CancelToken::unbounded()).await.unwrap();
+    let reserve = START_RESERVE.as_millis() as i64;
+    assert_eq!(lease.record().expires_at_ms, t0 + 600 + reserve + 10_000);
+    assert_eq!(stored_state(&fixture)["last_start_ms"], t0 + 600 + reserve);
+    lease.release().await;
+    fixture.server.stop().await;
+}
+
+/// リースの残りは時計とともに減る（アダプタは1通信の期限をこれ以下にする）。
+#[tokio::test]
+async fn lease_remaining_counts_down() {
+    let clock = ManualClock::new(common::fixed_now());
+    let gate = Gate::new(
+        "osrm",
+        policy(),
+        Arc::new(LocalGateStore::new()),
+        clock.clone(),
+    );
+    let lease = gate.acquire(&CancelToken::unbounded()).await.unwrap();
+    assert_eq!(lease.remaining(), Duration::from_secs(10));
+    clock.advance(Duration::from_secs(4));
+    assert_eq!(lease.remaining(), Duration::from_secs(6));
+    clock.advance(Duration::from_secs(7));
+    assert_eq!(lease.remaining(), Duration::ZERO);
+    lease.release().await;
+}
+
+/// アクセストークンを `Debug` に出さない。
+#[test]
+fn tokens_are_not_shown_in_debug_output() {
+    let text = format!("{:?}", StaticToken("ya29.S3CRET".to_owned()));
+    assert!(!text.contains("S3CRET"), "{text}");
 }

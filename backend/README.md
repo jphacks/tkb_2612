@@ -209,14 +209,14 @@ UPDATE_API_FIXTURES=1 cargo test --manifest-path backend/Cargo.toml --test api_c
 偽上流（偽OSRM・偽Geoapify・偽Open-Meteo）をループバックの空きポートで起動し、それを指す環境変数を出力します。外部のネットワークには通信しません。
 
 1. ②が提供する人工releaseのディレクトリを用意する。
-2. 端末A：`cargo run --manifest-path backend/Cargo.toml --example dev_stack`。`export NAME='value'` の行（同じ内容の `env.sh` のパスも表示）が出る。Ctrl-Cで停止。
+2. 端末A：`cargo run --manifest-path backend/Cargo.toml --example dev_stack -- --example twoSelected`。`export NAME='value'` の行（同じ内容の `env.sh` のパスも表示）が出る。Ctrl-Cで停止。`--example` で偽OSRMが返す例を選ぶ（fixtureの例は出発地・目的地が同じなので、座標では区別できない）。
 3. 端末B：出力された環境変数を設定し（`source <表示されたenv.sh>`）、`ACCIDENT_DATA_DIR` に人工releaseを指定して `cargo run --manifest-path backend/Cargo.toml` で `127.0.0.1:8000` に起動する。
 4. 端末C：`(cd frontend && VITE_API_MODE=live npm run dev)`。`VITE_API_MODE=live` が無いとデモ応答になる。`/api` は `http://127.0.0.1:8000` へ転送される。
 5. ブラウザで `http://127.0.0.1:5173` を開き、実際に検索する。
 
 偽上流の応答：
 
-- 偽OSRMは、出発地・目的地・modeがfixture（`docs/api/fixtures/route-example-inputs.json`）の例と一致すればその例の固定経路を、一致しなければ同じmodeの最初の例の経路を返す。
+- 偽OSRMは、`--example` で選んだ例とmodeが一致すればその例の固定経路を返す。選んでいないかmodeが違えば、出発地・目的地・modeがfixture（`docs/api/fixtures/route-example-inputs.json`）の例と一致する最初の例、それも無ければ同じmodeの最初の例の経路を返す。
 - 偽Geoapifyは、どの検索語にもfixtureの出発地・目的地を候補として返す。`該当なし` を含む検索語は0件。
 - 偽Open-Meteoは、今日0時から `forecast_days` 日分の毎時の天気（日ごとに晴・雨・雪）を返し、現在は晴。
 

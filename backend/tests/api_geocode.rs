@@ -5,8 +5,11 @@ mod common;
 use std::sync::Arc;
 use std::time::Duration;
 
+use accident_route_backend::contract::{BoxFuture, CancelToken, LatLon};
 use accident_route_backend::providers::gate::{Gate, GatePolicy, LocalGateStore};
-use accident_route_backend::providers::geoapify::{GeoapifyGeocoder, GeocodeError};
+use accident_route_backend::providers::geoapify::{
+    GeoapifyGeocoder, GeocodeError, Geocoder, Place,
+};
 use accident_route_backend::providers::http::UpstreamClient;
 use axum::http::StatusCode;
 use serde_json::json;
@@ -217,4 +220,47 @@ async fn geocode_does_not_wait_for_accident_data() {
         .get("/api/geocode?q=%E6%9D%B1%E4%BA%AC")
         .await;
     assert_eq!(response.status, StatusCode::OK);
+}
+
+/// 期限の直前に検索結果を返す偽の住所検索。表示名は大きく、JSONの準備に時間がかかる。
+struct ReturnsJustBeforeDeadline;
+
+impl Geocoder for ReturnsJustBeforeDeadline {
+    fn search<'a>(
+        &'a self,
+        _q: &'a str,
+        cancel: &'a CancelToken,
+    ) -> BoxFuture<'a, Result<Vec<Place>, GeocodeError>> {
+        // 大きな結果は先に作り、期限の直前まで待ってから返す
+        let label = "\"".repeat(10_000_000);
+        let places: Vec<Place> = (0..5)
+            .map(|_| Place {
+                position: LatLon::new(35.681, 139.767),
+                label: label.clone(),
+            })
+            .collect();
+        Box::pin(async move {
+            while cancel
+                .remaining()
+                .is_some_and(|r| r > Duration::from_millis(1))
+            {
+                tokio::time::sleep(Duration::from_micros(200)).await;
+            }
+            Ok(places)
+        })
+    }
+}
+
+/// JSONの準備までが期限（35秒）の対象。期限直前に結果を得ても、準備中に期限が過ぎたら503。
+#[tokio::test]
+async fn deadline_covers_json_preparation() {
+    let mut builder = TestAppBuilder {
+        geocoder: Arc::new(ReturnsJustBeforeDeadline),
+        engine: None,
+        ..Default::default()
+    };
+    builder.settings.request_timeout = Duration::from_millis(200);
+    let response = builder.build().get("/api/geocode?q=abc").await;
+    assert_eq!(response.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.error_code(), "service_busy");
 }

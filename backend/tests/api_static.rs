@@ -201,6 +201,25 @@ async fn other_methods_are_405_and_head_is_like_get() {
     assert!(head.body.is_empty());
 }
 
+/// `dist/assets` 自体がdist外へのリンクなら、その先のファイルを配信しない。
+#[cfg(unix)]
+#[tokio::test]
+async fn assets_directory_linked_outside_dist_is_not_served() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let dist = root.join("dist");
+    write(&dist.join("index.html"), "<!doctype html>");
+    write(&root.join("release/metadata.json"), "TOP-SECRET");
+    std::os::unix::fs::symlink(root.join("release"), dist.join("assets")).unwrap();
+    let mut builder = TestAppBuilder::default();
+    builder.settings.frontend_dist_dir = dist;
+    let app = builder.build();
+    let response = app.get("/assets/metadata.json").await;
+    assert_eq!(response.status, StatusCode::NOT_FOUND);
+    assert!(!String::from_utf8_lossy(&response.body).contains("TOP-SECRET"));
+    assert_eq!(app.get("/").await.status, StatusCode::OK);
+}
+
 /// `FRONTEND_DIST_DIR` が未生成でもAPIは使える（API専用の開発起動）。
 #[tokio::test]
 async fn missing_dist_still_serves_the_api() {

@@ -69,11 +69,17 @@ pub fn is_asset_name(name: &str) -> bool {
     }
 }
 
-/// root直下の通常ファイルを正規化して返す。root外・ファイル以外は `None`。
-async fn resolve(root: &Path, name: &str) -> Option<PathBuf> {
-    let root = tokio::fs::canonicalize(root).await.ok()?;
-    let file = tokio::fs::canonicalize(root.join(name)).await.ok()?;
-    if file.parent() != Some(root.as_path()) {
+/// 正規化したdistの直下（`subdir` があればその直下）の通常ファイルを正規化して返す。
+/// dist外（`subdir` 自体がdist外へのリンクの場合を含む）・ファイル以外は `None`。
+async fn resolve(dist: &Path, subdir: Option<&str>, name: &str) -> Option<PathBuf> {
+    let dist = tokio::fs::canonicalize(dist).await.ok()?;
+    // 期待する親は、正規化したdistに名前を足したもの（`subdir` は正規化しない）
+    let dir = match subdir {
+        Some(subdir) => dist.join(subdir),
+        None => dist,
+    };
+    let file = tokio::fs::canonicalize(dir.join(name)).await.ok()?;
+    if file.parent() != Some(dir.as_path()) {
         return None;
     }
     tokio::fs::metadata(&file)
@@ -84,12 +90,13 @@ async fn resolve(root: &Path, name: &str) -> Option<PathBuf> {
 }
 
 async fn serve(
-    root: &Path,
-    relative: &str,
+    dist: &Path,
+    subdir: Option<&str>,
+    name: &str,
     content_type: &'static str,
     cache_control: &'static str,
 ) -> Response {
-    let Some(file) = resolve(root, relative).await else {
+    let Some(file) = resolve(dist, subdir, name).await else {
         return not_found();
     };
     let Ok(body) = tokio::fs::read(&file).await else {
@@ -110,6 +117,7 @@ fn dist(state: &AppState) -> &Path {
 pub async fn index(State(state): State<AppState>) -> Response {
     serve(
         dist(&state),
+        None,
         "index.html",
         "text/html; charset=utf-8",
         NO_CACHE,
@@ -120,6 +128,7 @@ pub async fn index(State(state): State<AppState>) -> Response {
 pub async fn manifest(State(state): State<AppState>) -> Response {
     serve(
         dist(&state),
+        None,
         "manifest.webmanifest",
         "application/manifest+json",
         NO_CACHE,
@@ -128,7 +137,7 @@ pub async fn manifest(State(state): State<AppState>) -> Response {
 }
 
 pub async fn service_worker(State(state): State<AppState>) -> Response {
-    let mut response = serve(dist(&state), "sw.js", "text/javascript", NO_CACHE).await;
+    let mut response = serve(dist(&state), None, "sw.js", "text/javascript", NO_CACHE).await;
     if response.status() == StatusCode::OK {
         response
             .headers_mut()
@@ -146,8 +155,14 @@ pub async fn asset(
     if !is_asset_name(&name) || uri.path() != format!("/assets/{name}") {
         return not_found();
     }
-    let assets = dist(&state).join("assets");
-    serve(&assets, &name, content_type(&name), IMMUTABLE).await
+    serve(
+        dist(&state),
+        Some("assets"),
+        &name,
+        content_type(&name),
+        IMMUTABLE,
+    )
+    .await
 }
 
 /// 拡張子からContent-Typeを決める。

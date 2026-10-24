@@ -401,8 +401,9 @@ mod common_large {
     };
     use accident_route_backend::testing::fixtures::expected_route_outcome;
 
+    // OpenAPIの上限（頂点15,000、ナビ区間8,233、sid 16,465）いっぱい
     const VERTICES: usize = 15_000;
-    const SECTIONS: u32 = 14_000;
+    const SECTIONS: u32 = 8_233;
 
     /// 6候補×15,000頂点、選定2本にナビ区間を持つ合成結果。
     pub fn large_outcome() -> RouteOutcome {

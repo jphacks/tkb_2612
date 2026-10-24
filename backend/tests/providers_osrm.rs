@@ -294,6 +294,22 @@ async fn upstream_timeout_bounds_the_whole_exchange() {
     );
 }
 
+/// 1通信の期限はリースの残り以下に抑える（失効後に通信を続けない）。
+#[tokio::test]
+async fn upstream_timeout_is_bounded_by_the_lease() {
+    let slow =
+        FakeUpstream::fixed(Reply::json(&ok_body()).delayed(Duration::from_millis(800))).await;
+    let mut policy = open_policy(16);
+    policy.lease_ttl = Duration::from_millis(200);
+    let router = router_with(&slow, Duration::from_secs(8), MAX_BYTES, policy);
+    let started = std::time::Instant::now();
+    assert_eq!(
+        route(&router, &CancelToken::unbounded()).await,
+        Err(RoutingError::ExternalApi)
+    );
+    assert!(started.elapsed() < Duration::from_millis(700));
+}
+
 /// 要求全体の残りが短いときはそちらで打ち切り、`ExternalApi` ではなく中断として返す。
 #[tokio::test]
 async fn request_deadline_is_reported_as_interrupted() {

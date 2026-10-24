@@ -111,15 +111,25 @@ pub struct GateState {
 /// 共有状態への操作。
 #[derive(Debug, Clone, Copy)]
 pub enum GateOp<'a> {
-    Acquire(&'a GatePolicy),
-    Release { generation: u64 },
+    /// `start_within` は、判定から送信開始までに許す遅れ（保存方式の応答待ちの分）。
+    /// 開始時刻は判定時刻にこの分を足した値として記録し、送信はそれまでに始める。
+    Acquire {
+        policy: &'a GatePolicy,
+        start_within: Duration,
+    },
+    Release {
+        generation: u64,
+    },
 }
 
 /// 操作の結果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
-    /// 送信してよい。リースを持って送信し、終わったら解放する。
-    Granted(LeaseRecord),
+    /// 送信してよい。`start_by_ms` までに送信を始め、リースを持って送信し、終わったら解放する。
+    Granted {
+        lease: LeaseRecord,
+        start_by_ms: i64,
+    },
     /// `until_ms` まで待ってから再判定する（同時数の空き待ちはもっと早く空くことがある）。
     Wait {
         until_ms: i64,
@@ -140,11 +150,14 @@ pub fn apply(state: &mut GateState, op: GateOp<'_>, now_ms: i64) -> Decision {
             state.leases.retain(|l| l.generation != generation);
             Decision::Released
         }
-        GateOp::Acquire(policy) => acquire(state, policy, now_ms),
+        GateOp::Acquire {
+            policy,
+            start_within,
+        } => acquire(state, policy, now_ms, duration_ms(start_within)),
     }
 }
 
-fn acquire(state: &mut GateState, policy: &GatePolicy, now_ms: i64) -> Decision {
+fn acquire(state: &mut GateState, policy: &GatePolicy, now_ms: i64, within_ms: i64) -> Decision {
     // 期間が終わった件数は上書きし、使わなくなった期間の件数は消す
     let mut counters = Vec::with_capacity(policy.quotas.len());
     for quota in &policy.quotas {
@@ -184,17 +197,20 @@ fn acquire(state: &mut GateState, policy: &GatePolicy, now_ms: i64) -> Decision 
             return Decision::Wait { until_ms: next };
         }
     }
+    // 送信の開始は判定から最大 `within_ms` 遅れ得るので、その最も遅い時刻を開始時刻とし、
+    // リースも送信開始からの有効期間を確保する
+    let start_by_ms = now_ms.saturating_add(within_ms);
     let lease = LeaseRecord {
         generation: state.next_generation,
-        expires_at_ms: now_ms.saturating_add(duration_ms(policy.lease_ttl)),
+        expires_at_ms: start_by_ms.saturating_add(duration_ms(policy.lease_ttl)),
     };
     state.next_generation += 1;
     state.leases.push(lease);
-    state.last_start_ms = Some(now_ms);
+    state.last_start_ms = Some(start_by_ms);
     for c in &mut state.counters {
         c.count += 1;
     }
-    Decision::Granted(lease)
+    Decision::Granted { lease, start_by_ms }
 }
 
 fn duration_ms(d: Duration) -> i64 {
@@ -208,12 +224,21 @@ pub struct StoreError;
 /// 共有状態の保存方式。
 pub trait GateStore: Send + Sync {
     /// `key` の状態を読み、[`apply`] を適用して原子的に書き戻す。
+    ///
+    /// 判定の時刻は、状態を読んだ後・[`apply`] の直前に `clock` から読む（再試行のたびに読み直す）。
     fn transact<'a>(
         &'a self,
         key: &'a str,
         op: GateOp<'a>,
-        now_ms: i64,
+        clock: &'a dyn Clock,
     ) -> BoxFuture<'a, Result<Decision, StoreError>>;
+
+    /// 判定から呼出し元が結果を受け取るまでに許す遅れ（[`GateOp::Acquire`] の `start_within`）。
+    /// これを超えて届いた許可では送信しない。プロセス内で即時に判定する保存方式は0で、
+    /// その場合は遅れを検査しない。
+    fn start_reserve(&self) -> Duration {
+        Duration::ZERO
+    }
 }
 
 /// 単一プロセス内の保存方式。ローカル開発専用（`UPSTREAM_GATE=local`）。
@@ -238,12 +263,12 @@ impl GateStore for LocalGateStore {
         &'a self,
         key: &'a str,
         op: GateOp<'a>,
-        now_ms: i64,
+        clock: &'a dyn Clock,
     ) -> BoxFuture<'a, Result<Decision, StoreError>> {
         Box::pin(async move {
             let mut states = self.states.lock().map_err(|_| StoreError)?;
             let state = states.entry(key.to_owned()).or_default();
-            Ok(apply(state, op, now_ms))
+            Ok(apply(state, op, clock.now_ms()))
         })
     }
 }
@@ -316,23 +341,38 @@ impl Gate {
             turn = inner.order.lock() => turn,
             interrupt = until_interrupted(cancel) => return Err(interrupt.into()),
         };
+        let reserve = inner.store.start_reserve();
+        let op = GateOp::Acquire {
+            policy: &inner.policy,
+            start_within: reserve,
+        };
         loop {
             cancel.check()?;
-            let now_ms = inner.clock.now_ms();
             let decision = inner
                 .store
-                .transact(&inner.key, GateOp::Acquire(&inner.policy), now_ms)
+                .transact(&inner.key, op, inner.clock.as_ref())
                 .await
                 .map_err(|_| GateError::Busy)?;
             match decision {
-                Decision::Granted(record) => {
-                    return Ok(Lease {
+                Decision::Granted {
+                    lease: record,
+                    start_by_ms,
+                } => {
+                    let lease = Lease {
                         inner: Some(inner.clone()),
                         record,
-                    });
+                        start_by_ms: (!reserve.is_zero()).then_some(start_by_ms),
+                    };
+                    // 保存方式の応答が遅れ、記録した開始時刻までに送信を始められない
+                    if lease.ensure_valid().is_err() {
+                        lease.release().await;
+                        return Err(GateError::Busy);
+                    }
+                    return Ok(lease);
                 }
                 Decision::QuotaExhausted | Decision::Released => return Err(GateError::Busy),
                 Decision::Wait { until_ms } => {
+                    let now_ms = inner.clock.now_ms();
                     let wait = Duration::from_millis(until_ms.saturating_sub(now_ms).max(1) as u64)
                         .min(RECHECK_INTERVAL);
                     tokio::select! {
@@ -385,6 +425,8 @@ impl Drop for QueueSlot<'_> {
 pub struct Lease {
     inner: Option<Arc<GateInner>>,
     record: LeaseRecord,
+    /// 送信を始めてよい最後の時刻（共有状態に記録した開始時刻）。`None` は検査しない。
+    start_by_ms: Option<i64>,
 }
 
 impl std::fmt::Debug for Lease {
@@ -400,16 +442,30 @@ impl Lease {
         self.record
     }
 
-    /// 送信の直前に呼ぶ。リースの期限が切れていたら送信しない。
+    /// 送信の直前に呼ぶ。リースの期限が切れていたら、または記録した開始時刻を過ぎていたら
+    /// 送信しない。
     ///
-    /// 期限切れのリースは共有状態から除かれ、その枠は別の処理に渡り得るため。
+    /// 期限切れのリースは共有状態から除かれ、その枠は別の処理に渡り得るため。開始時刻を
+    /// 過ぎて送ると、他のインスタンスとの開始間隔を守れないため。
     pub fn ensure_valid(&self) -> Result<(), GateError> {
         let inner = self.inner.as_ref().expect("解放前のリース");
-        if inner.clock.now_ms() < self.record.expires_at_ms {
+        let now_ms = inner.clock.now_ms();
+        let started_in_time = self.start_by_ms.is_none_or(|by| now_ms <= by);
+        if started_in_time && now_ms < self.record.expires_at_ms {
             Ok(())
         } else {
             Err(GateError::Busy)
         }
+    }
+
+    /// リースの残りの有効期間。1通信の期限をこれ以下に抑える。
+    pub fn remaining(&self) -> Duration {
+        let inner = self.inner.as_ref().expect("解放前のリース");
+        let left = self
+            .record
+            .expires_at_ms
+            .saturating_sub(inner.clock.now_ms());
+        Duration::from_millis(u64::try_from(left).unwrap_or(0))
     }
 
     /// リースを返す。共有状態の書込みに失敗しても、期限切れで自然に除かれる。
@@ -421,10 +477,13 @@ impl Lease {
 }
 
 async fn release(inner: Arc<GateInner>, generation: u64) {
-    let now_ms = inner.clock.now_ms();
     let _ = inner
         .store
-        .transact(&inner.key, GateOp::Release { generation }, now_ms)
+        .transact(
+            &inner.key,
+            GateOp::Release { generation },
+            inner.clock.as_ref(),
+        )
         .await;
     inner.released.notify_waiters();
 }
@@ -460,12 +519,26 @@ mod tests {
     fn interval_concurrency_and_quota_are_decided_from_the_state_alone() {
         let p = policy();
         let mut state = GateState::default();
-        let Decision::Granted(first) = apply(&mut state, GateOp::Acquire(&p), 1_000) else {
+        let Decision::Granted { lease: first, .. } = apply(
+            &mut state,
+            GateOp::Acquire {
+                policy: &p,
+                start_within: Duration::ZERO,
+            },
+            1_000,
+        ) else {
             panic!("最初は許可");
         };
         // 同時1：解放までは待つ（最短でリース期限まで）
         assert_eq!(
-            apply(&mut state, GateOp::Acquire(&p), 5_000),
+            apply(
+                &mut state,
+                GateOp::Acquire {
+                    policy: &p,
+                    start_within: Duration::ZERO
+                },
+                5_000
+            ),
             Decision::Wait {
                 until_ms: first.expires_at_ms
             }
@@ -481,25 +554,74 @@ mod tests {
         let mut early = state.clone();
         early.last_start_ms = Some(4_500);
         assert_eq!(
-            apply(&mut early, GateOp::Acquire(&p), 5_000),
+            apply(
+                &mut early,
+                GateOp::Acquire {
+                    policy: &p,
+                    start_within: Duration::ZERO
+                },
+                5_000
+            ),
             Decision::Wait { until_ms: 5_550 }
         );
         assert!(matches!(
-            apply(&mut state, GateOp::Acquire(&p), 5_000),
-            Decision::Granted(_)
+            apply(
+                &mut state,
+                GateOp::Acquire {
+                    policy: &p,
+                    start_within: Duration::ZERO
+                },
+                5_000
+            ),
+            Decision::Granted { .. }
         ));
         state.leases.clear();
         // 1日2件の上限
         assert_eq!(
-            apply(&mut state, GateOp::Acquire(&p), 7_000),
+            apply(
+                &mut state,
+                GateOp::Acquire {
+                    policy: &p,
+                    start_within: Duration::ZERO
+                },
+                7_000
+            ),
             Decision::QuotaExhausted
         );
         // 翌日（UTC）は件数を上書きする
         assert!(matches!(
-            apply(&mut state, GateOp::Acquire(&p), 86_400_000 + 1),
-            Decision::Granted(_)
+            apply(
+                &mut state,
+                GateOp::Acquire {
+                    policy: &p,
+                    start_within: Duration::ZERO
+                },
+                86_400_000 + 1
+            ),
+            Decision::Granted { .. }
         ));
         assert_eq!(state.counters[0].count, 1);
+    }
+
+    #[test]
+    fn start_within_delays_the_recorded_start_and_the_lease() {
+        let p = policy();
+        let mut state = GateState::default();
+        let op = GateOp::Acquire {
+            policy: &p,
+            start_within: Duration::from_millis(500),
+        };
+        assert_eq!(
+            apply(&mut state, op, 1_000),
+            Decision::Granted {
+                lease: LeaseRecord {
+                    generation: 0,
+                    expires_at_ms: 11_500,
+                },
+                start_by_ms: 1_500,
+            }
+        );
+        assert_eq!(state.last_start_ms, Some(1_500));
     }
 
     #[test]

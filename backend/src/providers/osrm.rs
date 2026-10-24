@@ -94,7 +94,12 @@ impl Router for OsrmRouter {
             lease.ensure_valid().map_err(gate_error)?;
             let fetched = self
                 .client
-                .get(self.url(request), self.timeout, self.max_bytes, cancel)
+                .get(
+                    self.url(request),
+                    self.timeout.min(lease.remaining()),
+                    self.max_bytes,
+                    cancel,
+                )
                 .await;
             lease.release().await;
             let body = fetched.map_err(|e| match e {
