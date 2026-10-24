@@ -1,0 +1,826 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: 事故履歴を考慮したルート検索 API
+  version: 1.0.0
+  description: |
+    PythonプロトタイプからRust/Axumへの移行契約。集計の正本はbehavior.md。
+    現行の事故点配列と高リスク区間配列をFeatureCollectionへ変更するため旧UIとは非互換。
+    経路geometryはWGS84 LineStringを維持し、全GeoJSON座標は[lon,lat]（十進度）。
+    origin/destと住所候補だけは名前付きlat/lon。標高次元は使用しない。
+    period/weatherの正規入力は現行UIに合わせた日本語またはall。
+    コードは互換入力として受理するが、新フロントは送らない。
+    リスクは死者数×10+負傷者数であり事故確率ではない。
+    本文の「移行追加」は現行Pythonにない契約を示す。
+    認証・GPS追跡・経路の永続保存APIは設けない。
+servers:
+  - url: /
+    description: 同一オリジン。開発時はViteの/apiプロキシを使用。
+tags:
+  - name: 経路
+  - name: 住所
+  - name: 稼働情報
+  - name: 静的配信
+paths:
+  /api/route:
+    post:
+      operationId: searchRoutes
+      tags: [経路]
+      summary: 最短時間経路と事故考慮経路を比較する
+      description: |
+        候補1〜6本を返す。最短は所要時間最小で、最短距離ではない。
+        直線距離20〜30000m、候補distanceとgeometry長は各80000m以下。
+        リクエストはUTF-8 JSON、1〜16384バイト。大きすぎる場合も400。
+        Content-Type不正・JSON不正・値不正は外部呼出し前に400。
+        unknownキーは無視。hour/period整合と距離等の相関制約はbehavior.mdを参照。
+        全体期限内の追加候補のみの失敗は200のwarningsに残す。
+        受付からJSON準備完了までの全体期限35秒を超えたら、段階によらず503 service_busy。
+        候補が取得済みでも全体期限後に200を返さない。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteRequest'
+            examples:
+              canonical:
+                summary: 現行UIと同じ正規入力
+                value:
+                  origin: {lat: 35.6812, lon: 139.7671}
+                  dest: {lat: 35.7138, lon: 139.7773}
+                  mode: walk
+                  period: 昼
+                  weather: 晴
+                  max_detour_min: 10
+              byHour:
+                summary: 指定した時刻が属する時間帯全体を集計
+                value:
+                  origin: {lat: 35.6812, lon: 139.7671}
+                  dest: {lat: 35.7138, lon: 139.7773}
+                  mode: bike
+                  hour: 18
+                  weather: all
+                  max_detour_min: 5
+      responses:
+        '200':
+          description: 候補と比較結果。事故0件も正常応答。
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RouteResponse'}
+              examples:
+                singleRoute:
+                  summary: 単一候補・死亡事故あり
+                  description: 固定モックによる契約例。dataset_idの0列とaggregation_ms=0は説明用で、実データのハッシュ/性能値ではない。
+                  value:
+                    fastest_id: route-1
+                    safest_id: route-1
+                    candidates:
+                    - duration: 600
+                      distance: 1000
+                      geometry:
+                        type: LineString
+                        coordinates:
+                        - - 139
+                          - 35
+                        - - 139.01
+                          - 35
+                      accident_count: 1
+                      fatal_accidents: 1
+                      injury_accidents: 0
+                      deaths: 1
+                      injuries: 2
+                      weighted_risk: 12
+                      risk_per_km: 12.0
+                      accident_points:
+                        type: FeatureCollection
+                        features:
+                        - type: Feature
+                          id: 0
+                          geometry:
+                            type: Point
+                            coordinates:
+                            - 139.005
+                            - 35.0
+                          properties:
+                            deaths: 1
+                            injuries: 2
+                            source_year: 2025
+                            date: 20250101
+                            weather: 晴
+                            period: 昼
+                      points_shown: 1
+                      high_risk_sections:
+                        type: FeatureCollection
+                        features:
+                        - type: Feature
+                          id: route-1:segment-6
+                          geometry:
+                            type: LineString
+                            coordinates:
+                            - - 139.0046153846154
+                              - 35.0
+                            - - 139.0053846153846
+                              - 35.0
+                          properties:
+                            route_id: route-1
+                            weighted_risk: 12
+                            segment_index: 6
+                            source_vertex_start_index: 0
+                            source_vertex_end_index: 1
+                      id: route-1
+                      exact_condition_count: 1
+                      extra_minutes: 0.0
+                      within_detour: true
+                    extra_minutes: 0.0
+                    risk_reduction_percent: 0.0
+                    reason: 取得した1候補のうち、最短時間経路から+10分以内で、重大度重み付きリスク（死者数×10＋負傷者数）が最小の経路を選びました。 今回は最短時間経路が事故考慮経路と同じです。
+                    warnings:
+                    - 経路候補が1本のみのため、経路間の比較はできません。
+                    relaxed_conditions: []
+                    effective_conditions:
+                      mode: walk
+                      period: 昼
+                      weather: 晴
+                    radius_m: 50.0
+                    aggregation_ms: 0
+                    data_years:
+                    - 2025
+                    risk_note: 過去の事故件数に基づく参考指標です。交通量や通行回数で補正した事故確率ではありません。
+                    api_version: '1.0'
+                    dataset_id: '0000000000000000000000000000000000000000000000000000000000000000'
+                noAccidents:
+                  summary: 条件緩和後も事故0件
+                  description: 固定モックによる契約例。dataset_idの0列とaggregation_ms=0は説明用で、実データのハッシュ/性能値ではない。
+                  value:
+                    fastest_id: route-1
+                    safest_id: route-1
+                    candidates:
+                    - duration: 600
+                      distance: 1000
+                      geometry:
+                        type: LineString
+                        coordinates:
+                        - - 139
+                          - 35
+                        - - 139.01
+                          - 35
+                      accident_count: 0
+                      fatal_accidents: 0
+                      injury_accidents: 0
+                      deaths: 0
+                      injuries: 0
+                      weighted_risk: 0
+                      risk_per_km: 0.0
+                      accident_points:
+                        type: FeatureCollection
+                        features: []
+                      points_shown: 0
+                      high_risk_sections:
+                        type: FeatureCollection
+                        features: []
+                      id: route-1
+                      exact_condition_count: 0
+                      extra_minutes: 0.0
+                      within_detour: true
+                    extra_minutes: 0.0
+                    risk_reduction_percent: null
+                    reason: 取得した1候補のうち、最短時間経路から+10分以内で、重大度重み付きリスク（死者数×10＋負傷者数）が最小の経路を選びました。 今回は最短時間経路が事故考慮経路と同じです。 最短時間経路の集計リスクが0のため、削減率は算出できません。
+                    warnings:
+                    - 経路候補が1本のみのため、経路間の比較はできません。
+                    - 全候補で指定条件の事故が0件のため、天候・時間帯を解除して全候補を再集計しました（移動手段は維持）。
+                    - 条件緩和後も該当事故がありません。事故0件は安全の証明ではありません。
+                    relaxed_conditions:
+                    - 天候
+                    - 時間帯
+                    effective_conditions:
+                      mode: walk
+                      period: 全時間帯
+                      weather: 全天候
+                    radius_m: 50.0
+                    aggregation_ms: 0
+                    data_years:
+                    - 2025
+                    risk_note: 過去の事故件数に基づく参考指標です。交通量や通行回数で補正した事故確率ではありません。
+                    api_version: '1.0'
+                    dataset_id: '0000000000000000000000000000000000000000000000000000000000000000'
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '422': {$ref: '#/components/responses/RouteTooLong'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '502': {$ref: '#/components/responses/UpstreamError'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /api/geocode:
+    get:
+      operationId: searchPlaces
+      tags: [住所]
+      summary: 明示的な住所検索
+      description: |
+        検索ボタンまたはEnterでのみ呼ぶ。入力ごとの自動補完は禁止。
+        qは1個のみ必須。前後空白を除去したUnicode文字数2〜200。
+        q重複/欠落も400。結果を選択するまで座標を確定しない。
+        受付からJSON準備完了まで35秒を超えると503 service_busy。
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: 日本国内の住所または地点名。長さ検証はtrim後。
+          schema: {type: string}
+          example: 東京駅
+      responses:
+        '200':
+          description: 最大5候補。該当なしはresultsが空配列。
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GeocodeResponse'}
+              examples:
+                empty:
+                  value: {results: [], attribution: '© OpenStreetMap contributors / Nominatim'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '502': {$ref: '#/components/responses/UpstreamError'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /api/health:
+    get:
+      operationId: getHealth
+      tags: [稼働情報]
+      summary: データ準備状態と件数・年度を取得する（移行追加）
+      description: |
+        現行/api/statusに相当。上流疎通検査は行わない。
+        データロード済みなら200、HTTP稼働中でもデータ未準備なら503 data_unavailable。
+        件数はmodes=0を含む保持行数、年度は発生年ではなくsource_year。
+      responses:
+        '200':
+          description: データ準備済み
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HealthResponse'}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /api/status:
+    get:
+      operationId: getLegacyStatus
+      deprecated: true
+      tags: [稼働情報]
+      summary: /api/healthと同一内容を返す互換エイリアス
+      responses:
+        '200':
+          description: healthと同じJSON。リダイレクトしない。
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HealthResponse'}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /:
+    get:
+      operationId: getAppShell
+      tags: [静的配信]
+      summary: ReactアプリのHTMLを配信する
+      description: frontend/dist/index.htmlのみ。APIや事故データを含めない。
+      responses:
+        '200':
+          description: アプリシェル
+          headers:
+            Cache-Control: {schema: {type: string, const: no-cache}}
+          content:
+            text/html:
+              schema: {type: string}
+        '404': {$ref: '#/components/responses/StaticNotFound'}
+  /assets/{asset}:
+    get:
+      operationId: getAsset
+      tags: [静的配信]
+      summary: Viteのハッシュ付き静的アセット
+      description: |
+        単一ファイル名のみ。配信root外・ディレクトリ・ドットセグメントを拒否する。
+        初期版Vite出力とPWAアイコンは/assets直下に置く。
+        実際の拡張子に対応するContent-Typeとnosniffを付ける。
+      parameters:
+        - name: asset
+          in: path
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+$'}
+      responses:
+        '200':
+          description: 内容ハッシュ付きファイル。非ハッシュアセットはこのパスへ配置しない。
+          headers:
+            Cache-Control: {schema: {type: string, const: 'public, max-age=31536000, immutable'}}
+            X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+          content:
+            text/javascript: {schema: {type: string}}
+            text/css: {schema: {type: string}}
+            image/png: {schema: {type: string, format: binary}}
+            image/svg+xml: {schema: {type: string}}
+            font/woff2: {schema: {type: string, format: binary}}
+            application/octet-stream: {schema: {type: string, format: binary}}
+        '404': {$ref: '#/components/responses/StaticNotFound'}
+  /manifest.webmanifest:
+    get:
+      operationId: getManifest
+      tags: [静的配信]
+      summary: PWAマニフェスト（移行追加）
+      responses:
+        '200':
+          description: アプリ名、開始URL、scope、表示モード、アイコンを含むマニフェスト
+          headers:
+            Cache-Control: {schema: {type: string, const: no-cache}}
+          content:
+            application/manifest+json:
+              schema:
+                type: object
+                required: [name, short_name, start_url, scope, display, icons]
+                properties:
+                  name: {type: string, minLength: 1}
+                  short_name: {type: string, minLength: 1}
+                  start_url: {type: string, const: /}
+                  scope: {type: string, const: /}
+                  display: {type: string, const: standalone}
+                  icons:
+                    type: array
+                    minItems: 2
+                    items:
+                      type: object
+                      required: [src, sizes, type]
+                      properties:
+                        src: {type: string, pattern: '^/assets/'}
+                        sizes: {type: string}
+                        type: {type: string}
+                        purpose: {type: string}
+        '404': {$ref: '#/components/responses/StaticNotFound'}
+  /sw.js:
+    get:
+      operationId: getServiceWorker
+      tags: [静的配信]
+      summary: アプリシェル専用Service Worker（移行追加）
+      description: /api/*、住所、位置、経路、地図タイル、外部応答をキャッシュしない。
+      responses:
+        '200':
+          description: scope=/で登録可能なService Worker
+          headers:
+            Cache-Control: {schema: {type: string, const: no-cache}}
+            Service-Worker-Allowed: {schema: {type: string, const: /}}
+          content:
+            text/javascript: {schema: {type: string}}
+        '404': {$ref: '#/components/responses/StaticNotFound'}
+components:
+  headers:
+    NoStore:
+      description: API成功・失敗とも保存禁止
+      schema: {type: string, const: no-store}
+    NoSniff:
+      schema: {type: string, const: nosniff}
+  responses:
+    InvalidRequest:
+      description: 400 invalid_request。JSON、本文サイズ、Content-Type、値または相関制約の不正。
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+        X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+          example: {error: {code: invalid_request, message: 出発地と目的地の直線距離は20m〜30kmにしてください。}}
+    NotFound:
+      description: 404 not_found。未定義/api/*へ返す共通応答（OpenAPIの明示パス外にも適用）。
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+        X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+          example: {error: {code: not_found, message: APIが見つかりません。}}
+    MethodNotAllowed:
+      description: 405 method_not_allowed。定義済みAPIへの不正メソッド。未知パスは404。
+      headers:
+        Allow:
+          description: 当該APIで定義するメソッド（GETまたはPOST）。APIの暗黙HEADは提供しない。
+          schema: {type: string, enum: [GET, POST]}
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+        X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+          example: {error: {code: method_not_allowed, message: このAPIでは指定のメソッドを使用できません。}}
+    RouteTooLong:
+      description: 422 route_too_long。初回の候補distanceまたはgeometry_lengthが80000m超。
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+        X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+          example: {error: {code: route_too_long, message: 候補経路が80kmを超えました。近い地点を指定してください。}}
+    UpstreamError:
+      description: |
+        502 no_route（経路なし、route APIのみ）またはexternal_api_error
+        （外部HTTP/通信/timeout/JSON/形状不正/応答12000000バイト超）。上流429も502。
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+        X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+          example: {error: {code: external_api_error, message: 経路サービスに接続できません。時間をおいて再試行してください。}}
+    Unavailable:
+      description: |
+        503 data_unavailable（データ未ready、route/health/statusのみ）、
+        またはservice_busy（受付/上流待ち行列の上限、要求全体35秒超過、route/geocodeのみ）。
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+        X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+          example: {error: {code: data_unavailable, message: 事故データを準備しています。時間をおいて再試行してください。}}
+    InternalError:
+      description: 500 internal_error。予期しない内部失敗。内部詳細を返さない。
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+        X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+          example: {error: {code: internal_error, message: 処理に失敗しました。時間をおいて再試行してください。}}
+    StaticNotFound:
+      description: 静的ファイルなし/配信対象外。ディレクトリ一覧やSPA HTMLに置き換えない。
+      content:
+        text/plain:
+          schema: {type: string}
+          example: Not Found
+  schemas:
+    Mode:
+      type: string
+      enum: [walk, bike, car]
+      description: 徒歩 / 自転車 / 自動車
+    Period:
+      type: string
+      enum: [早朝, 昼, 夕, 夜]
+      description: 4〜8時 / 9〜15時 / 16〜18時 / 19〜3時
+    Weather:
+      type: string
+      enum: [晴, 曇, 雨, 霧, 雪]
+      description: 内部コード1/2/3/4/5。霧と雪のコード順に注意。
+    PeriodInput:
+      description: 正規入力は日本語またはall。0〜3/nullは互換入力。
+      oneOf:
+        - {type: string, enum: [早朝, 昼, 夕, 夜, all]}
+        - {type: integer, enum: [0, 1, 2, 3]}
+        - {type: 'null'}
+    WeatherInput:
+      description: 正規入力は日本語またはall。1〜5/nullは互換入力。
+      oneOf:
+        - {type: string, enum: [晴, 曇, 雨, 霧, 雪, all]}
+        - {type: integer, enum: [1, 2, 3, 4, 5]}
+        - {type: 'null'}
+    Latitude:
+      type: number
+      minimum: 20
+      maximum: 46
+      description: WGS84北緯、十進度。有限数値。
+    Longitude:
+      type: number
+      minimum: 122
+      maximum: 154
+      description: WGS84東経、十進度。有限数値。
+    LatLon:
+      type: object
+      required: [lat, lon]
+      properties:
+        lat: {$ref: '#/components/schemas/Latitude'}
+        lon: {$ref: '#/components/schemas/Longitude'}
+      additionalProperties: true
+    Position:
+      type: array
+      minItems: 2
+      maxItems: 2
+      prefixItems:
+        - {$ref: '#/components/schemas/Longitude'}
+        - {$ref: '#/components/schemas/Latitude'}
+      items: false
+      description: WGS84の[lon,lat]。順序固定、標高なし。
+      example: [139.7671, 35.6812]
+    LineString:
+      type: object
+      required: [type, coordinates]
+      additionalProperties: false
+      properties:
+        type: {type: string, const: LineString}
+        coordinates:
+          type: array
+          minItems: 2
+          maxItems: 15000
+          items: {$ref: '#/components/schemas/Position'}
+      description: GeoJSON geometry。MapLibre GeoJSON sourceへ直接設定可能。
+    Point:
+      type: object
+      required: [type, coordinates]
+      additionalProperties: false
+      properties:
+        type: {type: string, const: Point}
+        coordinates: {$ref: '#/components/schemas/Position'}
+    RouteRequest:
+      type: object
+      required: [origin, dest]
+      additionalProperties: true
+      properties:
+        origin: {$ref: '#/components/schemas/LatLon'}
+        dest: {$ref: '#/components/schemas/LatLon'}
+        mode:
+          $ref: '#/components/schemas/Mode'
+          default: walk
+        period:
+          $ref: '#/components/schemas/PeriodInput'
+          default: all
+        時間帯:
+          $ref: '#/components/schemas/PeriodInput'
+          deprecated: true
+          description: periodキーが存在しないときだけ使う互換エイリアス。
+        hour:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 23
+          description: 日本の時、指定した時間帯全体を対象にする。periodと矛盾すると400。
+        weather:
+          $ref: '#/components/schemas/WeatherInput'
+          default: all
+        max_detour_min:
+          type: number
+          minimum: 0
+          maximum: 30
+          default: 10
+          description: 最短時間経路からの追加許容時間、分。小数可。
+    RouteId:
+      type: string
+      pattern: '^route-[1-6]$'
+      description: duration安定ソート後の候補順。この検索応答の中だけで有効。
+    DatasetId:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+      description: ロードしたgzip CSVバイト列のSHA-256。事故IDの名前空間。
+    Years:
+      type: array
+      uniqueItems: true
+      items: {type: integer, minimum: 1900}
+      description: ロードしたsource_yearの昇順集合。実発生年ではない。
+      example: [2019, 2020, 2021, 2022, 2023, 2024, 2025]
+    Count:
+      type: integer
+      minimum: 0
+      description: 件数、人数または非負整数。具体的な単位は各フィールドを参照。
+    AccidentFeature:
+      type: object
+      required: [type, id, geometry, properties]
+      additionalProperties: false
+      properties:
+        type: {type: string, const: Feature}
+        id:
+          type: integer
+          minimum: 0
+          description: gzip CSVのデータ行0始まり。dataset_idと組にして識別。
+        geometry: {$ref: '#/components/schemas/Point'}
+        properties:
+          type: object
+          required: [deaths, injuries, source_year, date, weather, period]
+          additionalProperties: false
+          properties:
+            deaths: {type: integer, minimum: 0, maximum: 999, description: 事故全体の死者数、人}
+            injuries: {type: integer, minimum: 0, maximum: 999, description: 事故全体の負傷者数、人}
+            source_year: {type: integer, minimum: 1900, description: 原本CSVの年度}
+            date:
+              type: integer
+              minimum: 19000101
+              maximum: 99991231
+              description: 発生日YYYYMMDD。実在日でsource_year以下の年。日付文字列への変更はしない。
+              example: 20211231
+            weather: {$ref: '#/components/schemas/Weather'}
+            period: {$ref: '#/components/schemas/Period'}
+    AccidentCollection:
+      type: object
+      required: [type, features]
+      additionalProperties: false
+      properties:
+        type: {type: string, const: FeatureCollection}
+        features:
+          type: array
+          maxItems: 250
+          items: {$ref: '#/components/schemas/AccidentFeature'}
+      description: |
+        間引き後の事故点。死亡事故を先に最大250件、残り枠を負傷事故へ。
+        各群は元順を保ちN>limitならfloor(i*N/limit)の等間隔抽出。
+        集計は間引き前全件。0件ならfeatures=[]。MapLibreへ直接設定可能。
+    HighRiskFeature:
+      type: object
+      required: [type, id, geometry, properties]
+      additionalProperties: false
+      properties:
+        type: {type: string, const: Feature}
+        id:
+          type: string
+          pattern: '^route-[1-6]:segment-[0-9]+$'
+          description: route_idと分割後segment_indexから作る応答内ID。
+        geometry:
+          allOf:
+            - {$ref: '#/components/schemas/LineString'}
+            - properties:
+                coordinates: {maxItems: 2}
+          description: 最大75mへの分割後小線分の両端。元頂点区間の全体とは限らない。
+        properties:
+          type: object
+          required: [route_id, weighted_risk, segment_index, source_vertex_start_index, source_vertex_end_index]
+          additionalProperties: false
+          properties:
+            route_id: {$ref: '#/components/schemas/RouteId'}
+            weighted_risk:
+              type: integer
+              minimum: 3
+              description: この最寄り小線分へ割り当てられた事故の死者×10+負傷者、重み点。
+            segment_index:
+              type: integer
+              minimum: 0
+              description: 75m分割後の小線分の0始まりindex。元geometryの頂点indexではない。
+            source_vertex_start_index:
+              type: integer
+              minimum: 0
+              maximum: 14998
+              description: 分割元のgeometry.coordinatesの始点index j。
+            source_vertex_end_index:
+              type: integer
+              minimum: 1
+              maximum: 14999
+              description: 分割元の終点index。必ずj+1、coordinates長未満。
+      description: |
+        将来のGPS近接判定にgeometryと元経路の対応を使える。
+        index/IDは当該検索応答内限定。進捗距離・警告閾値・追跡履歴はv1に含めない。
+    HighRiskCollection:
+      type: object
+      required: [type, features]
+      additionalProperties: false
+      properties:
+        type: {type: string, const: FeatureCollection}
+        features:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/HighRiskFeature'}
+      description: |
+        重み降順、同値はsegment_index昇順の最大100区間、重み3以上。
+        連結しない。全高リスク区間の網羅ではなく表示用の上位集合。空ならfeatures=[]。
+        自動GPS警告に流用せず、将来の全区間配信は別契約にする。
+    RouteCandidate:
+      type: object
+      required: [id, duration, distance, geometry, accident_count, fatal_accidents, injury_accidents, deaths, injuries, weighted_risk, risk_per_km, accident_points, points_shown, high_risk_sections, exact_condition_count, extra_minutes, within_detour]
+      additionalProperties: false
+      properties:
+        id: {$ref: '#/components/schemas/RouteId'}
+        duration: {type: number, exclusiveMinimum: 0, description: OSRM等の推定所要時間、秒}
+        distance: {type: number, exclusiveMinimum: 0, maximum: 80000, description: OSRM等の経路距離、メートル}
+        geometry: {$ref: '#/components/schemas/LineString'}
+        accident_count:
+          $ref: '#/components/schemas/Count'
+          description: 条件適用後・間引き前の事故件数
+        fatal_accidents:
+          $ref: '#/components/schemas/Count'
+          description: 死者1人以上の事故件数
+        injury_accidents:
+          $ref: '#/components/schemas/Count'
+          description: 死者0人の事故件数。fatal_accidentsとの和がaccident_count。
+        deaths:
+          $ref: '#/components/schemas/Count'
+          description: 該当事故全体の死者合計、人
+        injuries:
+          $ref: '#/components/schemas/Count'
+          description: 該当事故全体の負傷者合計、人
+        weighted_risk:
+          $ref: '#/components/schemas/Count'
+          description: deaths×10+injuries、重み点。候補の選定に使用。
+        risk_per_km:
+          type: number
+          minimum: 0
+          description: weighted_risk/max(distance/1000,0.001)、重み点/km、小数3桁に丸め。選定に使わない。
+        accident_points: {$ref: '#/components/schemas/AccidentCollection'}
+        points_shown:
+          type: integer
+          minimum: 0
+          maximum: 250
+          description: accident_points.features.length=min(accident_count,250)。表示点数。
+        high_risk_sections: {$ref: '#/components/schemas/HighRiskCollection'}
+        exact_condition_count:
+          $ref: '#/components/schemas/Count'
+          description: 緩和前の指定条件での事故件数。accident_count以下。
+        extra_minutes:
+          type: number
+          minimum: 0
+          description: (duration-fastest.duration)/60、分、小数3桁に丸め。
+        within_detour:
+          type: boolean
+          description: duration<=fastest.duration+max_detour_min*60+1e-6。丸め前で判定。
+    EffectiveConditions:
+      type: object
+      required: [mode, period, weather]
+      additionalProperties: false
+      properties:
+        mode: {$ref: '#/components/schemas/Mode'}
+        period: {type: string, enum: [早朝, 昼, 夕, 夜, 全時間帯]}
+        weather: {type: string, enum: [晴, 曇, 雨, 霧, 雪, 全天候]}
+    RouteResponse:
+      type: object
+      required: [api_version, dataset_id, fastest_id, safest_id, candidates, extra_minutes, risk_reduction_percent, reason, warnings, relaxed_conditions, effective_conditions, radius_m, aggregation_ms, data_years, risk_note]
+      additionalProperties: false
+      properties:
+        api_version: {type: string, const: '1.0', description: GeoJSON包装を含む移行APIの契約版}
+        dataset_id: {$ref: '#/components/schemas/DatasetId'}
+        fastest_id: {$ref: '#/components/schemas/RouteId'}
+        safest_id: {$ref: '#/components/schemas/RouteId'}
+        candidates:
+          type: array
+          minItems: 1
+          maxItems: 6
+          items: {$ref: '#/components/schemas/RouteCandidate'}
+          description: durationの安定昇順。両選定IDは必ずこの中に存在する。
+        extra_minutes: {type: number, minimum: 0, description: safestの追加所要時間、分、小数3桁}
+        risk_reduction_percent:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 100
+          description: 最短時間経路比の重み減少率、%、小数1桁。基準リスク0ならnull。
+        reason: {type: string, minLength: 1, description: 候補内選定の理由。UIは文字列として表示する。}
+        warnings:
+          type: array
+          items: {type: string}
+          description: 追加候補失敗、比較不可、条件緩和、全0件等。なしは空配列。
+        relaxed_conditions:
+          type: array
+          maxItems: 2
+          uniqueItems: true
+          items: {type: string, enum: [天候, 時間帯]}
+          description: 解除した条件。両方なら天候→時間帯の順。移動手段は解除しない。
+        effective_conditions: {$ref: '#/components/schemas/EffectiveConditions'}
+        radius_m: {type: number, const: 50, description: 事故集計の経路周辺半径、メートル}
+        aggregation_ms: {type: number, minimum: 0, description: 候補取得後の集計・選定時間、ミリ秒、小数2桁。外部通信と転送を除く。}
+        data_years: {$ref: '#/components/schemas/Years'}
+        risk_note: {type: string, minLength: 1, description: 参考指標であり曝露補正した事故確率ではない旨}
+    GeocodeResult:
+      type: object
+      required: [lat, lon, label]
+      additionalProperties: false
+      properties:
+        lat: {$ref: '#/components/schemas/Latitude'}
+        lon: {$ref: '#/components/schemas/Longitude'}
+        label: {type: string, description: 提供元の表示名。HTMLとして解釈しない。}
+    GeocodeResponse:
+      type: object
+      required: [results, attribution]
+      additionalProperties: false
+      properties:
+        results:
+          type: array
+          maxItems: 5
+          items: {$ref: '#/components/schemas/GeocodeResult'}
+          description: 提供元順の先頭5件。並べ替えない。
+        attribution: {type: string, description: 住所データ提供元の表示義務を満たす文字列}
+    HealthResponse:
+      type: object
+      required: [api_version, status, dataset_id, accidents, grid_cells, load_seconds, data_years]
+      additionalProperties: false
+      properties:
+        api_version: {type: string, const: '1.0'}
+        status: {type: string, const: ok}
+        dataset_id: {$ref: '#/components/schemas/DatasetId'}
+        accidents:
+          $ref: '#/components/schemas/Count'
+          description: modes=0を含むロード行数、件。実運用は空データで起動しない。
+        grid_cells:
+          $ref: '#/components/schemas/Count'
+          description: 事故が存在する0.001度セル数
+        load_seconds: {type: number, minimum: 0, description: データ読込時間、秒、小数3桁}
+        data_years: {$ref: '#/components/schemas/Years'}
+    ErrorResponse:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+              enum: [invalid_request, not_found, method_not_allowed, route_too_long, no_route, external_api_error, data_unavailable, service_busy, internal_error]
+              description: HTTPとの対応はcomponents.responsesおよびbehavior.mdを参照。
+            message:
+              type: string
+              minLength: 1
+              description: 日本語の利用者向け説明。位置・住所・秘密・スタックトレースを含めない。
