@@ -29,7 +29,7 @@ backend/
     contract/                OpenAPI/DTO/HTTP整合試験
   data/
     holidays/syukujitsu.csv  内閣府「国民の祝日」CSV。前処理とconditionsで共用
-    releases/<dataset-id>/   accidents.csv.gz、metadata.json、syukujitsu.csv（前処理に使った版）
+    releases/<release-id>/   accidents.csv.gz、metadata.json、syukujitsu.csv（前処理に使った版）
     current                  公開中releaseへの参照（Web配信禁止）
 frontend/
   package.json / lockfile
@@ -99,15 +99,15 @@ HTML/manifest/sw.jsはno-cache（再検証可能）、内容ハッシュ付きas
 更新手順：
 
 1. 原本7年度とコード表を揃え、出所・ハッシュ・source_yearを監査する。未知年度の追加はコード表差分と除外方針を確認してから仕様の年度集合を更新する。現行原本を作業中に書き換えない。祝日表は内閣府の最新CSVを取得し、出所・取得日・SHA-256を記録する。前版との差分（追加年・変更日）を確認する。
-2. backend/dataの非公開stagingディレクトリで前処理。入力件数=保持+除外、除外理由、modes=0、コード表照合、17列形式、非空、period 0〜4・day_type 0〜1、祝日表の収録範囲外の行数を検査する。Rust移行時はbehaviorの互換範囲でPythonとCSV内容を比較する。
-3. gzipのSHA-256をdataset_idとし、metadataにその値と処理版を移行追加の監査項目として記録する。前処理日時/圧縮メタデータ差でIDが変わり得るため、意味的同等性は復号後のデータでも確認する。
-4. 検証済みのgzip・metadata・前処理に使った祝日表を同じreleases/<dataset-id>に配置し、不変・読み取り専用にする。途中ファイルをcurrentへ置かない。`/api/conditions` もこのreleaseの祝日表を読むので、事故記録の曜日区分と自動判定の祝日表は常に一致する。
+2. backend/dataの非公開stagingディレクトリで前処理。入力件数=保持+除外、除外理由、modes=0、コード表照合、17列形式、非空、period 0〜4・day_type 0〜1、祝日表の収録範囲外の行数を検査する。期待値は確定仕様から作ったfixtureで検査し、Pythonの出力との一致は合格条件にしない。
+3. gzipのSHA-256をdataset_idとし、祝日表のSHA-256と組み合わせたrelease_id（behavior 3章）とともに、処理版と合わせてmetadataへ記録する。前処理日時/圧縮メタデータ差でIDが変わり得るため、意味的同等性は復号後のデータでも確認する。
+4. 検証済みのgzip・metadata・前処理に使った祝日表を同じreleases/<release-id>に配置し、不変・読み取り専用にする。途中ファイルをcurrentへ置かない。`/api/conditions` もこのreleaseの祝日表を読むので、事故記録の曜日区分と自動判定の祝日表は常に一致する。
 5. 検証済みreleaseを同梱したイメージで新しいCloud Runリビジョンを作り、起動時に全件ロードとhash/schema/件数の検証を終えてからstartup probeを成功させる（起動4分以内）。成功したリビジョンへトラフィックを切り替える。初期版ではホットリロードを実装しない。プロセスは起動時にreleaseの実パスを1回解決して同じスナップショットから2ファイルを読む。
-6. `/api/health` のdataset_id/accidents/data_yearsと固定検索fixtureを確認。失敗時は旧リビジョンへ戻す。途中でmetadataだけ新しくなる状態を公開しない。
+6. `/api/health` のrelease_id/dataset_id/accidents/data_yearsと固定検索fixtureを確認。失敗時は旧リビジョンへ戻す。途中でmetadataだけ新しくなる状態を公開しない。
 
 一つの検索要求中は一つのデータスナップショットを固定する。公開事故データの保存と、利用者の現在地・検索履歴の無保存は別の対象である。
 
-祝日表は毎年2月ごろ内閣府が翌年分を公開する。収録範囲外の日付は土日だけの判定になり、holiday_table_covered=falseとして利用者へ警告される。年1回、祝日表の更新とデータの再リリースを運用予定に入れる。祝日表だけの更新でも前処理をやり直し、新しいdataset_idとして公開する。
+祝日表は毎年2月ごろ内閣府が翌年分を公開する。収録範囲外の日付は土日だけの判定になり、holiday_table_covered=falseとして利用者へ警告される。年1回、祝日表の更新とデータの再リリースを運用予定に入れる。祝日表だけの更新でも前処理をやり直し、新しいrelease_idとして公開する（事故CSVが変わらなければdataset_idは同じでよい）。
 
 ## 6. 環境変数の移行契約
 
@@ -128,7 +128,7 @@ HTML/manifest/sw.jsはno-cache（再検証可能）、内容ハッシュ付きas
 | GEOCODING_DAILY_LIMIT | 2000 | アプリ側の1日あたり住所検索上限（公式Free枠3,000 credits/日より低く置く） |
 | EXTERNAL_USER_AGENT | 必須 | アプリ識別と運用連絡先を含むUA。秘密値を含めない |
 | ROUTING_ATTRIBUTION | 必須 | ページの経路帰属表示に渡すビルド/配備設定と一致させる |
-| GEOCODING_ATTRIBUTION | 必須 | geocode応答のattribution |
+| GEOCODING_ATTRIBUTION | 必須 | geocode応答のattribution（`{text,url}` の配列をJSONで指定） |
 | UPSTREAM_TIMEOUT_MS | 8000 | 1通信の期限。結果同等性試験では既定固定 |
 | UPSTREAM_MAX_BYTES | 12000000 | 上流応答最大バイト数。既定固定 |
 | ROUTING_MIN_INTERVAL_MS | 1050 | 同一提供元の通信開始最短間隔。公共OSRMでは短縮不可 |
@@ -169,9 +169,9 @@ weatherアダプタは丸めた緯度経度を受け、現況のWMO天気コー�
 
 routingアダプタはorigin/dest/mode/optional viaを受け、順序付きduration秒/distance m/LineStringを返す。候補生成・重複排除・事故集計はその外側に置く。geocodingアダプタはqを受け、lat/lon/labelとattributionを返す。認証、URL組立て、provider独自エラーはアダプタ内で共通APIErrorへ変換する。日本語HTTPエラーに上流URLを埋め込まない。
 
-接続先設定の変更で自己ホストや同互換サービスへ替えられるようにする。異なるプロトコルの提供元は新アダプタを実装するが、フロント契約は維持する。徒歩/自転車プロファイルを提供できないサービスへ替えたとき、drivingへ黙って代替しない。提供元が変わると候補geometry/時間が変わるため、Pythonとの数値互換は**同じ固定上流応答の場合**の保証に限定する。
+接続先設定の変更で自己ホストや同互換サービスへ替えられるようにする。異なるプロトコルの提供元は新アダプタを実装するが、フロント契約は維持する。徒歩/自転車プロファイルを提供できないサービスへ替えたとき、drivingへ黙って代替しない。提供元が変わると候補geometry/時間が変わるため、受け入れは固定上流応答を使い、確定仕様から作ったfixtureとの一致で判定する。Pythonとの数値互換は保証しない。
 
-提供元別に全利用者共通の直列化・通信開始間隔・有限待ち行列を設ける。Cloud Runは最大1台でも再配備・保守で複数インスタンスが一時的に併存するため、**全インスタンス共通の上流ゲートをFirestore Standardのトランザクションで管理する**。保存するのは提供元/アカウントの識別子、呼出し開始時刻・期限、同時通信のリース/世代番号と集計件数だけで、住所・座標・経路・利用者ID・リクエストIDを保存しない。通信をトランザクション内で実行せず、共有状態が読めない/競合が解消しない場合は呼び出さない（route/geocodeは503 service_busy、conditionsは天候unavailable）。クライアントからFirestoreへの直接アクセスは許可しない。OSRM追加候補の要求順は現行と同じで、最大3呼出しを並列化しない。
+提供元別に全利用者共通の直列化・通信開始間隔・有限待ち行列を設ける。Cloud Runは最大1台でも再配備・保守で複数インスタンスが一時的に併存するため、**全インスタンス共通の上流ゲートをFirestore Standardのトランザクションで管理する**。保存するのは提供元/アカウントの識別子、呼出し開始時刻・期限、同時通信のリース/世代番号と集計件数だけで、住所・座標・経路・利用者ID・リクエストIDを保存しない。通信をトランザクション内で実行せず、共有状態が読めない/競合が解消しない場合は呼び出さない（route/geocodeは追加候補の取得中でも要求全体を503 service_busy、conditionsは天候unavailable）。クライアントからFirestoreへの直接アクセスは許可しない。OSRM追加候補の要求順は現行と同じで、最大3呼出しを並列化しない。
 
 ## 8. プライバシー
 

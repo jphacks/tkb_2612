@@ -266,7 +266,11 @@ paths:
               schema: {$ref: '#/components/schemas/GeocodeResponse'}
               examples:
                 empty:
-                  value: {results: [], attribution: 'Powered by Geoapify | © OpenStreetMap contributors'}
+                  value:
+                    results: []
+                    attribution:
+                    - {text: Powered by Geoapify, url: 'https://www.geoapify.com/'}
+                    - {text: © OpenStreetMap contributors, url: 'https://www.openstreetmap.org/copyright'}
         '400': {$ref: '#/components/responses/InvalidRequest'}
         '405': {$ref: '#/components/responses/MethodNotAllowed'}
         '500': {$ref: '#/components/responses/InternalError'}
@@ -291,7 +295,10 @@ paths:
           description: |
             出発日時。ISO 8601拡張形式でオフセット必須（Zまたは±hh:mm）。
             Asia/Tokyoへ変換し分単位に切り捨てる。範囲2000-01-01T00:00+09:00〜2100-12-31T23:59+09:00。
-          schema: {type: string, format: date-time}
+          schema:
+            type: string
+            pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2})?(Z|[+-][0-9]{2}:[0-9]{2})$'
+            description: 秒は省略可。RFC 3339のdate-timeより広いためformatは使わない。実在する日時かと範囲はサーバで検証する。
           example: '2026-11-03T14:30+09:00'
         - name: lat
           in: query
@@ -934,7 +941,17 @@ components:
           maxItems: 5
           items: {$ref: '#/components/schemas/GeocodeResult'}
           description: 提供元順の先頭5件。並べ替えない。
-        attribution: {type: string, description: 住所データ提供元の表示義務を満たす文字列}
+        attribution:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [text, url]
+            additionalProperties: false
+            properties:
+              text: {type: string, minLength: 1, description: 表示する帰属文字列。HTMLとして解釈しない。}
+              url: {type: string, format: uri, pattern: '^https://', description: 帰属のリンク先}
+          description: 住所データ提供元の表示義務を満たす帰属。表示順に並ぶ。
     WeatherSource:
       type: object
       required: [provider, target_time, kind]
@@ -987,11 +1004,15 @@ components:
           description: weather_status=okのときだけ値を持つ。
     HealthResponse:
       type: object
-      required: [api_version, status, dataset_id, accidents, load_seconds, data_years]
+      required: [api_version, status, release_id, dataset_id, accidents, load_seconds, data_years]
       additionalProperties: false
       properties:
         api_version: {type: string, const: '2.0'}
         status: {type: string, const: ok}
+        release_id:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: 事故CSVと同梱祝日表を合わせた配信物の識別子。sha256(dataset_id + "\n" + 祝日表のSHA-256)。
         dataset_id: {$ref: '#/components/schemas/DatasetId'}
         accidents:
           $ref: '#/components/schemas/Count'

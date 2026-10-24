@@ -40,7 +40,7 @@ Pythonプロトタイプとの数値同等性は廃止した（[route-scoring-de
 - 先頭5行をバイト列として完全な行単位で読み、`utf-8-sig` で復号可能ならそれを採用。失敗した場合に `cp932` で復号できることを検査して採用。全年度cp932だったという事実と、UTF-8/BOMも受理する規則を混同しない。先頭5行後に発生する復号エラーはファイル処理失敗であり、行の除外扱いではない。
 - CSVパーサで引用・改行を解釈する。ヘッダは `"".join(value.split())` 相当で全空白を除去する。位置固定にしない。正規化後に必須列が重複した場合は前処理全体を失敗させる（現行の後勝ちは採用しない）。値は前後の空白のみ除去。
 - 必須列は地点緯度（北緯）、地点経度（東経）、天候、昼夜、事故類型、死者数、負傷者数、発生日時の年/月/日/時/分、当事者種別と人身損傷程度の当事者A/B。必須列欠損は処理全体を失敗させる。
-- 座標・日時の欠損/不正、人数の型不正、必須分類値の年度別コード表外は行を除外して続行し、input/excluded/retainedと年度別・理由別件数（`invalid_coordinates / invalid_datetime / invalid_casualties / unknown_party_code / unknown_weather_code` 等）を開発者向けに記録する。複数の不正がある行は読込・必須列→座標→日時→人数→分類値の順で最初の理由に1回だけ計上し、入力=保持+除外を検査する。監査には年度・行番号・理由だけを使い、除外した原本行をWebへ返さない。I/O・CSV構文・途中の復号失敗・必須ファイル欠損・必須列の欠損/重複・コード表不一致・全行除外は前処理全体の失敗とし、一部年度だけで成功扱いにしない。推測による補完、日時の繰り上げ、未知コードの既存分類への置換はしない。
+- 座標・日時の欠損/不正、人数の型不正、必須分類値（当事者種別・天候・人身損傷程度・昼夜。事故類型は整数変換だけ）の許容集合外は行を除外して続行し、input/excluded/retainedと年度別・理由別件数（`invalid_coordinates / invalid_datetime / invalid_casualties / unknown_party_code / unknown_weather_code` 等）を開発者向けに記録する。複数の不正がある行は読込・必須列→座標→日時→人数→分類値の順で最初の理由に1回だけ計上し、入力=保持+除外を検査する。監査には年度・行番号・理由だけを使い、除外した原本行をWebへ返さない。I/O・CSV構文・途中の復号失敗・必須ファイル欠損・必須列の欠損/重複・コード表不一致・全行除外は前処理全体の失敗とし、一部年度だけで成功扱いにしない。推測による補完、日時の繰り上げ、未知コードの既存分類への置換はしない。
 - 出力はUTF-8 gzip CSV（現行圧縮レベル3）。列順は次の17列と完全一致させる。現行Pythonの16列に、移行追加の `day_type` をweatherの直後へ挿入した形である。
 
 `lat,lon,modes,period,weather,day_type,deaths,injuries,source_year,date,hour,minute,daynight,accident_type,injury_a,injury_b,severity`
@@ -103,7 +103,7 @@ A/B双方の種別からbitwise ORで分類する。徒歩=bit1（値1、61）�
   4. 日曜日：`日曜`
 - 上記に当たらない日は平日で、reasonは `平日`。
 - 年末年始・お盆・企業の休業日の追加特例は設けない。祝日表にない平日は平日であり、元日（祝日）や土日を平日へ変えない。
-- 曜日はグレゴリオ暦で計算する。祝日表の更新（翌年分の追加）はデータ更新手順の一部とする（architecture参照）。祝日表を差し替えると前処理結果のday_typeが変わり得るため、dataset_idも変わる。
+- 曜日はグレゴリオ暦で計算する。祝日表の更新（翌年分の追加）はデータ更新手順の一部とする（architecture参照）。祝日表を差し替えるとday_typeが変わった場合は事故CSVが変わり、dataset_idも変わる。事故CSVが変わらない場合もある（翌年分の追加のみ等）ため、祝日表を含む配信物全体は `release_id` で区別する（3.）。
 
 ## 3. 起動時ロードと識別子
 
@@ -111,7 +111,7 @@ gzip CSVヘッダは17列の完全一致を要求する。現行は先頭9列を
 
 行番号0始まりを事故IDにする。空間索引の方式は実装で選んでよい。初期案は `grid[(floor(lat*1000), floor(lon*1000))]` に入力順で登録する0.001度グリッドで、集合B・最寄り線分・事故点の順序は索引の走査順に依存させない（6.・7.）。yearsは読み込んだsource_year集合。実発生年とは別である。ロード時間は計測値であり結果同等性の対象外。
 
-移行契約の `dataset_id` は配信中の `accidents.csv.gz` 全バイトのSHA-256小文字hex（64文字）。再圧縮でも変わり得る。同じ内容の事故でも別スナップショットではIDは保証しない。事故参照は `(dataset_id, feature.id)`、経路/区間参照はさらに**その検索応答**に限定する。検索ごとのroute-1等を永続IDと解釈しない。起動時にmetadataのschema_version・dataset_id（hash）・件数・必須値と列挙値を再検証し、失敗はプロセス停止とする。
+移行契約の `dataset_id` は配信中の `accidents.csv.gz` 全バイトのSHA-256小文字hex（64文字）。再圧縮でも変わり得る。同じ内容の事故でも別スナップショットではIDは保証しない。事故参照は `(dataset_id, feature.id)`、経路/区間参照はさらに**その検索応答**に限定する。検索ごとのroute-1等を永続IDと解釈しない。配信物全体の識別子 `release_id` は、`dataset_id` と同梱祝日表のSHA-256を `\n` で連結したUTF-8文字列のSHA-256小文字hexとする。祝日表だけの更新でも `release_id` は変わる。起動時にmetadataのschema_version・dataset_id（hash）・件数・必須値と列挙値を再検証し、失敗はプロセス停止とする。
 
 ## 4. リクエスト検証
 
@@ -163,7 +163,7 @@ queryは `alternatives=true&geometries=geojson&overview=full&steps=false`。User
 
 `via.lon=mid_lon - side*dy/L*offset/kx`
 
-入力距離下限によりLは0にならない。via自体に日本矩形の再検証は現行にはない。追加呼出しのAPIError（422も含む）は警告にして既存候補を残す。追加バッチ内で正常候補を追加した後に不正候補が出た場合、その正常候補も残す。最初のバッチで失敗した場合は既存候補があっても全体エラー。
+入力距離下限によりLは0にならない。via自体に日本矩形の再検証は現行にはない。追加呼出しのAPIError（422も含む）は警告にして既存候補を残す。ただし共有上流ゲートの読取失敗・競合未解消と待ち行列満杯（503 service_busy）は部分成功にせず、要求全体を503で終了する。追加バッチ内で正常候補を追加した後に不正候補が出た場合、その正常候補も残す。最初のバッチで失敗した場合は既存候補があっても全体エラー。
 
 全呼出し後に候補0なら502 no_route、1本なら比較不能の警告。durationの昇順に**安定ソート**して先頭6本だけ評価する。同duration時は挿入順のまま（ここではdistanceでソートしない）。最大3通信、各6本、最大18本を検証して6本に削る。候補に `route-1`〜`route-N` をこの順に付与する。
 
@@ -324,7 +324,7 @@ WMO天気コードから天候への変換は次の表に固定する（**要確
 
 `q` を前後trimしUnicode文字数2〜200。現行parse_qsは複数qのうち最初の非空値を使うが、移行契約では**qは1個必須**、重複は400とする。検索はユーザーの明示操作だけで行う。
 
-住所提供元は **Geoapify Forward Geocoding** とする（[backend-spec.md](../backend-spec.md) 6章）。サーバから `{GEOAPIFY_BASE_URL}/v1/geocode/search` へ `text=q, lang=ja, filter=countrycode:jp, limit=5, format=json` とapiKey（サーバ専用secret）を送る。外部JSONのlat/lon/formattedをlat/lon/labelへ変換し、日本矩形外・欠落・型不正は502。提供元順の先頭5件までに限定する。空配列は200でありエラーではない。Geoapify/OpenStreetMapの帰属とリンクをattributionで返す。公開Nominatimへは接続しない。
+住所提供元は **Geoapify Forward Geocoding** とする（[backend-spec.md](../backend-spec.md) 6章）。サーバから `{GEOAPIFY_BASE_URL}/v1/geocode/search` へ `text=q, lang=ja, filter=countrycode:jp, limit=5, format=json` とapiKey（サーバ専用secret）を送る。外部JSONのlat/lon/formattedをlat/lon/labelへ変換し、日本矩形外・欠落・型不正は502。提供元順の先頭5件までに限定する。空配列は200でありエラーではない。Geoapify/OpenStreetMapの帰属を `attribution` に `{text, url}` の配列で返す。公開Nominatimへは接続しない。
 
 外部通信の共通制限はOSRM同様。全インスタンス共通の上流ゲートで通信開始間隔1.05秒以上・同時1通信・1日2,000要求を初期の上限とし、配備前に同じアカウントの残枠を確認する。有料プランへ自動変更しない。
 
@@ -344,7 +344,7 @@ WMO天気コードから天候への変換は次の表に固定する（**要確
 |  503 | service_busy       | 移行追加の受付上限・外部サービス待ち行列の満杯・共有上流ゲートの読取失敗/競合未解消、またはroute/geocode要求全体の35秒期限超過（集計中も含む） |
 |  500 | internal_error     | 予期しない内部失敗（移行追加）                                                                            |
 
-JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-Content-Type-Options nosniff。API未定義パスへSPAのHTMLを返さない。healthはデータready時200で、件数・年度・読込秒数・dataset_idを返す。グリッド数はグリッド索引を採用した場合だけ返す。外部サービスへ疎通して判定しない。起動ロード失敗時は現行同様プロセス停止を基本とし、運用でHTTPが生きていて未readyなら503。
+JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-Content-Type-Options nosniff。API未定義パスへSPAのHTMLを返さない。healthはデータready時200で、件数・年度・読込秒数・release_id・dataset_idを返す。グリッド数はグリッド索引を採用した場合だけ返す。外部サービスへ疎通して判定しない。起動ロード失敗時は現行同様プロセス停止を基本とし、運用でHTTPが生きていて未readyなら503。
 
 静的配信の新契約はGET `/`、`/assets/{asset}`、`/manifest.webmanifest`、`/sw.js`。配信rootはfrontend/distだけ。APIルートを優先し、パストラバーサル・ディレクトリ一覧・accident/app/backend/dataへのアクセスを許可しない。初期版は画面URLが `/` のみで、未知URLのSPAフォールバックは行わず404。詳細はOpenAPIとarchitectureに従う。
 
