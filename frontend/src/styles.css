@@ -562,6 +562,8 @@ svg {
 .map-stage {
   position: absolute;
   inset: 0 0 var(--attribution-space);
+  /* Route cards must not spill over the attribution bar on short screens. */
+  overflow: hidden;
   background: #f1f5f9;
 }
 .sidebar-open .map-stage {
@@ -917,4 +919,15 @@ svg {
 }
 .app-results .demo-menu {
   bottom: calc(var(--attribution-space) + 12px);
+}
+/* Short screens (e.g. a landscape phone): keep the attribution bar inside the
+   viewport instead of letting the 400px minimum push it below the fold. */
+@media (max-height: 480px) {
+  .result-page,
+  .map-stage .route-map-shell {
+    min-height: 0;
+  }
+  .app-results {
+    --attribution-space: 64px;
+  }
 }
