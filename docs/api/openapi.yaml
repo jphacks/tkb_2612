@@ -12,7 +12,9 @@ info:
     period/weatherのコードは互換入力として受理するが、新フロントは送らない。
     2.0で時間帯を5区分（夜19〜23時と深夜0〜3時を分割）にし、曜日区分day_typeと
     条件の自動判定/api/conditionsを追加した。periodの整数3の意味は1.0から変わる。
-    リスクは死者数×10+負傷者数であり事故確率ではない。
+    リスクは経路から72m以内の事故の深刻度（死者×10+負傷者）を、距離（σ=24mのガウス）と
+    天候倍率で重み付けした参考指標であり、事故確率ではない。
+    天候は事故を除外せず重み付けに使う。条件の自動緩和は行わない。
     本文の「移行追加」は現行Pythonにない契約を示す。
     認証・GPS追跡・経路の永続保存APIは設けない。
 servers:
@@ -37,7 +39,8 @@ paths:
         Content-Type不正・JSON不正・値不正は外部呼出し前に400。
         unknownキーは無視。hour/period整合と距離等の相関制約はbehavior.mdを参照。
         出発日時は受け取らない。period/day_type/weatherの自動値は/api/conditionsで得る。
-        全候補で指定条件の事故が0件なら天候→曜日区分→時間帯の順に解除する。
+        天候は事故を除外せず、一致事故をweather_matchで別集計し、スコアで重く数える。
+        全候補で該当事故が0件でも条件を解除しない。その場合safest_idはnull。
         全体期限内の追加候補のみの失敗は200のwarningsに残す。
         受付からJSON準備完了までの全体期限35秒を超えたら、段階によらず503 service_busy。
         候補が取得済みでも全体期限後に200を返さない。
@@ -98,7 +101,13 @@ paths:
                       injury_accidents: 0
                       deaths: 1
                       injuries: 2
-                      weighted_risk: 12
+                      weather_match:
+                        accident_count: 1
+                        fatal_accidents: 1
+                        injury_accidents: 0
+                        deaths: 1
+                        injuries: 2
+                      weighted_risk: 12.0
                       risk_per_km: 12.0
                       accident_points:
                         type: FeatureCollection
@@ -133,7 +142,7 @@ paths:
                               - 35.0
                           properties:
                             route_id: route-1
-                            weighted_risk: 12
+                            severity_weight: 12
                             segment_index: 6
                             source_vertex_start_index: 0
                             source_vertex_end_index: 1
@@ -143,7 +152,7 @@ paths:
                       within_detour: true
                     extra_minutes: 0.0
                     risk_reduction_percent: 0.0
-                    reason: 取得した1候補のうち、最短時間経路から+10分以内で、重大度重み付きリスク（死者数×10＋負傷者数）が最小の経路を選びました。 今回は最短時間経路が事故考慮経路と同じです。
+                    reason: 今回は最短時間経路が事故を考慮した経路と同じです。
                     warnings:
                     - 経路候補が1本のみのため、経路間の比較はできません。
                     relaxed_conditions: []
@@ -152,19 +161,20 @@ paths:
                       period: 昼
                       day_type: 休日
                       weather: 晴
-                    radius_m: 50.0
+                    radius_m: 72
+                    distance_weight_sigma_m: 24
                     aggregation_ms: 0
                     data_years:
                     - 2025
-                    risk_note: 過去の事故件数に基づく参考指標です。交通量や通行回数で補正した事故確率ではありません。
+                    risk_note: 過去の事故件数に基づく参考指標です。経路から約72m以内の事故を、近いほど重く数えています。交通量や通行回数で補正した事故確率ではありません。
                     api_version: '2.0'
                     dataset_id: '0000000000000000000000000000000000000000000000000000000000000000'
                 noAccidents:
-                  summary: 条件緩和後も事故0件
+                  summary: 全候補で該当事故0件（条件は解除しない）
                   description: 固定モックによる契約例。dataset_idの0列とaggregation_ms=0は説明用で、実データのハッシュ/性能値ではない。
                   value:
                     fastest_id: route-1
-                    safest_id: route-1
+                    safest_id: null
                     candidates:
                     - duration: 600
                       distance: 1000
@@ -180,7 +190,13 @@ paths:
                       injury_accidents: 0
                       deaths: 0
                       injuries: 0
-                      weighted_risk: 0
+                      weather_match:
+                        accident_count: 0
+                        fatal_accidents: 0
+                        injury_accidents: 0
+                        deaths: 0
+                        injuries: 0
+                      weighted_risk: 0.0
                       risk_per_km: 0.0
                       accident_points:
                         type: FeatureCollection
@@ -193,27 +209,24 @@ paths:
                       exact_condition_count: 0
                       extra_minutes: 0.0
                       within_detour: true
-                    extra_minutes: 0.0
+                    extra_minutes: null
                     risk_reduction_percent: null
-                    reason: 取得した1候補のうち、最短時間経路から+10分以内で、重大度重み付きリスク（死者数×10＋負傷者数）が最小の経路を選びました。 今回は最短時間経路が事故考慮経路と同じです。 最短時間経路の集計リスクが0のため、削減率は算出できません。
+                    reason: 全候補で該当する過去の事故がないため、事故を考慮した経路は選んでいません。
                     warnings:
                     - 経路候補が1本のみのため、経路間の比較はできません。
-                    - 全候補で指定条件の事故が0件のため、天候・曜日区分・時間帯を解除して全候補を再集計しました（移動手段は維持）。
-                    - 条件緩和後も該当事故がありません。事故0件は安全の証明ではありません。
-                    relaxed_conditions:
-                    - 天候
-                    - 曜日区分
-                    - 時間帯
+                    - 該当する事故が0件でも、安全であることの証明ではありません。
+                    relaxed_conditions: []
                     effective_conditions:
                       mode: walk
-                      period: 全時間帯
-                      day_type: 全曜日
-                      weather: 全天候
-                    radius_m: 50.0
+                      period: 深夜
+                      day_type: 休日
+                      weather: 雪
+                    radius_m: 72
+                    distance_weight_sigma_m: 24
                     aggregation_ms: 0
                     data_years:
                     - 2025
-                    risk_note: 過去の事故件数に基づく参考指標です。交通量や通行回数で補正した事故確率ではありません。
+                    risk_note: 過去の事故件数に基づく参考指標です。経路から約72m以内の事故を、近いほど重く数えています。雨・霧・雪を指定した場合は、同じ天候の事故をさらに重く数えます。交通量や通行回数で補正した事故確率ではありません。
                     api_version: '2.0'
                     dataset_id: '0000000000000000000000000000000000000000000000000000000000000000'
         '400': {$ref: '#/components/responses/InvalidRequest'}
@@ -232,6 +245,7 @@ paths:
         qは1個のみ必須。前後空白を除去したUnicode文字数2〜200。
         q重複/欠落も400。結果を選択するまで座標を確定しない。
         受付からJSON準備完了まで35秒を超えると503 service_busy。
+        提供元はGeoapify Forward Geocoding（サーバから呼ぶ）。キャッシュしない。
       parameters:
         - name: q
           in: query
@@ -250,7 +264,7 @@ paths:
               schema: {$ref: '#/components/schemas/GeocodeResponse'}
               examples:
                 empty:
-                  value: {results: [], attribution: '© OpenStreetMap contributors / Nominatim'}
+                  value: {results: [], attribution: 'Powered by Geoapify | © OpenStreetMap contributors'}
         '400': {$ref: '#/components/responses/InvalidRequest'}
         '405': {$ref: '#/components/responses/MethodNotAllowed'}
         '500': {$ref: '#/components/responses/InternalError'}
@@ -738,14 +752,14 @@ components:
           description: 最大75mへの分割後小線分の両端。元頂点区間の全体とは限らない。
         properties:
           type: object
-          required: [route_id, weighted_risk, segment_index, source_vertex_start_index, source_vertex_end_index]
+          required: [route_id, severity_weight, segment_index, source_vertex_start_index, source_vertex_end_index]
           additionalProperties: false
           properties:
             route_id: {$ref: '#/components/schemas/RouteId'}
-            weighted_risk:
+            severity_weight:
               type: integer
               minimum: 3
-              description: この最寄り小線分へ割り当てられた事故の死者×10+負傷者、重み点。
+              description: この最寄り小線分へ割り当てた72m以内の事故の死者×10+負傷者の合計、重み点。距離減衰・天候倍率を含まない。
             segment_index:
               type: integer
               minimum: 0
@@ -777,9 +791,20 @@ components:
         重み降順、同値はsegment_index昇順の最大100区間、重み3以上。
         連結しない。全高リスク区間の網羅ではなく表示用の上位集合。空ならfeatures=[]。
         自動GPS警告に流用せず、将来の全区間配信は別契約にする。
+    WeatherMatch:
+      type: object
+      required: [accident_count, fatal_accidents, injury_accidents, deaths, injuries]
+      additionalProperties: false
+      properties:
+        accident_count: {$ref: '#/components/schemas/Count'}
+        fatal_accidents: {$ref: '#/components/schemas/Count'}
+        injury_accidents: {$ref: '#/components/schemas/Count'}
+        deaths: {$ref: '#/components/schemas/Count'}
+        injuries: {$ref: '#/components/schemas/Count'}
+      description: 集合Bのうち事故の天候が指定天候と一致する事故の集計。該当なしは全項目0。
     RouteCandidate:
       type: object
-      required: [id, duration, distance, geometry, accident_count, fatal_accidents, injury_accidents, deaths, injuries, weighted_risk, risk_per_km, accident_points, points_shown, high_risk_sections, exact_condition_count, extra_minutes, within_detour]
+      required: [id, duration, distance, geometry, accident_count, fatal_accidents, injury_accidents, deaths, injuries, weather_match, weighted_risk, risk_per_km, accident_points, points_shown, high_risk_sections, exact_condition_count, extra_minutes, within_detour]
       additionalProperties: false
       properties:
         id: {$ref: '#/components/schemas/RouteId'}
@@ -788,7 +813,7 @@ components:
         geometry: {$ref: '#/components/schemas/LineString'}
         accident_count:
           $ref: '#/components/schemas/Count'
-          description: 条件適用後・間引き前の事故件数
+          description: 集合B（72m以内・移動手段・時間帯・曜日区分。天候では絞らない）の事故件数、間引き前
         fatal_accidents:
           $ref: '#/components/schemas/Count'
           description: 死者1人以上の事故件数
@@ -801,13 +826,21 @@ components:
         injuries:
           $ref: '#/components/schemas/Count'
           description: 該当事故全体の負傷者合計、人
+        weather_match:
+          oneOf:
+            - {$ref: '#/components/schemas/WeatherMatch'}
+            - {type: 'null'}
+          description: 天候指定時は指定天候に一致する事故の集計。天候allならnull。キーは常に返す。
         weighted_risk:
-          $ref: '#/components/schemas/Count'
-          description: deaths×10+injuries、重み点。候補の選定に使用。
+          type: number
+          minimum: 0
+          description: |
+            Σ exp(-d²/(2·24²)) × 天候倍率 × (10×死者+負傷者)、小数2桁に丸め。重み点。
+            天候倍率は指定天候が雨で一致なら2、霧/雪で一致なら4、それ以外1。候補の選定に使用。
         risk_per_km:
           type: number
           minimum: 0
-          description: weighted_risk/max(distance/1000,0.001)、重み点/km、小数3桁に丸め。選定に使わない。
+          description: 丸めたweighted_risk/max(distance/1000,0.001)、重み点/km、小数3桁に丸め。選定に使わない。
         accident_points: {$ref: '#/components/schemas/AccidentCollection'}
         points_shown:
           type: integer
@@ -817,7 +850,8 @@ components:
         high_risk_sections: {$ref: '#/components/schemas/HighRiskCollection'}
         exact_condition_count:
           $ref: '#/components/schemas/Count'
-          description: 緩和前の指定条件での事故件数。accident_count以下。
+          deprecated: true
+          description: 非推奨の互換値。天候指定時はweather_match.accident_count、all時はaccident_count。
         extra_minutes:
           type: number
           minimum: 0
@@ -836,38 +870,43 @@ components:
         weather: {type: string, enum: [晴, 曇, 雨, 霧, 雪, 全天候]}
     RouteResponse:
       type: object
-      required: [api_version, dataset_id, fastest_id, safest_id, candidates, extra_minutes, risk_reduction_percent, reason, warnings, relaxed_conditions, effective_conditions, radius_m, aggregation_ms, data_years, risk_note]
+      required: [api_version, dataset_id, fastest_id, safest_id, candidates, extra_minutes, risk_reduction_percent, reason, warnings, relaxed_conditions, effective_conditions, radius_m, distance_weight_sigma_m, aggregation_ms, data_years, risk_note]
       additionalProperties: false
       properties:
         api_version: {type: string, const: '2.0', description: GeoJSON包装・5区分の時間帯・曜日区分を含む移行APIの契約版}
         dataset_id: {$ref: '#/components/schemas/DatasetId'}
         fastest_id: {$ref: '#/components/schemas/RouteId'}
-        safest_id: {$ref: '#/components/schemas/RouteId'}
+        safest_id:
+          oneOf:
+            - {$ref: '#/components/schemas/RouteId'}
+            - {type: 'null'}
+          description: 事故考慮経路。全候補で該当事故（集合B）が0件ならnull。
         candidates:
           type: array
           minItems: 1
           maxItems: 6
           items: {$ref: '#/components/schemas/RouteCandidate'}
-          description: durationの安定昇順。両選定IDは必ずこの中に存在する。
-        extra_minutes: {type: number, minimum: 0, description: safestの追加所要時間、分、小数3桁}
+          description: durationの安定昇順。fastest_idとnullでないsafest_idは必ずこの中に存在する。
+        extra_minutes: {type: [number, 'null'], minimum: 0, description: safestの追加所要時間、分、小数3桁。safest_idがnullならnull。}
         risk_reduction_percent:
           type: [number, 'null']
           minimum: 0
           maximum: 100
-          description: 最短時間経路比の重み減少率、%、小数1桁。基準リスク0ならnull。
+          description: 最短時間経路比の重み減少率、%、小数1桁。丸めたweighted_riskから計算。基準リスク0またはsafest_idがnullならnull。
         reason: {type: string, minLength: 1, description: 候補内選定の理由。UIは文字列として表示する。}
         warnings:
           type: array
           items: {type: string}
-          description: 追加候補失敗、比較不可、条件緩和、全0件等。なしは空配列。
+          description: 追加候補失敗、比較不可、全候補0件等。なしは空配列。
         relaxed_conditions:
           type: array
-          maxItems: 3
-          uniqueItems: true
-          items: {type: string, enum: [天候, 曜日区分, 時間帯]}
-          description: 解除した条件。常に天候→曜日区分→時間帯の順で、未指定の条件は含めない。移動手段は解除しない。
+          maxItems: 0
+          items: {type: string}
+          deprecated: true
+          description: 互換フィールド。条件の自動緩和は行わないため常に空配列。
         effective_conditions: {$ref: '#/components/schemas/EffectiveConditions'}
-        radius_m: {type: number, const: 50, description: 事故集計の経路周辺半径、メートル}
+        radius_m: {type: number, const: 72, description: 事故集計（集合B）の経路周辺半径、メートル}
+        distance_weight_sigma_m: {type: number, const: 24, description: 距離重みのガウスσ、メートル}
         aggregation_ms: {type: number, minimum: 0, description: 候補取得後の集計・選定時間、ミリ秒、小数2桁。外部通信と転送を除く。}
         data_years: {$ref: '#/components/schemas/Years'}
         risk_note: {type: string, minLength: 1, description: 参考指標であり曝露補正した事故確率ではない旨}
@@ -942,7 +981,7 @@ components:
           description: weather_status=okのときだけ値を持つ。
     HealthResponse:
       type: object
-      required: [api_version, status, dataset_id, accidents, grid_cells, load_seconds, data_years]
+      required: [api_version, status, dataset_id, accidents, load_seconds, data_years]
       additionalProperties: false
       properties:
         api_version: {type: string, const: '2.0'}
@@ -953,7 +992,7 @@ components:
           description: modes=0を含むロード行数、件。実運用は空データで起動しない。
         grid_cells:
           $ref: '#/components/schemas/Count'
-          description: 事故が存在する0.001度セル数
+          description: 事故が存在する0.001度セル数。グリッド索引を採用した場合だけ返す。
         load_seconds: {type: number, minimum: 0, description: データ読込時間、秒、小数3桁}
         data_years: {$ref: '#/components/schemas/Years'}
     ErrorResponse:
