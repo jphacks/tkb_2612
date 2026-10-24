@@ -3,6 +3,8 @@
 //! 丸めた(lat, lon)をキーに、成功した上流応答だけをプロセスメモリに保持する。
 //! TTLは `WEATHER_CACHE_TTL_SEC`、最大1024キーで、満杯なら挿入順の最古を除く。
 //! 保存した各キーは、再アクセスが無くても保存からTTLで消す（architecture.md 8章「最大10分保持」）。
+//! 要求の処理外にCPUが割り当てられない実行環境（Cloud Runのリクエスト課金）ではこの削除が
+//! 遅れ得るので、各取得の初めにも期限切れをまとめて消す。その環境ではTTLを0にする（deploy/README.md）。
 //! TTLが0なら保存しない。永続化・プロセス間共有はしない。利用者・要求との対応付けは持たない。
 
 use std::collections::{HashMap, VecDeque};
@@ -45,6 +47,21 @@ impl Entries {
             self.order.retain(|p| p != point);
         }
     }
+
+    /// 期限切れを古い順に消す（`order` は保存順なので、先頭から期限内のものに当たるまで）。
+    fn remove_expired(&mut self, now_ms: i64, ttl_ms: i64) {
+        while let Some(oldest) = self.order.front().copied() {
+            let expired = self
+                .reports
+                .get(&oldest)
+                .is_none_or(|e| now_ms.saturating_sub(e.stored_ms) >= ttl_ms);
+            if !expired {
+                break;
+            }
+            self.order.pop_front();
+            self.reports.remove(&oldest);
+        }
+    }
 }
 
 impl WeatherCache {
@@ -76,6 +93,7 @@ impl WeatherCache {
         let now_ms = self.clock.now_ms();
         {
             let mut entries = self.entries.lock().unwrap();
+            entries.remove_expired(now_ms, self.ttl_ms);
             match entries.reports.get(&point) {
                 Some(e) if now_ms.saturating_sub(e.stored_ms) < self.ttl_ms => {
                     return Ok(e.report.clone());

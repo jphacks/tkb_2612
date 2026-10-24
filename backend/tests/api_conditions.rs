@@ -581,6 +581,30 @@ async fn expired_entry_is_removed_even_if_refetching_fails() {
     assert!(cache.is_empty());
 }
 
+/// 削除のタイマーが動かなくても（要求外にCPUが無い環境）、次の取得で他の地点の期限切れも消す。
+#[tokio::test]
+async fn any_access_removes_every_expired_entry() {
+    let clock = ManualClock::new(common::fixed_now());
+    let weather = FakeWeather::new([Ok(report()), Ok(report()), Ok(report())]);
+    let cache = WeatherCache::new(weather.clone(), clock.clone(), Duration::from_secs(600));
+    let cancel = CancelToken::unbounded();
+    let (a, b, c) = (
+        RoundedPoint::round(35.68, 139.76),
+        RoundedPoint::round(35.70, 139.70),
+        RoundedPoint::round(34.70, 135.50),
+    );
+    cache.get(a, &cancel).await.unwrap();
+    clock.advance(Duration::from_secs(300));
+    cache.get(b, &cancel).await.unwrap();
+    clock.advance(Duration::from_secs(300));
+    cache.get(c, &cancel).await.unwrap();
+    assert_eq!(cache.len(), 2, "aだけが期限切れ");
+    clock.advance(Duration::from_secs(300));
+    cache.get(c, &cancel).await.unwrap();
+    assert_eq!(cache.len(), 1, "bも期限切れ");
+    assert_eq!(weather.calls().len(), 3);
+}
+
 /// TTLが0なら保存しない。
 #[tokio::test]
 async fn zero_ttl_does_not_store() {

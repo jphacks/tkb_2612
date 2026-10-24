@@ -95,12 +95,13 @@ gcloud run deploy $SERVICE \
   --set-env-vars=GEOAPIFY_API_KEY_FILE=/secrets/geoapify/key \
   --set-env-vars=OSRM_WALK_BASE_URL=…,OSRM_BIKE_BASE_URL=…,OSRM_CAR_BASE_URL=… \
   --set-env-vars=GEOAPIFY_BASE_URL=https://api.geoapify.com,OPEN_METEO_BASE_URL=… \
-  --set-env-vars=EXTERNAL_USER_AGENT=…,ROUTING_ATTRIBUTION=… \
+  --set-env-vars=EXTERNAL_USER_AGENT=…,ROUTING_ATTRIBUTION=…,WEATHER_CACHE_TTL_SEC=0 \
   '--set-env-vars=^@^GEOCODING_ATTRIBUTION=[{"text":"Powered by Geoapify","url":"https://www.geoapify.com/"}]'
 ```
 
 - 環境変数はarchitecture.md 6章の表のとおりです。必須の不足・不正は起動に失敗し、ログには変数名だけが出ます（値は出しません）。`BACKEND_BIND`・`UPSTREAM_GATE` は設定しません（`0.0.0.0:$PORT`、`firestore`）。
 - `GEOCODING_ATTRIBUTION` はカンマを含むので、区切り文字を変える記法（`^@^`）か `--env-vars-file` を使います。`"`・`[`・`{` をシェルに解釈させないよう、引数全体を単引用符で囲みます。
+- `WEATHER_CACHE_TTL_SEC=0` で気象応答のキャッシュを無効にします。リクエスト課金（要求の処理外はCPUが割り当てられない）では、無通信の間にキャッシュの期限切れの削除が動く保証がなく、architecture.md 8章の「最大10分保持」を守れないためです。キャッシュを使うには、インスタンス課金（`--no-cpu-throttling`）への変更が必要で、費用の判断を伴います（**未決**、Issue #9で扱う）。無効にしても、Open-Meteoの分/時/日/月の上限は上流ゲートで守ります。
 - 有償のOpen-Meteoでは `--set-secrets=/secrets/open-meteo/key=open-meteo-api-key:latest` と `OPEN_METEO_API_KEY_FILE=/secrets/open-meteo/key` を足します。
 - releaseの差し替えは、新しいイメージで新リビジョンを作り、startup probeの成功後にトラフィックを移します。失敗したら旧リビジョンへ戻します。
 
