@@ -100,7 +100,7 @@ pub fn search_url(base: &reqwest::Url, q: &str, api_key: &str) -> reqwest::Url {
         .append_pair("text", q)
         .append_pair("lang", "ja")
         .append_pair("filter", "countrycode:jp")
-        .append_pair("limit", "5")
+        .append_pair("limit", &MAX_PLACES.to_string())
         .append_pair("format", "json")
         .append_pair("apiKey", api_key);
     url

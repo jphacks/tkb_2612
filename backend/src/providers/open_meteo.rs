@@ -14,6 +14,8 @@ use crate::providers::http::{FetchError, UpstreamClient};
 
 /// 応答に要求するUTCオフセット（Asia/Tokyo）。
 pub const TOKYO_OFFSET_SECONDS: i64 = 32_400;
+/// 受け付けるWMOコードの上限。これを超える値は形式の誤りとして扱う（暫定。未決）。
+pub const MAX_WMO_CODE: i64 = 1_000_000;
 
 /// 小数2桁に丸めた地点。キャッシュキーと上流送信に同じ値を使う。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -225,13 +227,19 @@ fn parse_time(v: &Value) -> Option<NaiveDateTime> {
         .ok()
 }
 
-/// WMOコードは非負の整数（`3.0` 等の整数値の小数表記も可）。
+/// WMOコードは0〜[`MAX_WMO_CODE`]の整数（`3.0` 等の整数値の小数表記も可）。
 fn parse_code(v: &Value) -> Option<i64> {
-    if let Some(n) = v.as_i64() {
-        return (n >= 0).then_some(n);
-    }
-    let f = v.as_f64()?;
-    (f.is_finite() && f.fract() == 0.0 && (0.0..=1.0e6).contains(&f)).then_some(f as i64)
+    let code = match v.as_i64() {
+        Some(n) => n,
+        None => {
+            let f = v.as_f64()?;
+            if !(f.is_finite() && f.fract() == 0.0 && (0.0..=MAX_WMO_CODE as f64).contains(&f)) {
+                return None;
+            }
+            f as i64
+        }
+    };
+    (0..=MAX_WMO_CODE).contains(&code).then_some(code)
 }
 
 #[cfg(test)]

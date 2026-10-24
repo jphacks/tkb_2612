@@ -41,6 +41,10 @@ use crate::providers::osrm::{OsrmEndpoints, OsrmRouter};
 pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 /// リースの有効期間に足す余裕（1通信の期限＋この値）。
 pub const LEASE_MARGIN: Duration = Duration::from_secs(2);
+/// 接続の受付が一時的に失敗したとき（ファイル記述子の枯渇等）に、次の受付まで待つ時間（暫定。未決）。
+pub const ACCEPT_RETRY_DELAY: Duration = Duration::from_millis(10);
+/// 提供元ごとの同時通信数（architecture.md 6章「同時通信は1」、backend-spec.md 6章）。
+pub const UPSTREAM_MAX_CONCURRENT: u32 = 1;
 /// 気象提供元の応答の上限（behavior.md 9章）。
 pub const WEATHER_MAX_BYTES: usize = 1_000_000;
 /// Open-Meteo無料APIの分/時/日/月の上限。公式の値（2026-10-24参照）で、
@@ -195,7 +199,7 @@ fn services(
             key,
             GatePolicy {
                 min_interval,
-                max_concurrent: 1,
+                max_concurrent: UPSTREAM_MAX_CONCURRENT,
                 queue_capacity: config.upstream_queue_capacity,
                 lease_ttl: timeout + LEASE_MARGIN,
                 quotas,
@@ -348,8 +352,7 @@ pub async fn serve(listener: TcpListener, app: axum::Router, shutdown: impl Futu
         tokio::select! {
             accepted = listener.accept() => {
                 let Ok((stream, _)) = accepted else {
-                    // 一時的な失敗（ファイル記述子の枯渇等）。少し待って続ける
-                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    tokio::time::sleep(ACCEPT_RETRY_DELAY).await;
                     continue;
                 };
                 let kill = Arc::new(Notify::new());

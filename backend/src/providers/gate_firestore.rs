@@ -31,6 +31,8 @@ pub const CALL_TIMEOUT: Duration = Duration::from_secs(2);
 /// 統括の決定待ち）。共有状態にはこの分だけ遅い開始時刻を記録し、これを超えて届いた許可では
 /// 送信しない（[`GateStore::start_reserve`]）。
 pub const START_RESERVE: Duration = Duration::from_millis(500);
+/// メタデータサーバのアクセストークンを、期限のこの時間前に取り直す（暫定。未決）。
+pub const TOKEN_REFRESH_MARGIN: Duration = Duration::from_secs(60);
 
 const API_ROOT: &str = "https://firestore.googleapis.com/v1/";
 const METADATA_ROOT: &str = "http://metadata.google.internal/computeMetadata/v1/";
@@ -96,8 +98,12 @@ impl TokenSource for MetadataToken {
             let body =
                 metadata_get(&self.client, "instance/service-accounts/default/token").await?;
             let parsed: TokenResponse = serde_json::from_slice(&body).map_err(|_| StoreError)?;
-            // 期限の1分前に取り直す
-            let until = Instant::now() + Duration::from_secs(parsed.expires_in.saturating_sub(60));
+            let until = Instant::now()
+                + Duration::from_secs(
+                    parsed
+                        .expires_in
+                        .saturating_sub(TOKEN_REFRESH_MARGIN.as_secs()),
+                );
             *cached = Some((parsed.access_token.clone(), until));
             Ok(parsed.access_token)
         })

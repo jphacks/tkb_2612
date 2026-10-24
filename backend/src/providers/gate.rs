@@ -43,21 +43,43 @@ pub enum QuotaPeriod {
     Month,
 }
 
+const MINUTE_MS: i64 = 60_000;
+const HOUR_MS: i64 = 60 * MINUTE_MS;
+const DAY_MS: i64 = 24 * HOUR_MS;
+
 impl QuotaPeriod {
     /// `now_ms` を含む期間の開始（UNIXミリ秒）。
     pub fn start_ms(self, now_ms: i64) -> i64 {
-        const MINUTE: i64 = 60_000;
-        const HOUR: i64 = 60 * MINUTE;
-        const DAY: i64 = 24 * HOUR;
         match self {
-            QuotaPeriod::Minute => now_ms.div_euclid(MINUTE) * MINUTE,
-            QuotaPeriod::Hour => now_ms.div_euclid(HOUR) * HOUR,
-            QuotaPeriod::Day => now_ms.div_euclid(DAY) * DAY,
+            QuotaPeriod::Minute => now_ms.div_euclid(MINUTE_MS) * MINUTE_MS,
+            QuotaPeriod::Hour => now_ms.div_euclid(HOUR_MS) * HOUR_MS,
+            QuotaPeriod::Day => now_ms.div_euclid(DAY_MS) * DAY_MS,
             QuotaPeriod::Month => {
                 let now = DateTime::<Utc>::from_timestamp_millis(now_ms).unwrap_or_default();
                 NaiveDate::from_ymd_opt(now.year(), now.month(), 1)
                     .and_then(|d| d.and_hms_opt(0, 0, 0))
                     .map_or(0, |t| t.and_utc().timestamp_millis())
+            }
+        }
+    }
+
+    /// `now_ms` を含む期間の終わり（次の期間の開始、UNIXミリ秒）。
+    pub fn end_ms(self, now_ms: i64) -> i64 {
+        let start = self.start_ms(now_ms);
+        match self {
+            QuotaPeriod::Minute => start.saturating_add(MINUTE_MS),
+            QuotaPeriod::Hour => start.saturating_add(HOUR_MS),
+            QuotaPeriod::Day => start.saturating_add(DAY_MS),
+            QuotaPeriod::Month => {
+                let now = DateTime::<Utc>::from_timestamp_millis(start).unwrap_or_default();
+                let (year, month) = if now.month() == 12 {
+                    (now.year() + 1, 1)
+                } else {
+                    (now.year(), now.month() + 1)
+                };
+                NaiveDate::from_ymd_opt(year, month, 1)
+                    .and_then(|d| d.and_hms_opt(0, 0, 0))
+                    .map_or(i64::MAX, |t| t.and_utc().timestamp_millis())
             }
         }
     }
@@ -200,6 +222,16 @@ fn acquire(state: &mut GateState, policy: &GatePolicy, now_ms: i64, within_ms: i
     // 送信の開始は判定から最大 `within_ms` 遅れ得るので、その最も遅い時刻を開始時刻とし、
     // リースも送信開始からの有効期間を確保する
     let start_by_ms = now_ms.saturating_add(within_ms);
+    // 送信が次の集計期間に入り得るなら、今の期間に数えずに境界まで待って判定し直す
+    if let Some(boundary) = policy
+        .quotas
+        .iter()
+        .map(|q| q.period.end_ms(now_ms))
+        .filter(|&end| start_by_ms >= end)
+        .min()
+    {
+        return Decision::Wait { until_ms: boundary };
+    }
     let lease = LeaseRecord {
         generation: state.next_generation,
         expires_at_ms: start_by_ms.saturating_add(duration_ms(policy.lease_ttl)),
@@ -622,6 +654,72 @@ mod tests {
             }
         );
         assert_eq!(state.last_start_ms, Some(1_500));
+    }
+
+    /// 送信の遅れが集計期間の境界をまたぎ得るなら、境界まで待たせて次の期間に数える。
+    #[test]
+    fn grant_that_could_start_in_the_next_period_waits_for_the_boundary() {
+        let mut p = policy();
+        p.quotas.push(Quota {
+            period: QuotaPeriod::Minute,
+            limit: 10,
+        });
+        let op = GateOp::Acquire {
+            policy: &p,
+            start_within: Duration::from_millis(500),
+        };
+        let mut state = GateState::default();
+        let day = 86_400_000;
+        assert_eq!(
+            apply(&mut state, op, day - 500),
+            Decision::Wait { until_ms: day }
+        );
+        assert_eq!(
+            apply(&mut state, op, day - 1),
+            Decision::Wait { until_ms: day }
+        );
+        let Decision::Granted { start_by_ms, .. } = apply(&mut state, op, day) else {
+            panic!("境界の後は許可");
+        };
+        assert_eq!(start_by_ms, day + 500);
+        assert!(
+            state
+                .counters
+                .iter()
+                .all(|c| c.period_start_ms == day && c.count == 1)
+        );
+        // 分の境界でも同じ（日の途中）
+        let minute_end = day + 120_000;
+        let mut state = GateState::default();
+        assert_eq!(
+            apply(&mut state, op, minute_end - 200),
+            Decision::Wait {
+                until_ms: minute_end
+            }
+        );
+        assert!(state.counters.iter().all(|c| c.count == 0));
+        // 遅れを検査しない保存方式（0）は境界の直前でも許可する
+        let zero = GateOp::Acquire {
+            policy: &p,
+            start_within: Duration::ZERO,
+        };
+        assert!(matches!(
+            apply(&mut GateState::default(), zero, day - 1),
+            Decision::Granted { .. }
+        ));
+    }
+
+    #[test]
+    fn period_ends_at_the_next_utc_boundary() {
+        let at = |s: &str| DateTime::parse_from_rfc3339(s).unwrap().timestamp_millis();
+        let t = at("2026-12-31T23:59:59.900Z");
+        assert_eq!(QuotaPeriod::Minute.end_ms(t), at("2027-01-01T00:00:00Z"));
+        assert_eq!(QuotaPeriod::Hour.end_ms(t), at("2027-01-01T00:00:00Z"));
+        assert_eq!(QuotaPeriod::Day.end_ms(t), at("2027-01-01T00:00:00Z"));
+        assert_eq!(QuotaPeriod::Month.end_ms(t), at("2027-01-01T00:00:00Z"));
+        let t = at("2026-02-14T10:30:00Z");
+        assert_eq!(QuotaPeriod::Month.end_ms(t), at("2026-03-01T00:00:00Z"));
+        assert_eq!(QuotaPeriod::Hour.end_ms(t), at("2026-02-14T11:00:00Z"));
     }
 
     #[test]

@@ -8,10 +8,13 @@ mod common;
 use std::sync::Arc;
 
 use accident_route_backend::api::route_response::{
-    MAX_NAVIGATION_BYTES, MAX_SAFE_INTEGER, NAV_MAX_SECTIONS, NAV_MAX_VERTICES,
-    render_route_response,
+    ACCIDENT_MAX_PEOPLE, MAX_NAVIGATION_BYTES, MAX_SAFE_INTEGER, MIN_SOURCE_YEAR, NAV_MAX_SECTIONS,
+    NAV_MAX_VERTICES, ROUTE_MAX_DISTANCE_M, render_route_response,
 };
-use accident_route_backend::contract::{LonLat, NavigationData, NavigationSection, RouteOutcome};
+use accident_route_backend::contract::{
+    AccidentPoint, EvaluatedRoute, HighRiskSegment, LonLat, NavigationData, NavigationSection,
+    RouteOutcome,
+};
 use accident_route_backend::testing::fixtures::{
     check_outcome_invariants, expected_route_outcome, fixture_dataset_info, route_example,
     route_response_json, route_response_names,
@@ -174,6 +177,131 @@ fn navigation_outside_the_openapi_ranges_is_rejected() {
     assert!(message.contains("ナビ区間数"), "{message}");
 }
 
+/// 前の区間の終わりより手前から始まるナビ区間（距離の逆行・重複）は拒否する。
+#[test]
+fn navigation_sections_must_advance_in_distance() {
+    // 5頂点・4小線分のうち、sid 0と2を対象にした2区間の選定候補を作る
+    let mut base = expected_route_outcome("twoSelected");
+    let selected = base.safest.unwrap();
+    let c = &mut base.candidates[selected];
+    let origin = c.path.coordinates[0];
+    c.path.coordinates = (0..5)
+        .map(|i| LonLat::new(origin.lon + i as f64 * 1e-4, origin.lat))
+        .collect();
+    let template = c.high_risk_sections[0];
+    c.high_risk_total = 2;
+    c.high_risk_sections = [0u32, 2]
+        .map(|sid| HighRiskSegment {
+            source_vertex_start_index: sid,
+            start: c.path.coordinates[sid as usize],
+            end: c.path.coordinates[sid as usize + 1],
+            ..template
+        })
+        .to_vec();
+    let nav = c.navigation.as_mut().unwrap();
+    let section = nav.sections[0];
+    nav.vertex_distances_m = vec![0.0, 10.0, 20.0, 30.0, 40.0];
+    nav.length_m = 40.0;
+    nav.sections = [(0u32, 0.0, 10.0), (2, 20.0, 30.0)]
+        .map(|(sid, start_m, end_m)| NavigationSection {
+            start_segment_index: sid,
+            end_segment_index: sid,
+            start_m,
+            end_m,
+            ..section
+        })
+        .to_vec();
+    assert!(
+        render_route_response(&base).is_ok(),
+        "{:?}",
+        render_route_response(&base).err()
+    );
+    let with = |start_m: f64, end_m: f64| {
+        let mut outcome = base.clone();
+        let nav = outcome.candidates[selected].navigation.as_mut().unwrap();
+        nav.sections[1].start_m = start_m;
+        nav.sections[1].end_m = end_m;
+        render_route_response(&outcome)
+    };
+    let message = with(0.0, 1.0).expect_err("逆行は拒否").0;
+    assert!(message.contains("逆行"), "{message}");
+    assert!(with(9.0, 30.0).is_err(), "重複も拒否");
+    // 前区間の終わりちょうどからの開始と、0長の区間は認める
+    assert!(with(10.0, 30.0).is_ok());
+    assert!(with(25.0, 25.0).is_ok());
+}
+
+/// 選定状態に関係なく、全候補のgeometry・duration・distance・座標をOpenAPIの範囲で検査する。
+#[test]
+fn every_candidate_is_checked_against_the_openapi_ranges() {
+    let base = expected_route_outcome("twoSelected");
+    let unselected = base
+        .candidates
+        .iter()
+        .position(|c| c.navigation.is_none())
+        .unwrap();
+    let with = |edit: &dyn Fn(&mut EvaluatedRoute)| {
+        let mut outcome = base.clone();
+        edit(&mut outcome.candidates[unselected]);
+        rejection(&outcome)
+    };
+    let message = with(&|c| {
+        let first = c.path.coordinates[0];
+        c.path.coordinates = (0..NAV_MAX_VERTICES + 1)
+            .map(|i| LonLat::new(first.lon + i as f64 * 1e-7, first.lat))
+            .collect();
+    });
+    assert!(message.contains("頂点数"), "{message}");
+    let message = with(&|c| c.path.coordinates.truncate(1));
+    assert!(message.contains("頂点数"), "{message}");
+    for duration in [0.0, -1.0] {
+        let message = with(&|c| c.path.duration_s = duration);
+        assert!(message.contains("duration"), "{message}");
+    }
+    for distance in [0.0, ROUTE_MAX_DISTANCE_M + 0.5] {
+        let message = with(&|c| c.path.distance_m = distance);
+        assert!(message.contains("distance"), "{message}");
+    }
+    for p in [LonLat::new(121.999, 35.0), LonLat::new(139.0, 46.001)] {
+        let message = with(&|c| c.path.coordinates[0] = p);
+        assert!(message.contains("日本の範囲外"), "{message}");
+    }
+    assert!(render_route_response(&base).is_ok());
+}
+
+/// 事故点の属性（死者・負傷者999以下、年度1900以上、日付）と `data_years` の範囲。
+#[test]
+fn accident_attributes_and_data_years_are_checked() {
+    let base = expected_route_outcome("twoSelected");
+    let index = base
+        .candidates
+        .iter()
+        .position(|c| !c.accident_points.is_empty())
+        .unwrap();
+    let with = |edit: &dyn Fn(&mut AccidentPoint)| {
+        let mut outcome = base.clone();
+        edit(&mut outcome.candidates[index].accident_points[0]);
+        rejection(&outcome)
+    };
+    for message in [
+        with(&|p| p.deaths = ACCIDENT_MAX_PEOPLE + 1),
+        with(&|p| p.injuries = ACCIDENT_MAX_PEOPLE + 1),
+        with(&|p| p.source_year = MIN_SOURCE_YEAR - 1),
+        with(&|p| p.date = 18_991_231),
+        with(&|p| p.position = LonLat::new(155.0, 35.0)),
+    ] {
+        assert!(
+            message.contains("事故点") || message.contains("日本の範囲外"),
+            "{message}"
+        );
+    }
+    for years in [vec![1899], vec![2020, 2019], vec![2020, 2020]] {
+        let mut outcome = base.clone();
+        outcome.data_years = years;
+        assert!(rejection(&outcome).contains("data_years"));
+    }
+}
+
 /// 頂点数の上限15,000（navigationの頂点距離は頂点と同数）。
 #[test]
 fn navigation_vertex_count_is_bounded() {
@@ -187,10 +315,7 @@ fn navigation_vertex_count_is_bounded() {
     nav.vertex_distances_m = (0..n).map(|i| i as f64 * 0.1).collect();
     nav.length_m = *nav.vertex_distances_m.last().unwrap();
     let message = rejection(&outcome);
-    assert!(
-        message.contains("vertex_distances_mの長さが範囲外"),
-        "{message}"
-    );
+    assert!(message.contains("頂点数"), "{message}");
 }
 
 #[test]

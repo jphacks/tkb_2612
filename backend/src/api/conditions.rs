@@ -15,6 +15,7 @@ use crate::api::AppState;
 use crate::api::error::{ApiError, json_ok};
 use crate::api::query::QueryParams;
 use crate::api::weather_code::weather_from_wmo;
+use crate::contract::geo::{LAT_RANGE, LON_RANGE};
 use crate::contract::{CancelToken, Interrupt, TokyoMinute, Weather};
 use crate::providers::open_meteo::{RoundedPoint, TOKYO_OFFSET_SECONDS, WeatherError};
 
@@ -25,6 +26,8 @@ pub const INVALID_LAT_LON: &str =
 
 /// 現況として扱う基準時刻の幅（分）。
 const CURRENT_WINDOW_MIN: i64 = 15;
+/// `datetime` を受け付ける最初と最後の年（Asia/Tokyo、各年の1月1日0時〜12月31日23時59分）。
+const DATETIME_YEARS: (i32, i32) = (2000, 2100);
 
 /// 検証済みの入力。
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -48,8 +51,8 @@ pub fn parse_input(query: Option<&str>) -> Result<ConditionsInput, ApiError> {
     let point = match (lat, lon) {
         (None, None) => None,
         (Some(lat), Some(lon)) => {
-            let lat = parse_decimal(lat).filter(|v| (20.0..=46.0).contains(v));
-            let lon = parse_decimal(lon).filter(|v| (122.0..=154.0).contains(v));
+            let lat = parse_decimal(lat).filter(|v| LAT_RANGE.contains(v));
+            let lon = parse_decimal(lon).filter(|v| LON_RANGE.contains(v));
             let (Some(lat), Some(lon)) = (lat, lon) else {
                 return Err(ApiError::InvalidRequest(INVALID_LAT_LON));
             };
@@ -111,8 +114,10 @@ pub fn parse_datetime(text: &str) -> Option<NaiveDateTime> {
         .checked_sub_signed(ChronoDuration::seconds(offset_seconds))?
         .checked_add_signed(ChronoDuration::seconds(TOKYO_OFFSET_SECONDS))?;
     let tokyo = tokyo.with_second(0)?;
-    let min = NaiveDate::from_ymd_opt(2000, 1, 1)?.and_hms_opt(0, 0, 0)?;
-    let max = NaiveDate::from_ymd_opt(2100, 12, 31)?.and_hms_opt(23, 59, 0)?;
+    // 扱う範囲（backend-spec.md：2000-01-01T00:00〜2100-12-31T23:59、Asia/Tokyo）
+    let (first_year, last_year) = DATETIME_YEARS;
+    let min = NaiveDate::from_ymd_opt(first_year, 1, 1)?.and_hms_opt(0, 0, 0)?;
+    let max = NaiveDate::from_ymd_opt(last_year, 12, 31)?.and_hms_opt(23, 59, 0)?;
     (min..=max).contains(&tokyo).then_some(tokyo)
 }
 

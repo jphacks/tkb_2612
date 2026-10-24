@@ -4,8 +4,8 @@
 //! 表記・固定値（`relaxed_conditions`・`radius_m`・`distance_weight_sigma_m`）だけを組み立て、
 //! 数値・件数・順序・選定・文言は②の値をそのまま使う（再計算しない）。
 //!
-//! 変換の前に相関制約・JSONの安全整数範囲・有限値・navigationのサイズ（5,000,000バイト）を
-//! 検査し、違反は内部契約違反（500）にする。間引いた200は返さない。
+//! 変換の前に相関制約・OpenAPIの値の範囲・JSONの安全整数範囲・有限値・navigationのサイズ
+//! （5,000,000バイト）を検査し、違反は内部契約違反（500）にする。間引いた200は返さない。
 
 use std::io;
 
@@ -14,6 +14,7 @@ use serde::ser::{Serialize, SerializeSeq, SerializeTuple, Serializer};
 use crate::contract::engine::{
     DISTANCE_WEIGHT_SIGMA_M, MAX_ACCIDENT_POINTS, MAX_CANDIDATES, MAX_HIGH_RISK_SECTIONS, RADIUS_M,
 };
+use crate::contract::geo::{LAT_RANGE, LON_RANGE};
 use crate::contract::{
     AccidentPoint, AccidentTotals, EvaluatedRoute, HighRiskSegment, LonLat, NavigationData,
     RouteOutcome,
@@ -29,6 +30,13 @@ pub const NAV_MAX_LENGTH_M: f64 = 110_000.0;
 pub const NAV_MAX_VERTICES: usize = 15_000;
 pub const NAV_MAX_SECTIONS: usize = 8_233;
 pub const NAV_MAX_SEGMENT_INDEX: u32 = 16_465;
+/// OpenAPIの `LineString`（頂点数）・`RouteCandidate`（`distance`）の範囲。
+pub const ROUTE_VERTICES_RANGE: std::ops::RangeInclusive<usize> = 2..=15_000;
+pub const ROUTE_MAX_DISTANCE_M: f64 = 80_000.0;
+/// OpenAPIの `AccidentFeature`・`Years` の範囲。
+pub const ACCIDENT_MAX_PEOPLE: u16 = 999;
+pub const MIN_SOURCE_YEAR: u16 = 1900;
+pub const ACCIDENT_DATE_RANGE: std::ops::RangeInclusive<u32> = 19_000_101..=99_991_231;
 
 /// 変換できない結果（内部契約違反）。内容は内部の説明で、応答には出さない。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,9 +113,14 @@ fn finite_non_negative(value: f64, what: &str) -> Result<(), InvalidOutcome> {
     Ok(())
 }
 
+/// `Position`：有限で、日本の矩形（経度122〜154・緯度20〜46）の内側。
 fn check_position(p: LonLat, what: &str) -> Result<(), InvalidOutcome> {
     finite(p.lon, what)?;
-    finite(p.lat, what)
+    finite(p.lat, what)?;
+    if !LON_RANGE.contains(&p.lon) || !LAT_RANGE.contains(&p.lat) {
+        return violation(format!("{what}: 座標が日本の範囲外"));
+    }
+    Ok(())
 }
 
 fn check_totals(t: &AccidentTotals, what: &str) -> Result<(), InvalidOutcome> {
@@ -168,6 +181,11 @@ pub fn check_outcome(outcome: &RouteOutcome) -> Result<(), InvalidOutcome> {
     if outcome.reason.is_empty() || outcome.risk_note.is_empty() {
         return violation("reason・risk_noteが空");
     }
+    if outcome.data_years.iter().any(|&y| y < MIN_SOURCE_YEAR)
+        || outcome.data_years.windows(2).any(|w| w[0] >= w[1])
+    {
+        return violation("data_yearsが1900以上の昇順・重複なしでない");
+    }
     for (i, c) in outcome.candidates.iter().enumerate() {
         check_candidate(outcome, i, c)?;
     }
@@ -182,6 +200,15 @@ fn check_candidate(
     let id = route_id(i);
     finite(c.path.duration_s, &id)?;
     finite(c.path.distance_m, &id)?;
+    if c.path.duration_s <= 0.0
+        || c.path.distance_m <= 0.0
+        || c.path.distance_m > ROUTE_MAX_DISTANCE_M
+    {
+        return violation(format!("{id}: duration・distanceが範囲外"));
+    }
+    if !ROUTE_VERTICES_RANGE.contains(&c.path.coordinates.len()) {
+        return violation(format!("{id}: geometryの頂点数が範囲外"));
+    }
     for p in &c.path.coordinates {
         check_position(*p, &id)?;
     }
@@ -205,6 +232,13 @@ fn check_candidate(
     for p in &c.accident_points {
         safe(p.id, &id)?;
         check_position(p.position, &id)?;
+        if p.deaths > ACCIDENT_MAX_PEOPLE
+            || p.injuries > ACCIDENT_MAX_PEOPLE
+            || p.source_year < MIN_SOURCE_YEAR
+            || !ACCIDENT_DATE_RANGE.contains(&p.date)
+        {
+            return violation(format!("{id}: 事故点の属性が範囲外"));
+        }
     }
     safe(c.high_risk_total, &id)?;
     let sections = usize::try_from(c.high_risk_total)
@@ -269,6 +303,7 @@ fn check_navigation(
     }
     let mut covered = 0u64;
     let mut previous_end: Option<u32> = None;
+    let mut previous_end_m = 0.0;
     for s in &nav.sections {
         finite(s.start_m, id)?;
         finite(s.end_m, id)?;
@@ -283,8 +318,13 @@ fn check_navigation(
         if previous_end.is_some_and(|e| s.start_segment_index <= e.saturating_add(1)) {
             return violation(format!("{id}: ナビ区間の順序・間隔が不正"));
         }
+        // 距離も区間の順に進む（0長の区間と、前区間の終わりちょうどからの開始は認める）
+        if s.start_m < previous_end_m {
+            return violation(format!("{id}: ナビ区間の距離が逆行・重複している"));
+        }
         covered += u64::from(s.end_segment_index - s.start_segment_index) + 1;
         previous_end = Some(s.end_segment_index);
+        previous_end_m = s.end_m;
     }
     if covered != c.high_risk_total {
         return violation(format!("{id}: Σ(E−S+1)がhigh_risk_totalと異なる"));

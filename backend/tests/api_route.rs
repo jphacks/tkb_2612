@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use accident_route_backend::api::transfer::{ConnectionKill, TransferBody};
-use accident_route_backend::contract::{EngineError, Interrupt, LonLat, RouteOutcome};
+use accident_route_backend::contract::{EngineError, Interrupt};
 use accident_route_backend::testing::fixtures::{
     expected_route_outcome, fixture_dataset_info, route_example,
 };
@@ -251,30 +251,15 @@ async fn gzip_is_required_when_allowed_and_absent_otherwise() {
 }
 
 /// 未選定の候補（twoSelectedのroute-3）のgeometryを大きくして、送信バッファより大きい応答を作る。
-fn huge_outcome(vertices: usize) -> RouteOutcome {
-    let mut outcome = expected_route_outcome("twoSelected");
-    let index = outcome
-        .candidates
-        .iter()
-        .position(|c| c.navigation.is_none())
-        .unwrap();
-    outcome.candidates[index].path.coordinates = (0..vertices)
-        .map(|i| {
-            LonLat::new(
-                139.0 + i as f64 * 1.234_567e-7,
-                35.0 + i as f64 * 7.654_321e-8,
-            )
-        })
-        .collect();
-    outcome
-}
+/// 読まないクライアントの受信バッファ（バイト）。
+const STALLED_RECV_BUFFER: u32 = 64 * 1024;
 
 /// 転送期限：送信開始から `ROUTE_TRANSFER_TIMEOUT_MS` で、読まないクライアントとの接続を切る。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn transfer_deadline_closes_a_stalled_connection() {
     let engine = Arc::new(StubEngine::new(
         fixture_dataset_info(),
-        StubEvaluation::Fixed(Box::new(huge_outcome(1_000_000))),
+        StubEvaluation::Fixed(Box::new(common_large::large_outcome())),
     ));
     let mut builder = TestAppBuilder {
         engine: Some(engine),
@@ -284,7 +269,10 @@ async fn transfer_deadline_closes_a_stalled_connection() {
     builder.settings.route_transfer_timeout = Duration::from_millis(300);
     let app = builder.build();
     let server = LiveServer::start(app.router.clone()).await;
-    let mut stream = tokio::net::TcpStream::connect(server.addr).await.unwrap();
+    // 契約内の最大級の応答（約6.2MB）が送信・受信バッファに収まらないよう、受信側を小さくする
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.set_recv_buffer_size(STALLED_RECV_BUFFER).unwrap();
+    let mut stream = socket.connect(server.addr).await.unwrap();
     let body = common::valid_route_body().to_string();
     let request = format!(
         "POST /api/route HTTP/1.1\r\nhost: test\r\ncontent-type: application/json\r\naccept-encoding: identity\r\ncontent-length: {}\r\n\r\n{body}",
