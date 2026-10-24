@@ -245,37 +245,44 @@ describe("App search flow and condition ownership", () => {
     });
   });
 
-  it("unblocks the condition form after canceling the 15-minute refresh by navigating back", async () => {
+  it("locks inputs without a cancel action while the 15-minute refresh and search are pending", async () => {
     const user = await openConditions();
     const later = Date.now() + 16 * 60_000;
     vi.spyOn(Date, "now").mockReturnValue(later);
-    api.getConditions.mockImplementationOnce(
-      (
-        _datetime: string,
-        _origin: LatLon,
-        _dest: LatLon,
-        signal: AbortSignal,
-      ) =>
-        new Promise((_resolve, reject) => {
-          signal.addEventListener(
-            "abort",
-            () => reject(new DOMException("cancelled", "AbortError")),
-            { once: true },
-          );
-        }),
-    );
+    const pending = deferred<ConditionsResponse>();
+    api.getConditions.mockImplementationOnce(() => pending.promise);
     await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
     await screen.findByRole("heading", { name: "ルートを検索しています" });
     expect(api.searchRoutes).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "条件選択に戻る" }));
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "ルートを比較する" }),
-      ).toBeEnabled(),
+    expect(
+      screen.queryByRole("button", { name: /キャンセル/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "条件選択に戻る" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "再検索" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "AcciLessNavi 地点入力へ" }),
+    ).toBeDisabled();
+    for (const input of screen.getAllByRole("combobox"))
+      expect(input).toBeDisabled();
+    await act(async () =>
+      pending.resolve(
+        createDemoConditions("2026-10-24T12:00+09:00", DEMO_PLACES[0]),
+      ),
     );
-    await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
     await screen.findByRole("group", { name: "表示する経路" });
     expect(api.searchRoutes).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "条件選択に戻る" })).toBeEnabled();
+  });
+
+  it("shows why automatic day type and weather were chosen", async () => {
+    await openConditions();
+    expect(
+      await screen.findByText(/自動：(平日|休日)（.+）/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/自動：晴（Open-Meteo、.+の予報・デモの固定値）/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/祝日表の収録範囲外/)).toBeInTheDocument();
   });
 
   it("waits for recovered automatic conditions after leaving the conditions-error scenario", async () => {

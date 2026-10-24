@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type {
+  ConditionsResponse,
   ConditionValues,
   DayType,
   Period,
@@ -37,6 +38,8 @@ type Props = {
   onDeparture: (mode: "now" | "custom", dateTime: string) => void;
   busy: boolean;
   warning: string;
+  info?: ConditionsResponse | null;
+  demo?: boolean;
   compact?: boolean;
 };
 const periods: { value: Period; hours: string; Icon: LucideIcon }[] = [
@@ -58,6 +61,22 @@ const modes = [
   { value: "bike", label: "自転車", Icon: Bike },
   { value: "car", label: "自動車", Icon: CarFront },
 ] as const;
+
+/** "2026-10-31T14:00:00+09:00" → "10/31 14:00" (already Japan time). */
+const shortTime = (iso: string) =>
+  `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))} ${iso.slice(11, 16)}`;
+
+/** frontend-spec 4: show why each automatic value was chosen. */
+function autoNotes(info: ConditionsResponse, auto: AutoFields, demo: boolean) {
+  const notes: Partial<Record<keyof AutoFields, string>> = {};
+  if (auto.day_type)
+    notes.day_type = `自動：${info.day_type}（${info.day_type_reason}）`;
+  if (auto.weather && info.weather && info.weather_source) {
+    const source = info.weather_source;
+    notes.weather = `自動：${info.weather}（${source.provider}、${shortTime(source.target_time)}の${source.kind === "current" ? "現況" : "予報"}${demo ? "・デモの固定値" : ""}）`;
+  }
+  return notes;
+}
 
 function Choice({
   selected,
@@ -100,8 +119,13 @@ export default function ConditionFields({
   onDeparture,
   busy,
   warning,
+  info = null,
+  demo = false,
   compact = false,
 }: Props) {
+  const notes = info ? autoNotes(info, auto, demo) : {};
+  const note = (key: keyof AutoFields) =>
+    notes[key] && <p className="field-help">{notes[key]}</p>;
   const heading = (label: string, key: keyof AutoFields) => (
     <div className="group-heading">
       <span>
@@ -155,6 +179,11 @@ export default function ConditionFields({
             onChange={(event) => onDeparture("custom", event.target.value)}
           />
         )}
+        {info && (
+          <p className="field-help">
+            判定の基準時刻：{shortTime(info.datetime)}
+          </p>
+        )}
       </fieldset>
       <fieldset>
         <legend>移動手段</legend>
@@ -173,6 +202,12 @@ export default function ConditionFields({
       <fieldset>
         <legend className="sr-only">天気</legend>
         {heading("天気", "weather")}
+        {note("weather")}
+        {notes.weather && (
+          <p className="field-help">
+            事故記録の天候は発生時の現場での判定で、自動取得の天候は気象モデルの推定値です。
+          </p>
+        )}
         <div className="choices" role="radiogroup" aria-label="天気">
           {weathers.map(({ value, Icon }) => (
             <Choice
@@ -224,6 +259,12 @@ export default function ConditionFields({
       <fieldset>
         <legend className="sr-only">曜日区分</legend>
         {heading("曜日区分", "day_type")}
+        {note("day_type")}
+        {info && !info.holiday_table_covered && (
+          <p className="notice warning" role="status">
+            祝日表の収録範囲外の日付のため、曜日区分は土日と年末年始だけで判定しています。
+          </p>
+        )}
         <div className="segmented" role="radiogroup" aria-label="曜日区分">
           {(["平日", "休日", "all"] as const).map((value) => (
             <button

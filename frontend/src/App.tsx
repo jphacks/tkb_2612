@@ -49,6 +49,17 @@ const scenarios: { id: Scenario; label: string }[] = [
   { id: "map-error", label: "地図利用不可" },
 ];
 
+function geolocationMessage(failure: GeolocationPositionError): string {
+  switch (failure.code) {
+    case failure.PERMISSION_DENIED:
+      return "位置情報の利用が許可されていません。住所を入力してください。";
+    case failure.TIMEOUT:
+      return "現在地の取得がタイムアウトしました。再試行するか、住所を入力してください。";
+    default:
+      return "現在地を取得できませんでした。再試行するか、住所を入力してください。";
+  }
+}
+
 export default function App() {
   const [intro, setIntro] = useState(true);
   const [page, setPage] = useState<Page>("places");
@@ -66,11 +77,15 @@ export default function App() {
   const [dateTime, setDateTime] = useState(() => toTokyoInput(new Date()));
   const [conditionBusy, setConditionBusy] = useState(false);
   const [conditionWarning, setConditionWarning] = useState("");
+  const [conditionInfo, setConditionInfo] = useState<ConditionsResponse | null>(
+    null,
+  );
   const [conditionRevision, setConditionRevision] = useState(0);
   const lastAutoAt = useRef(0);
   const [healthWarning, setHealthWarning] = useState("");
   const [dataBlocked, setDataBlocked] = useState(false);
   const [healthRevision, setHealthRevision] = useState(0);
+  const healthDataset = useRef<string | null>(null);
   const [result, setResult] = useState<RouteResponse | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
@@ -98,7 +113,8 @@ export default function App() {
     const abort = new AbortController();
     setHealthWarning("");
     getHealth(abort.signal)
-      .then(() => {
+      .then((health) => {
+        healthDataset.current = health.dataset_id;
         setDataBlocked(false);
       })
       .catch((failure) => {
@@ -202,6 +218,7 @@ export default function App() {
       if (signal.aborted || generation !== conditionGeneration.current)
         throw new DOMException("キャンセル", "AbortError");
       setConditionWarning(warning);
+      setConditionInfo(data);
       const next = { ...valuesRef.current };
       if (autoRef.current.period) next.period = data?.period ?? "all";
       if (autoRef.current.day_type) next.day_type = data?.day_type ?? "all";
@@ -293,6 +310,14 @@ export default function App() {
       if (version !== requestVersion.current || abort.signal.aborted) return;
       setResult(response);
       setSelectedRoute(response.safest_id ?? response.fastest_id);
+      // frontend-spec 3: a different data generation re-checks /api/health once.
+      if (
+        healthDataset.current !== null &&
+        response.dataset_id !== healthDataset.current
+      ) {
+        healthDataset.current = response.dataset_id;
+        setHealthRevision((count) => count + 1);
+      }
     } catch (failure) {
       if (abort.signal.aborted || version !== requestVersion.current) return;
       setError(
@@ -320,6 +345,12 @@ export default function App() {
       );
       return;
     }
+    if (!window.isSecureContext) {
+      setLocationMessage(
+        "HTTPSで開いたページでのみ現在地を利用できます。住所を入力してください。",
+      );
+      return;
+    }
     if (!navigator.geolocation) {
       setLocationMessage(
         "このブラウザーでは現在地を利用できません。住所を入力してください。",
@@ -332,7 +363,17 @@ export default function App() {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         if (locationRequest.current !== token) return;
-        const { latitude: lat, longitude: lon } = position.coords;
+        const { latitude: lat, longitude: lon, accuracy } = position.coords;
+        if (
+          ![lat, lon, accuracy].every(Number.isFinite) ||
+          accuracy <= 0
+        ) {
+          setLocating(false);
+          setLocationMessage(
+            "現在地を正しく取得できませんでした。住所を入力してください。",
+          );
+          return;
+        }
         if (lat < 20 || lat > 46 || lon < 122 || lon > 154) {
           setLocating(false);
           setLocationMessage("日本国内の地点を指定してください。");
@@ -342,15 +383,17 @@ export default function App() {
           text: "現在地",
           place: { label: "現在地", lat, lon },
         });
-      },
-      () => {
-        if (locationRequest.current !== token) return;
-        setLocating(false);
         setLocationMessage(
-          "現在地を取得できませんでした。住所を入力するか、位置情報の設定を確認してください。",
+          `現在地を出発地に設定しました（精度 約${Math.round(accuracy)}m）。`,
         );
       },
-      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
+      (failure) => {
+        if (locationRequest.current !== token) return;
+        setLocating(false);
+        setLocationMessage(geolocationMessage(failure));
+      },
+      // frontend-spec 7.1
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
     );
   }
 
@@ -403,6 +446,8 @@ export default function App() {
       onDeparture={changeDeparture}
       busy={conditionBusy}
       warning={conditionWarning}
+      info={conditionInfo}
+      demo={isDemo}
       compact={page === "results"}
     />
   );
@@ -418,6 +463,7 @@ export default function App() {
           <button
             className="wordmark"
             type="button"
+            disabled={searching}
             onClick={() => {
               if (page !== "places") {
                 invalidate();
@@ -522,15 +568,7 @@ export default function App() {
                 <div className="map-search-status result-empty" role="status">
                   <Navigation className="spin" size={28} />
                   <h2>ルートを検索しています</h2>
-                  <button
-                    className="secondary"
-                    onClick={() => {
-                      invalidate();
-                      setConditionBusy(false);
-                    }}
-                  >
-                    検索をキャンセル
-                  </button>
+                  <p>応答があるまでお待ちください。</p>
                 </div>
               ) : error ? (
                 <div className="map-search-status result-empty" role="alert">
@@ -572,7 +610,8 @@ export default function App() {
                   検索条件
                 </h1>
               </div>
-              <div className="panel-editor">
+              {/* frontend-spec 3: inputs stay locked while searching; there is no cancel. */}
+              <fieldset className="panel-editor" disabled={searching}>
                 {places}
                 {fields}
                 <button
@@ -587,15 +626,12 @@ export default function App() {
                 </button>
                 <button
                   className="text-button panel-back"
-                  onClick={() => {
-                    if (searching) invalidate();
-                    setPage("conditions");
-                  }}
+                  onClick={() => setPage("conditions")}
                 >
                   <ArrowLeft size={15} />
                   条件選択に戻る
                 </button>
-              </div>
+              </fieldset>
             </aside>
           </main>
         )}
