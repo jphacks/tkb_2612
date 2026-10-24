@@ -1,15 +1,19 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, LoaderCircle, MapPin, Search, X } from "lucide-react";
 import { isDemo, searchPlaces } from "../api/client";
-import type { Place, Scenario } from "../lib/types";
+import { describeError } from "../api/errorMessage";
+import type { GeocodeResponse, Place, Scenario } from "../lib/types";
 
 export type LocationValue = { text: string; place: Place | null };
+export type GeocodeAttribution = GeocodeResponse["attribution"];
 type Props = {
   label: string;
   value: LocationValue;
   onChange: (value: LocationValue) => void;
   scenario: Scenario;
   action?: React.ReactNode;
+  /** Receives the provider attribution of each geocode response (frontend-spec 10). */
+  onAttribution?: (attribution: GeocodeAttribution) => void;
 };
 
 export default function LocationInput({
@@ -18,12 +22,11 @@ export default function LocationInput({
   onChange,
   scenario,
   action,
+  onAttribution,
 }: Props) {
   const id = useId();
   const [items, setItems] = useState<Place[]>([]);
-  const [attribution, setAttribution] = useState<
-    { text: string; url: string }[]
-  >([]);
+  const [attribution, setAttribution] = useState<GeocodeAttribution>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [busy, setBusy] = useState(false);
@@ -74,6 +77,7 @@ export default function LocationInput({
           if (generation.current !== token) return;
           setItems(data.results.slice(0, 5));
           setAttribution(data.attribution);
+          onAttribution?.(data.attribution);
           setMessage(
             data.results.length
               ? ""
@@ -81,11 +85,7 @@ export default function LocationInput({
           );
         } catch (error) {
           if (abort.signal.aborted || generation.current !== token) return;
-          setMessage(
-            error instanceof Error
-              ? error.message
-              : "住所候補を取得できませんでした。",
-          );
+          setMessage(describeError(error, "住所候補を取得できませんでした。"));
         } finally {
           if (generation.current === token) setBusy(false);
         }

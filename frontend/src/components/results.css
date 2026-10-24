@@ -141,12 +141,6 @@
   color: #64748b;
   font-size: 12px;
 }
-.result-attribution {
-  color: #64748b;
-  font-size: 10px;
-  line-height: 1.9;
-  margin-top: 16px;
-}
 .result-sections-list {
   display: grid;
   gap: 8px;

@@ -148,7 +148,9 @@ async function switchScenario(
 describe("App search flow and condition ownership", () => {
   it("keeps conditions visible and preserves them when the sidebar is hidden and reopened", async () => {
     const user = await openResults();
-    const sidebar = screen.getByRole("complementary", { name: "検索条件" });
+    const sidebar = screen.getByRole("complementary", {
+      name: "検索結果と条件",
+    });
     expect(
       within(sidebar).getByRole("combobox", { name: "目的地" }),
     ).toHaveValue(DEMO_PLACES[1].label);
@@ -266,7 +268,9 @@ describe("App search flow and condition ownership", () => {
     expect(
       screen.queryByRole("button", { name: /キャンセル/ }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "条件選択に戻る" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "条件選択に戻る" }),
+    ).toBeDisabled();
     expect(screen.getByRole("button", { name: "再検索" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "AcciLessNavi 地点入力へ" }),
@@ -280,7 +284,9 @@ describe("App search flow and condition ownership", () => {
     );
     await screen.findByRole("group", { name: "表示する経路" });
     expect(api.searchRoutes).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "条件選択に戻る" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "条件選択に戻る" }),
+    ).toBeEnabled();
   });
 
   it("shows why automatic day type and weather were chosen", async () => {
@@ -366,7 +372,9 @@ describe("App search flow and condition ownership", () => {
       fireEvent.change(screen.getByRole("combobox", { name }), {
         target: { value: query },
       });
-      await user.click(screen.getByRole("button", { name: `${name}の候補を検索` }));
+      await user.click(
+        screen.getByRole("button", { name: `${name}の候補を検索` }),
+      );
       await user.click(
         await screen.findByRole("option", { name: DEMO_PLACES[index].label }),
       );
@@ -446,7 +454,7 @@ describe("App search flow and condition ownership", () => {
     await waitFor(() => expect(api.getHealth).toHaveBeenCalledTimes(1));
     api.getHealth
       .mockRejectedValueOnce(
-        new ApiError("データを利用できません。", "data_unavailable", 503),
+        new ApiError("サーバーの説明文", "data_unavailable", 503),
       )
       .mockResolvedValueOnce(demoHealth);
     api.searchRoutes.mockImplementation((request: RouteRequest) =>
@@ -457,21 +465,33 @@ describe("App search flow and condition ownership", () => {
     );
     await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
     await screen.findByRole("group", { name: "表示する経路" });
-    expect(await screen.findByText("データを利用できません。")).toBeVisible();
+    expect(
+      await screen.findByText(
+        "事故データを準備しています。時間をおいて再試行してください。",
+      ),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "再検索" })).toBeDisabled();
 
     await user.click(screen.getByRole("radio", { name: "雨" }));
     expect(
       screen.queryByRole("group", { name: "表示する経路" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("データを利用できません。")).toBeVisible();
+    expect(
+      screen.getByText(
+        "事故データを準備しています。時間をおいて再試行してください。",
+      ),
+    ).toBeVisible();
     expect(
       screen.getByRole("button", { name: "変更した条件で再検索" }),
     ).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "準備状況を再確認" }));
     await waitFor(() =>
-      expect(screen.queryByText("データを利用できません。")).toBeNull(),
+      expect(
+        screen.queryByText(
+          "事故データを準備しています。時間をおいて再試行してください。",
+        ),
+      ).toBeNull(),
     );
     expect(api.getHealth).toHaveBeenCalledTimes(3);
     expect(screen.getByRole("button", { name: "再検索" })).toBeEnabled();
@@ -480,5 +500,135 @@ describe("App search flow and condition ownership", () => {
     );
     await screen.findByRole("group", { name: "表示する経路" });
     expect(api.searchRoutes).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("App result comparison and failures (frontend-spec 5, 10)", () => {
+  it("shows the aggregation settings and all candidates in the sidebar and syncs the selection with the map", async () => {
+    const user = await openResults();
+    const sidebar = screen.getByRole("complementary", {
+      name: "検索結果と条件",
+    });
+    const response: RouteResponse =
+      await api.searchRoutes.mock.results.at(-1)?.value;
+    await user.click(within(sidebar).getByText("集計条件と全候補"));
+    expect(
+      within(sidebar).getByText(`${response.data_years.join("・")}年`),
+    ).toBeVisible();
+    const fastestIndex = response.candidates.findIndex(
+      (route) => route.id === response.fastest_id,
+    );
+    await user.click(
+      within(sidebar).getByRole("button", { name: `候補${fastestIndex + 1}` }),
+    );
+    expect(
+      screen.getByRole("button", { name: "最短時間を選択" }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    // Editing a condition clears the table together with the result.
+    await user.click(within(sidebar).getByRole("radio", { name: "雨" }));
+    expect(
+      within(sidebar).queryByText("集計条件と全候補"),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["no_route", 502, /道路に近い地点/],
+    ["route_too_long", 422, /80km.*近づけて/],
+    ["service_busy", 503, /混み合って/],
+    ["invalid_response", undefined, /再読み込み/],
+    [
+      "brand_new_code",
+      500,
+      /^未知の失敗です。 時間をおいて再試行してください。$/,
+    ],
+  ])(
+    "shows the %s failure by code with a manual retry and keeps the inputs",
+    async (code, status, expected) => {
+      const user = await openConditions();
+      api.searchRoutes.mockRejectedValueOnce(
+        new ApiError("未知の失敗です。", code, status),
+      );
+      await user.click(
+        screen.getByRole("button", { name: "ルートを比較する" }),
+      );
+      const alert = await screen.findByRole("alert");
+      expect(within(alert).getByText(expected)).toBeInTheDocument();
+      expect(
+        within(alert).getByRole("button", { name: "再試行" }),
+      ).toBeEnabled();
+      expect(screen.getByRole("combobox", { name: "目的地" })).toHaveValue(
+        DEMO_PLACES[1].label,
+      );
+    },
+  );
+
+  it("always shows live data attribution, including the geocode providers", async () => {
+    mode.demo = false;
+    api.searchPlaces.mockImplementation((query: string) =>
+      Promise.resolve({
+        ...findDemoPlaces(query),
+        attribution: [
+          { text: "Powered by Geoapify", url: "https://www.geoapify.com/" },
+        ],
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(
+      screen.getByRole("button", { name: "動画をスキップして開始" }),
+    );
+    const footer = screen.getByRole("contentinfo", { name: "データの出典" });
+    await waitFor(() =>
+      expect(
+        within(footer).getByText(
+          new RegExp(`（${demoHealth.data_years.join("・")}年）`),
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      within(footer).getByRole("link", {
+        name: "Weather data by Open-Meteo.com",
+      }),
+    ).toBeInTheDocument();
+    const input = screen.getByRole("combobox", { name: "目的地" });
+    fireEvent.change(input, { target: { value: "上野" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(
+        within(footer).getByRole("link", { name: "Powered by Geoapify" }),
+      ).toHaveAttribute("href", "https://www.geoapify.com/"),
+    );
+  });
+
+  it("keeps live attribution visible on the result page when the sidebar is closed", async () => {
+    const user = await openResults();
+    // The helper uses the demo origin; the next render reads live mode.
+    mode.demo = false;
+    await user.click(
+      screen.getByRole("button", { name: "条件サイドバーを閉じる" }),
+    );
+    const footer = screen.getByRole("contentinfo", { name: "データの出典" });
+    expect(footer).toBeVisible();
+    expect(
+      within(footer).getByText(/過去の事故記録に基づく参考指標/),
+    ).toBeVisible();
+    expect(
+      within(footer).getByRole("link", {
+        name: "Weather data by Open-Meteo.com",
+      }),
+    ).toBeVisible();
+  });
+
+  it("explains a health network failure with the possible expired login", async () => {
+    api.getHealth
+      .mockReset()
+      .mockRejectedValue(
+        new ApiError("サーバーに接続できません。", "network_error"),
+      );
+    await openConditions();
+    expect(
+      await screen.findByText(/ログインの有効期限が切れた可能性があります/),
+    ).toBeInTheDocument();
   });
 });

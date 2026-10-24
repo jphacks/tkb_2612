@@ -77,6 +77,29 @@ const ROUTE_TIMEOUT_MS = 180_000;
 const DEFAULT_TIMEOUT_MS = 45_000;
 const CONDITIONS_TIMEOUT_MS = 10_000;
 
+/**
+ * frontend-spec 5: an error.code unknown to this build is still shown with its
+ * message and a retry hint, so only the envelope shape is required for it.
+ */
+function readError(data: unknown): {
+  error: { code: string; message: string };
+} {
+  try {
+    return validateError(data);
+  } catch (failure) {
+    const error = (data as { error?: unknown } | null)?.error as
+      { code?: unknown; message?: unknown } | undefined;
+    if (
+      typeof error?.code === "string" &&
+      error.code !== "" &&
+      typeof error.message === "string" &&
+      error.message !== ""
+    )
+      return { error: { code: error.code, message: error.message } };
+    throw failure;
+  }
+}
+
 async function requestJson<T>(
   path: string,
   parse: (data: unknown) => T,
@@ -105,6 +128,19 @@ async function requestJson<T>(
       signal: controller.signal,
       cache: "no-store",
     });
+    // frontend-spec 5: an expired IAP session redirects the API to a login page.
+    // The user is told to reload, never redirected. Other HTML (e.g. a proxy 502
+    // page) stays a plain non-JSON failure below.
+    if (
+      response.redirected ||
+      response.status === 401 ||
+      response.status === 403
+    )
+      throw new ApiError(
+        "ログインの有効期限が切れた可能性があります。",
+        "auth_required",
+        response.status,
+      );
     let data: unknown;
     try {
       data = await response.json();
@@ -117,7 +153,7 @@ async function requestJson<T>(
       );
     }
     if (!response.ok) {
-      const failure = validateError(data);
+      const failure = readError(data);
       throw new ApiError(
         failure.error.message,
         failure.error.code,
