@@ -273,7 +273,7 @@ paths:
                     dataset_id: '0000000000000000000000000000000000000000000000000000000000000000'
                 twoSelected:
                   summary: 2選定と未選定候補のnavigation
-                  description: 人工の固定応答例。選定route-1/route-2だけにナビデータを返し、route-3はnull。実事故の計算結果ではない。
+                  description: route-example-inputs.jsonの共通人工事故3件を全候補で72m集計した例。各候補2件、weighted_riskは12.21/3.64/8.34、削減率70.2%。選定route-1/route-2だけにナビデータを返し、route-3はnull。
                   value:
                     fastest_id: route-1
                     safest_id: route-2
@@ -287,19 +287,19 @@ paths:
                           - 35
                         - - 139.01
                           - 35
-                      accident_count: 1
+                      accident_count: 2
                       fatal_accidents: 1
-                      injury_accidents: 0
+                      injury_accidents: 1
                       deaths: 1
-                      injuries: 2
+                      injuries: 5
                       weather_match:
-                        accident_count: 1
+                        accident_count: 2
                         fatal_accidents: 1
-                        injury_accidents: 0
+                        injury_accidents: 1
                         deaths: 1
-                        injuries: 2
-                      weighted_risk: 12.0
-                      risk_per_km: 12.0
+                        injuries: 5
+                      weighted_risk: 12.21
+                      risk_per_km: 12.21
                       accident_points:
                         type: FeatureCollection
                         features:
@@ -318,7 +318,22 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
-                      points_shown: 1
+                        - type: Feature
+                          id: 1
+                          geometry:
+                            type: Point
+                            coordinates:
+                            - 139.0025
+                            - 35.0005
+                          properties:
+                            deaths: 0
+                            injuries: 3
+                            source_year: 2025
+                            date: 20250101
+                            weather: 晴
+                            period: 昼
+                            day_type: 休日
+                      points_shown: 2
                       high_risk_sections:
                         type: FeatureCollection
                         features:
@@ -337,7 +352,22 @@ paths:
                             segment_index: 6
                             source_vertex_start_index: 0
                             source_vertex_end_index: 1
-                      high_risk_total: 1
+                        - type: Feature
+                          id: route-1:segment-3
+                          geometry:
+                            type: LineString
+                            coordinates:
+                            - - 139.00230769230768
+                              - 35.0
+                            - - 139.00307692307692
+                              - 35.0
+                          properties:
+                            route_id: route-1
+                            severity_weight: 3
+                            segment_index: 3
+                            source_vertex_start_index: 0
+                            source_vertex_end_index: 1
+                      high_risk_total: 2
                       navigation:
                         projection_lat_deg: 35.0
                         length_m: 910.8567728809412
@@ -345,6 +375,12 @@ paths:
                         - 0.0
                         - 910.8567728809412
                         sections:
+                        - id: route-1:nav-3-3
+                          start_segment_index: 3
+                          end_segment_index: 3
+                          start_m: 210.19771681867874
+                          end_m: 280.263622424905
+                          severity_weight: 3
                         - id: route-1:nav-6-6
                           start_segment_index: 6
                           end_segment_index: 6
@@ -352,7 +388,7 @@ paths:
                           end_m: 490.4613392435837
                           severity_weight: 12
                       id: route-1
-                      exact_condition_count: 1
+                      exact_condition_count: 2
                       extra_minutes: 0.0
                       within_detour: true
                     - duration: 750
@@ -366,19 +402,19 @@ paths:
                           - 35.001
                         - - 139.01
                           - 35
-                      accident_count: 1
+                      accident_count: 2
                       fatal_accidents: 0
-                      injury_accidents: 1
+                      injury_accidents: 2
                       deaths: 0
-                      injuries: 3
+                      injuries: 11
                       weather_match:
-                        accident_count: 1
+                        accident_count: 2
                         fatal_accidents: 0
-                        injury_accidents: 1
+                        injury_accidents: 2
                         deaths: 0
-                        injuries: 3
-                      weighted_risk: 3.0
-                      risk_per_km: 2.727
+                        injuries: 11
+                      weighted_risk: 3.64
+                      risk_per_km: 3.309
                       accident_points:
                         type: FeatureCollection
                         features:
@@ -397,7 +433,22 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
-                      points_shown: 1
+                        - type: Feature
+                          id: 2
+                          geometry:
+                            type: Point
+                            coordinates:
+                            - 139.0025
+                            - 35.001000000000005
+                          properties:
+                            deaths: 0
+                            injuries: 8
+                            source_year: 2025
+                            date: 20250101
+                            weather: 晴
+                            period: 昼
+                            day_type: 休日
+                      points_shown: 2
                       high_risk_sections:
                         type: FeatureCollection
                         features:
@@ -412,7 +463,7 @@ paths:
                               - 35.000571428571426
                           properties:
                             route_id: route-2
-                            severity_weight: 3
+                            severity_weight: 11
                             segment_index: 3
                             source_vertex_start_index: 0
                             source_vertex_end_index: 1
@@ -430,9 +481,9 @@ paths:
                           end_segment_index: 3
                           start_m: 200.9162197483272
                           end_m: 267.8882929977696
-                          severity_weight: 3
+                          severity_weight: 11
                       id: route-2
-                      exact_condition_count: 1
+                      exact_condition_count: 2
                       extra_minutes: 2.5
                       within_detour: true
                     - duration: 900
@@ -446,22 +497,37 @@ paths:
                           - 35.002
                         - - 139.01
                           - 35
-                      accident_count: 1
+                      accident_count: 2
                       fatal_accidents: 0
-                      injury_accidents: 1
+                      injury_accidents: 2
                       deaths: 0
-                      injuries: 8
+                      injuries: 11
                       weather_match:
-                        accident_count: 1
+                        accident_count: 2
                         fatal_accidents: 0
-                        injury_accidents: 1
+                        injury_accidents: 2
                         deaths: 0
-                        injuries: 8
-                      weighted_risk: 8.0
-                      risk_per_km: 5.714
+                        injuries: 11
+                      weighted_risk: 8.34
+                      risk_per_km: 5.957
                       accident_points:
                         type: FeatureCollection
                         features:
+                        - type: Feature
+                          id: 1
+                          geometry:
+                            type: Point
+                            coordinates:
+                            - 139.0025
+                            - 35.0005
+                          properties:
+                            deaths: 0
+                            injuries: 3
+                            source_year: 2025
+                            date: 20250101
+                            weather: 晴
+                            period: 昼
+                            day_type: 休日
                         - type: Feature
                           id: 2
                           geometry:
@@ -477,7 +543,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
-                      points_shown: 1
+                      points_shown: 2
                       high_risk_sections:
                         type: FeatureCollection
                         features:
@@ -492,19 +558,19 @@ paths:
                               - 35.00114285714286
                           properties:
                             route_id: route-3
-                            severity_weight: 8
+                            severity_weight: 11
                             segment_index: 3
                             source_vertex_start_index: 0
                             source_vertex_end_index: 1
                       high_risk_total: 1
                       navigation: null
                       id: route-3
-                      exact_condition_count: 1
+                      exact_condition_count: 2
                       extra_minutes: 5.0
                       within_detour: true
                     extra_minutes: 2.5
-                    risk_reduction_percent: 75.0
-                    reason: 取得した3候補のうち、最短時間経路から+10分以内で、距離で重み付けしたリスクが最小の経路を選びました。追加2.5分、リスク75.0%減です。
+                    risk_reduction_percent: 70.2
+                    reason: 取得した3候補のうち、最短時間経路から+10分以内で、距離で重み付けしたリスクが最小の経路を選びました。追加2.5分、リスク70.2%減です。
                     warnings: []
                     relaxed_conditions: []
                     effective_conditions:
