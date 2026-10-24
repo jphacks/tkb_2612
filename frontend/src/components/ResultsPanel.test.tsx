@@ -140,7 +140,7 @@ describe("ResultsPanel", () => {
     const matched = example("noAccidents");
     const { unmount } = renderResult(matched);
     expect(
-      within(metricRow("指定天候と一致する事故")).getByText(/^0件/),
+      within(metricRow("指定天候と一致する事故")).getByText("0件"),
     ).toBeInTheDocument();
     unmount();
 

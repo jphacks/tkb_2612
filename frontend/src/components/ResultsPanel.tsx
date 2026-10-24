@@ -102,11 +102,26 @@ const metricRows: [string, (route: RouteCandidate) => string][] = [
     (route) => `${route.fatal_accidents} / ${route.injury_accidents}件`,
   ],
   ["死者 / 負傷者", (route) => `${route.deaths} / ${route.injuries}人`],
+  // weather_match=null (weather all) is not the same as zero matching accidents.
   [
     "指定天候と一致する事故",
     (route) =>
       route.weather_match
-        ? `${route.weather_match.accident_count}件（死亡事故 ${route.weather_match.fatal_accidents}・負傷事故 ${route.weather_match.injury_accidents}件、死者 ${route.weather_match.deaths}・負傷者 ${route.weather_match.injuries}人）`
+        ? `${route.weather_match.accident_count}件`
+        : "天候指定なし",
+  ],
+  [
+    "うち死亡事故 / 負傷事故",
+    (route) =>
+      route.weather_match
+        ? `${route.weather_match.fatal_accidents} / ${route.weather_match.injury_accidents}件`
+        : "天候指定なし",
+  ],
+  [
+    "うち死者 / 負傷者",
+    (route) =>
+      route.weather_match
+        ? `${route.weather_match.deaths} / ${route.weather_match.injuries}人`
         : "天候指定なし",
   ],
   ["重み", (route) => `${number.format(route.weighted_risk)}点`],

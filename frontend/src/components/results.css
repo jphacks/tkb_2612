@@ -158,8 +158,22 @@
   color: var(--muted);
   font-size: 12px;
 }
-.result-compare-table th[scope="row"] {
-  white-space: nowrap;
+.result-compare-table {
+  table-layout: fixed;
+  white-space: normal;
+}
+.result-compare-table th,
+.result-compare-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.result-compare-table th:first-child {
+  width: 40%;
+}
+.result-compare-table tbody th {
+  padding: 8px;
+  font-weight: 500;
+  text-align: left;
 }
 .result-sections-list {
   display: grid;

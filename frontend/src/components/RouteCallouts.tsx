@@ -1,6 +1,10 @@
 import { Check } from "lucide-react";
 import type { RouteCandidate, RouteResponse } from "../lib/types";
-import { formatDistance, formatDuration } from "../lib/format";
+import {
+  formatExtraMinutes,
+  formatKilometres,
+  formatMinutes,
+} from "../lib/format";
 
 export type MapPoint = { x: number; y: number };
 export type MapSize = { width: number; height: number };
@@ -176,17 +180,12 @@ export function RouteCallouts({
               )}
             </span>
             <strong className="map-card-duration">
-              {formatDuration(route.duration)}
+              {formatMinutes(route.duration)}
             </strong>
             <span className="map-card-metrics">
-              <span>{formatDistance(route.distance)}</span>
-              <span>
-                +
-                {new Intl.NumberFormat("ja-JP", {
-                  maximumFractionDigits: 1,
-                }).format(route.extra_minutes)}
-                分
-              </span>
+              <span>{formatKilometres(route.distance)}</span>
+              {/* Same units as the comparison panel (frontend-spec 5). */}
+              <span>{formatExtraMinutes(route.extra_minutes)}</span>
             </span>
             <span className="map-card-accidents">
               過去事故 <b>{route.accident_count}</b> 件

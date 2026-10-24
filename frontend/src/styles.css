@@ -548,12 +548,13 @@ svg {
   background: #fffbeb;
 }
 .app-results {
+  /* Height of the data attribution bar below the map (also clears the demo menu). */
+  --attribution-space: 88px;
   height: 100dvh;
   overflow: hidden;
 }
 .result-page {
   --sidebar-space: 392px;
-  --attribution-space: 88px;
   position: relative;
   height: calc(100dvh - 72px);
   min-height: 400px;
@@ -830,6 +831,8 @@ svg {
   }
   .result-page {
     --sidebar-space: 0px;
+  }
+  .app-results {
     --attribution-space: 120px;
   }
   .route-panel {
@@ -911,4 +914,7 @@ svg {
 .form-page .data-attribution {
   margin-top: 40px;
   padding: 0;
+}
+.app-results .demo-menu {
+  bottom: calc(var(--attribution-space) + 12px);
 }
