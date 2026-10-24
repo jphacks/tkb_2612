@@ -1,15 +1,23 @@
 //! CSV前処理・起動時ロード・祝日表の読込（担当：②）。
 //!
-//! ③は起動時に `data/current` を一度だけresolveした同じreleaseディレクトリを
+//! ③は起動時に `ACCIDENT_DATA_DIR` を一度だけresolveした同じreleaseディレクトリを
 //! [`load_calendar`] と [`load_engine`] に渡す。祝日表を読むのはこのモジュールだけで、
 //! 前処理コマンドも同じ読込関数と同じ `Calendar` 実装を使う。
-//! `contract` 以外の `api`・`providers`・`testing` やHTTP/非同期ランタイムに依存しない。
+//! `contract` と `domain` に依存してよい（`domain` は `data` に依存しない）。
+//! `api`・`providers`・`testing` やHTTP/非同期ランタイムには依存しない。
+
+pub mod encoding;
+pub mod holidays;
+pub mod load;
+pub mod preprocess;
+pub mod release;
 
 use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::contract::{Calendar, RouteEngine};
+use crate::domain::AccidentEngine;
 
 /// releaseの読込・検証の失敗。起動を止める。
 #[derive(Debug)]
@@ -38,19 +46,16 @@ impl From<std::io::Error> for LoadError {
 
 /// releaseに同梱した祝日表から判定器を作る。事故データより先に読み、
 /// 事故データの準備中でも `/api/conditions` が応答できるようにする。
-///
-/// ②の実装までの仮実装で、常に失敗する。
+/// metadataの祝日表ハッシュと照合する。
 pub fn load_calendar(release_dir: &Path) -> Result<Arc<dyn Calendar>, LoadError> {
-    let _ = release_dir;
-    Err(LoadError::Invalid("祝日表の読込は未実装です".to_owned()))
+    Ok(Arc::new(load::load_holiday_calendar(release_dir)?))
 }
 
 /// 事故データを全件ロード・検証してエンジンを作る。
 ///
-/// ②の実装までの仮実装で、常に失敗する。
+/// gzipと祝日表の実ファイルから `dataset_id`・`release_id` を再計算してmetadataと照合し、
+/// 一致しなければ失敗する。
 pub fn load_engine(release_dir: &Path) -> Result<Arc<dyn RouteEngine>, LoadError> {
-    let _ = release_dir;
-    Err(LoadError::Invalid(
-        "事故データのロードは未実装です".to_owned(),
-    ))
+    let (snapshot, dataset) = load::load_snapshot(release_dir)?;
+    Ok(Arc::new(AccidentEngine::new(Arc::new(snapshot), dataset)))
 }
