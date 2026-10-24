@@ -594,7 +594,7 @@ components:
     DayType:
       type: string
       enum: [平日, 休日]
-      description: 休日は土曜・日曜・国民の祝日・振替休日・国民の休日（移行追加）。判定はbehavior.md 2章。内部コード0/1。
+      description: 休日は土曜・日曜・国民の祝日・振替休日・国民の休日・年末年始（12/29〜1/3）（移行追加）。判定はbehavior.md 2章。内部コード0/1。
     PeriodInput:
       description: 正規入力は日本語またはall。0〜4/nullは互換入力。整数3は19〜23時のみ（1.0の19〜3時から変更）。
       oneOf:
@@ -993,11 +993,11 @@ components:
         day_type_reason:
           type: string
           minLength: 1
-          description: 平日 / 土曜 / 日曜 / 祝日：<名称> / 振替休日 / 国民の休日。UIは文字列として表示する。
-          examples: [平日, 土曜, 日曜, 祝日：文化の日, 振替休日, 国民の休日]
+          description: 平日 / 土曜 / 日曜 / 祝日：<名称> / 振替休日 / 国民の休日 / 年末年始。UIは文字列として表示する。
+          examples: [平日, 土曜, 日曜, 祝日：文化の日, 振替休日, 国民の休日, 年末年始]
         holiday_table_covered:
           type: boolean
-          description: falseなら祝日表の収録範囲外で、土日だけで判定した。
+          description: falseなら祝日表の収録範囲外で、土日と年末年始だけで判定した。
         weather:
           oneOf:
             - {$ref: '#/components/schemas/Weather'}
