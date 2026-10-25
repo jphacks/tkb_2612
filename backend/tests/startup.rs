@@ -195,7 +195,7 @@ async fn calendar_failure_and_missing_release_fail_before_listening() {
         engine: Box::new(|_| Err(LoadError::Invalid("呼ばれない".into()))),
     };
     let result = startup::prepare(&missing, loaders).await;
-    assert!(matches!(result, Err(StartupError::Data(LoadError::Io(_)))));
+    assert!(matches!(result, Err(StartupError::DataDir(_))));
     assert!(seen.lock().unwrap().is_empty());
 }
 

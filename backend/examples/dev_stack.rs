@@ -144,7 +144,6 @@ fn env_vars(
             r#"[{"text":"Powered by Geoapify","url":"https://www.geoapify.com/"}]"#.to_owned(),
         ),
         ("UPSTREAM_GATE", "local".to_owned()),
-        ("BACKEND_BIND", SIMPLE_BIND.to_owned()),
     ])
 }
 
@@ -155,9 +154,8 @@ async fn run_simple(
     temp: &Path,
 ) -> std::process::ExitCode {
     // 8000番が使用中の環境では、環境変数 `BACKEND_BIND` で待受けを変えられる
-    if let Ok(bind) = std::env::var("BACKEND_BIND") {
-        vars.insert("BACKEND_BIND", bind);
-    }
+    let bind = std::env::var("BACKEND_BIND").unwrap_or_else(|_| SIMPLE_BIND.to_owned());
+    vars.insert("BACKEND_BIND", bind);
     let release = temp.join("release");
     std::fs::create_dir(&release).expect("releaseの代わりのディレクトリを作れません");
     vars.insert("ACCIDENT_DATA_DIR", release.display().to_string());
