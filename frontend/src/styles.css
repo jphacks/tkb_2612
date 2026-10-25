@@ -1035,3 +1035,24 @@ svg {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+.nav-alert {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--caution-border);
+  border-radius: 6px;
+  background: var(--caution-bg);
+  color: var(--caution-text);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.nav-alert > svg {
+  margin-top: 4px;
+  color: var(--caution);
+}
+.nav-alert-count {
+  font-weight: 600;
+}
+.nav-panel > .notice {
+  margin-top: 0;
+}

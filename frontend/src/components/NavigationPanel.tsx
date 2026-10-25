@@ -1,4 +1,4 @@
-import { Flag } from "lucide-react";
+import { Flag, Info } from "lucide-react";
 import {
   formatPositionTime,
   formatRemainingDistance,
@@ -120,7 +120,26 @@ export function NavigationPanel({ snapshot, onStop }: NavigationPanelProps) {
           <dd>{SELECTION_LABEL[snapshot.selection]}</dd>
         </div>
       </dl>
-      <p className="result-risk-note">条件と事故データは検索時点のものです</p>
+      {snapshot.alertMessage && (
+        <section className="nav-alert" aria-label="接近通知">
+          <Info size={16} aria-hidden="true" />
+          <div>
+            <p role="status">{snapshot.alertMessage}</p>
+            {snapshot.alertIds.length > 1 && (
+              <p className="nav-alert-count">参考区間 {snapshot.alertIds.length}件</p>
+            )}
+          </div>
+        </section>
+      )}
+      {snapshot.speechNotice && (
+        <p className="notice warning" role="status">
+          {snapshot.speechNotice}
+        </p>
+      )}
+      <div className="result-risk-note">
+        <p>過去事故の参考情報です。現在の危険や安全を保証するものではありません</p>
+        <p>条件と事故データは検索時点のものです</p>
+      </div>
       <button type="button" className="secondary full" onClick={onStop}>
         ナビを停止
       </button>
