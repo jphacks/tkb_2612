@@ -1,7 +1,7 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetApi } from "./test/apiMock";
-import { advance, beginNavigation, installGeolocation, openResults, startGroup } from "./test/navigationApp";
+import { openNavigationSidebar, advance, beginNavigation, installGeolocation, openResults, startGroup } from "./test/navigationApp";
 
 vi.mock("./api/client", async () => (await import("./test/apiMock")).clientMock());
 vi.mock("./components/LogoIntro", () => ({
@@ -31,6 +31,7 @@ async function startSimulation() {
   await openResults();
   vi.useFakeTimers();
   beginNavigation("最短ルート", "模擬走行で開始");
+  openNavigationSidebar();
 }
 
 describe("模擬走行の区別とSimulationControls（手順10・7.7）", () => {
@@ -60,6 +61,7 @@ describe("模擬走行の区別とSimulationControls（手順10・7.7）", () =>
     fireEvent.click(screen.getByRole("checkbox", { name: "位置の揺らぎ（半径8m）" }));
     vi.useFakeTimers();
     beginNavigation("最短ルート", "模擬走行で開始");
+    openNavigationSidebar();
     expect(screen.getByText("倍率 4倍・進行中")).toBeVisible();
     const controls = within(screen.getByLabelText("模擬走行の操作"));
     expect(controls.getByText("42")).toBeVisible();

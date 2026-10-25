@@ -12,8 +12,10 @@ import type { PositionFix } from "../navigation/source";
 
 export const START_MESSAGE = {
   device: "ナビを開始します",
-  simulation: import.meta.env.VITE_ENABLE_SIMULATION === "true"
-    ? "模擬走行を開始します。実際の現在地ではありません" : "",
+  get simulation() {
+    return import.meta.env.VITE_ENABLE_SIMULATION === "true"
+      ? "模擬走行を開始します。実際の現在地ではありません" : "";
+  },
 } as const;
 
 export interface StartRequest {

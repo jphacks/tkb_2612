@@ -35,7 +35,7 @@ import { buildNavigationLayers } from "./map/navigationData";
 import { useConditions } from "./state/useConditions";
 import { useCurrentLocation } from "./state/useCurrentLocation";
 import { useHealth } from "./state/useHealth";
-import { useNavigation, type StartRequest } from "./state/useNavigation";
+import { START_MESSAGE, useNavigation, type StartRequest } from "./state/useNavigation";
 import { useReSearch } from "./state/useReSearch";
 import { UpdateNotice } from "./components/UpdateNotice";
 import { setUpdateBlocked } from "./pwa/register";
@@ -423,7 +423,7 @@ export default function App() {
                 onUnavailableChange={setMapUnavailable}
                 navigation={
                   navigating
-                    ? { layers: navigationLayers, follow, onFollowChange: setFollow, alert: navigation.snapshot! }
+                    ? { layers: navigationLayers, follow, onFollowChange: setFollow, alert: navigation.snapshot!, announcement: START_MESSAGE[navigation.snapshot!.kind] }
                     : undefined
                 }
               />
@@ -571,7 +571,6 @@ export default function App() {
               const request = pendingStart;
               setPendingStart(null);
               navigation.start(request);
-              setSidebarOpen(true);
             }}
           />
         )}

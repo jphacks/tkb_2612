@@ -41,6 +41,12 @@ export function beginNavigation(group: string, button: "実機GPSで開始" | "�
   fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "確認して開始" }));
 }
 
+/** サイドバー内を検査するテストが明示的に開く。 */
+export function openNavigationSidebar() {
+  const button = screen.queryByRole("button", { name: "条件サイドバーを開く" });
+  if (button) fireEvent.click(button);
+}
+
 /** 仮想時刻を進める。 */
 export function advance(ms: number) {
   act(() => {

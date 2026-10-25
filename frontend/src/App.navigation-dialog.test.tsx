@@ -2,7 +2,7 @@ import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SAFETY_NOTICE, WALKING_NOTICE } from "./components/NavigationConfirmDialog";
 import { resetApi } from "./test/apiMock";
-import { advance, installGeolocation, openResults, startGroup } from "./test/navigationApp";
+import { openNavigationSidebar, advance, installGeolocation, openResults, startGroup } from "./test/navigationApp";
 
 vi.mock("./api/client", async () => (await import("./test/apiMock")).clientMock());
 vi.mock("./components/LogoIntro", () => ({
@@ -41,6 +41,7 @@ describe("開始前の注意ダイアログ（7.9）", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "確認して開始" }));
     expect(gps.watchPosition).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    openNavigationSidebar();
     expect(screen.getByRole("complementary", { name: "ナビ" })).toBeVisible();
   });
 

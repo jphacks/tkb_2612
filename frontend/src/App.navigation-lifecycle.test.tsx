@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerServiceWorker } from "./pwa/register";
 import { resetApi } from "./test/apiMock";
 import {
+  openNavigationSidebar,
   advance,
   beginNavigation,
   installGeolocation,
@@ -42,6 +43,7 @@ async function startDevice() {
   const route = await lastRoute("fastest");
   vi.useFakeTimers();
   beginNavigation("最短ルート", "実機GPSで開始");
+  openNavigationSidebar();
   return { gps, route };
 }
 
@@ -104,6 +106,7 @@ describe("PWAの更新待機の通知（8章）", () => {
     expect(screen.getByRole("button", { name: "再読込" })).toBeVisible();
     vi.useFakeTimers();
     beginNavigation("最短ルート", "模擬走行で開始");
+    openNavigationSidebar();
     expect(screen.getByText("新しいバージョンがあります。検索またはナビの終了後に再読込できます。")).toBeVisible();
     expect(screen.queryByRole("button", { name: "再読込" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "一時停止" }));

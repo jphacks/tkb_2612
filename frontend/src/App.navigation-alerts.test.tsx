@@ -4,6 +4,7 @@ import { createDemoRouteResponse } from "./api/demo";
 import type { RouteRequest } from "./lib/types";
 import { api, resetApi } from "./test/apiMock";
 import {
+  openNavigationSidebar,
   advance,
   beginNavigation,
   installGeolocation,
@@ -57,6 +58,7 @@ async function startDevice(multiple = false) {
   const section = route.navigation!.sections[0];
   vi.useFakeTimers();
   beginNavigation("最短ルート", "実機GPSで開始");
+  openNavigationSidebar();
   const feed = (progress: number) => {
     advance(1000);
     gps.emit(positionAt(route, progress));

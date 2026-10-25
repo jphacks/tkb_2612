@@ -1,7 +1,9 @@
+import { createFetchCounter } from "./test/fetchCounter";
 import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, resetApi } from "./test/apiMock";
 import {
+  openNavigationSidebar,
   advance,
   startGroup,
   beginNavigation,
@@ -40,6 +42,7 @@ async function startDevice() {
   const route = await lastRoute("fastest");
   vi.useFakeTimers();
   beginNavigation("最短ルート", "実機GPSで開始");
+  openNavigationSidebar();
   const feed = (progress: number, lateral = 0, accuracy = 10) => {
     advance(1000);
     gps.emit(positionAt(route, progress, lateral), accuracy);
@@ -67,6 +70,8 @@ describe("ナビの状態表示（手順10・5章）", () => {
     expect(phase()).toHaveTextContent("進行中");
     const before = metrics().textContent;
     const calls = [api.getConditions.mock.calls.length, api.searchRoutes.mock.calls.length];
+    const counter = createFetchCounter(() => Promise.reject(new Error("通信しない")));
+    vi.stubGlobal("fetch", counter.fetch);
     gps.fail(code);
     expect(phase()).toHaveTextContent("精度不足");
     expect(screen.getByText("位置を取得できないため判定を停止中")).toBeVisible();
@@ -82,6 +87,7 @@ describe("ナビの状態表示（手順10・5章）", () => {
     expect(gps.watchPosition).toHaveBeenCalledTimes(1);
     expect(gps.clearWatch).not.toHaveBeenCalled();
     expect([api.getConditions.mock.calls.length, api.searchRoutes.mock.calls.length]).toEqual(calls);
+    expect(counter.count()).toBe(0);
   });
 
   it("精度不足では原因・精度・最後の位置時点を示し、進捗の更新を止める", async () => {
@@ -130,6 +136,7 @@ describe("ナビの状態表示（手順10・5章）", () => {
     fireEvent.click(screen.getByRole("radio", { name: "8倍" }));
     vi.useFakeTimers();
     beginNavigation("最短ルート", "模擬走行で開始");
+    openNavigationSidebar();
     advance(1000 * 20);
     expect(phase()).toHaveTextContent("進行中");
     advance(1000 * 600);

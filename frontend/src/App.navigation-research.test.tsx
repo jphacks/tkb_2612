@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDemoRouteResponse } from "./api/demo";
 import { ApiError } from "./api/errors";
 import { api, resetApi } from "./test/apiMock";
-import { advance, startGroup, beginNavigation, openResults } from "./test/navigationApp";
+import { openNavigationSidebar, advance, startGroup, beginNavigation, openResults } from "./test/navigationApp";
 import type { RouteRequest, RouteResponse } from "./lib/types";
 
 vi.mock("./api/client", async () => (await import("./test/apiMock")).clientMock());
@@ -47,6 +47,7 @@ async function deviate() {
   fireEvent.change(screen.getByLabelText(/seed/), { target: { value: "42" } });
   vi.useFakeTimers();
   beginNavigation("最短ルート", "模擬走行で開始");
+  openNavigationSidebar();
   advance(10_000);
   fireEvent.click(screen.getByRole("button", { name: "逸脱を試す" }));
   // 4倍なので、実時間3秒は仮想12秒（逸脱の確定は10秒・3測位）。
@@ -69,6 +70,7 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
     await openResults();
     vi.useFakeTimers();
     beginNavigation("安全ルート", "模擬走行で開始");
+    openNavigationSidebar();
     expect(screen.getByText("安全ルート", { selector: "dd" })).toBeVisible();
     advance(10_000);
     fireEvent.click(screen.getByRole("button", { name: "逸脱を試す" }));
@@ -85,6 +87,7 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
     await openResults();
     vi.useFakeTimers();
     beginNavigation("最短ルート", "模擬走行で開始");
+    openNavigationSidebar();
     advance(3_000);
     expect(phase()).toHaveTextContent("照合保留");
     expect(screen.queryByRole("button", { name: RESEARCH })).not.toBeInTheDocument();
@@ -205,6 +208,7 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
     await openResults();
     vi.useFakeTimers();
     beginNavigation("安全ルート", "模擬走行で開始");
+    openNavigationSidebar();
     advance(10_000);
     fireEvent.click(screen.getByRole("button", { name: "逸脱を試す" }));
     advance(12_000);

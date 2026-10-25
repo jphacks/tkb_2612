@@ -43,6 +43,7 @@ import {
 export type NavigationMapProps = {
   layers: NavigationLayers;
   alert?: NavigationAlert;
+  announcement?: string;
   follow: boolean;
   onFollowChange: (follow: boolean) => void;
 };
@@ -726,9 +727,10 @@ export function RouteMap(props: RouteMapProps) {
           </svg>
         </div>
       )}
-      {!disabled && navigation?.alert && (
-        <NavigationAlertPopup alert={navigation.alert} />
-      )}
+      <NavigationAlertPopup
+        alert={!disabled ? navigation?.alert : undefined}
+        announcement={!disabled && navigation ? navigation.announcement : ""}
+      />
       {result && !navigating && (
         <RouteCallouts
           result={result}
