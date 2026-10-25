@@ -70,7 +70,17 @@ fn inputs_and_expected_outcomes_cover_the_same_examples() {
     inputs.sort();
     outputs.sort();
     assert_eq!(inputs, outputs);
-    assert_eq!(inputs, ["noAccidents", "singleRoute", "twoSelected"]);
+    // 既存3例と、天候all・天候一致0件・事故点の間引きの例が含まれる（例の追加は妨げない）
+    for name in [
+        "noAccidents",
+        "noWeatherMatch",
+        "singleRoute",
+        "thinnedPoints",
+        "twoSelected",
+        "weatherAll",
+    ] {
+        assert!(inputs.iter().any(|n| n == name), "{name}がありません");
+    }
 }
 
 #[test]

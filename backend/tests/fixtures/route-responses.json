@@ -657,6 +657,6243 @@
       "risk_note": "過去の事故件数に基づく参考指標です。経路から約72m以内の事故を、近いほど重く数えています。交通量や通行回数で補正した事故確率ではありません。",
       "api_version": "2.0",
       "dataset_id": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "weatherAll": {
+      "fastest_id": "route-1",
+      "safest_id": "route-2",
+      "candidates": [
+        {
+          "duration": 600,
+          "distance": 1000,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          },
+          "accident_count": 2,
+          "fatal_accidents": 1,
+          "injury_accidents": 1,
+          "deaths": 1,
+          "injuries": 5,
+          "weather_match": null,
+          "weighted_risk": 12.21,
+          "risk_per_km": 12.21,
+          "accident_points": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": 0,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005,
+                    35.0
+                  ]
+                },
+                "properties": {
+                  "deaths": 1,
+                  "injuries": 2,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 1,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.0005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 3,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              }
+            ]
+          },
+          "points_shown": 2,
+          "high_risk_sections": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": "route-1:segment-6",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.0046153846154,
+                      35.0
+                    ],
+                    [
+                      139.0053846153846,
+                      35.0
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 12,
+                  "segment_index": 6,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-3",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00230769230768,
+                      35.0
+                    ],
+                    [
+                      139.00307692307692,
+                      35.0
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 3,
+                  "segment_index": 3,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              }
+            ]
+          },
+          "high_risk_total": 2,
+          "navigation": {
+            "projection_lat_deg": 35.0,
+            "length_m": 910.8567728809412,
+            "vertex_distances_m": [
+              0.0,
+              910.8567728809412
+            ],
+            "sections": [
+              {
+                "id": "route-1:nav-3-3",
+                "start_segment_index": 3,
+                "end_segment_index": 3,
+                "start_m": 210.19771681867874,
+                "end_m": 280.263622424905,
+                "severity_weight": 3
+              },
+              {
+                "id": "route-1:nav-6-6",
+                "start_segment_index": 6,
+                "end_segment_index": 6,
+                "start_m": 420.3954336373575,
+                "end_m": 490.4613392435837,
+                "severity_weight": 12
+              }
+            ]
+          },
+          "id": "route-1",
+          "exact_condition_count": 2,
+          "extra_minutes": 0.0,
+          "within_detour": true
+        },
+        {
+          "duration": 750,
+          "distance": 1100,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.005,
+                35.001
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          },
+          "accident_count": 2,
+          "fatal_accidents": 0,
+          "injury_accidents": 2,
+          "deaths": 0,
+          "injuries": 11,
+          "weather_match": null,
+          "weighted_risk": 3.64,
+          "risk_per_km": 3.309,
+          "accident_points": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": 1,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.0005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 3,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 2,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.001000000000005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 8,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              }
+            ]
+          },
+          "points_shown": 2,
+          "high_risk_sections": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": "route-2:segment-3",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00214285714284,
+                      35.00042857142857
+                    ],
+                    [
+                      139.00285714285715,
+                      35.000571428571426
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-2",
+                  "severity_weight": 11,
+                  "segment_index": 3,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              }
+            ]
+          },
+          "high_risk_total": 1,
+          "navigation": {
+            "projection_lat_deg": 35.00033333333334,
+            "length_m": 937.6090254921936,
+            "vertex_distances_m": [
+              0.0,
+              468.8045127460968,
+              937.6090254921936
+            ],
+            "sections": [
+              {
+                "id": "route-2:nav-3-3",
+                "start_segment_index": 3,
+                "end_segment_index": 3,
+                "start_m": 200.9162197483272,
+                "end_m": 267.8882929977696,
+                "severity_weight": 11
+              }
+            ]
+          },
+          "id": "route-2",
+          "exact_condition_count": 2,
+          "extra_minutes": 2.5,
+          "within_detour": true
+        },
+        {
+          "duration": 900,
+          "distance": 1400,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.005,
+                35.002
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          },
+          "accident_count": 2,
+          "fatal_accidents": 0,
+          "injury_accidents": 2,
+          "deaths": 0,
+          "injuries": 11,
+          "weather_match": null,
+          "weighted_risk": 8.34,
+          "risk_per_km": 5.957,
+          "accident_points": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": 1,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.0005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 3,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 2,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.001000000000005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 8,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              }
+            ]
+          },
+          "points_shown": 2,
+          "high_risk_sections": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": "route-3:segment-3",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00214285714284,
+                      35.00085714285714
+                    ],
+                    [
+                      139.00285714285715,
+                      35.00114285714286
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-3",
+                  "severity_weight": 11,
+                  "segment_index": 3,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              }
+            ]
+          },
+          "high_risk_total": 1,
+          "navigation": null,
+          "id": "route-3",
+          "exact_condition_count": 2,
+          "extra_minutes": 5.0,
+          "within_detour": true
+        }
+      ],
+      "extra_minutes": 2.5,
+      "risk_reduction_percent": 70.2,
+      "reason": "取得した3候補のうち、最短時間経路から+10分以内で、距離で重み付けしたリスクが最小の経路を選びました。追加2.5分、リスク70.2%減です。",
+      "warnings": [],
+      "relaxed_conditions": [],
+      "effective_conditions": {
+        "mode": "walk",
+        "period": "昼",
+        "day_type": "休日",
+        "weather": "全天候"
+      },
+      "radius_m": 72,
+      "distance_weight_sigma_m": 24,
+      "aggregation_ms": 0,
+      "data_years": [
+        2025
+      ],
+      "risk_note": "過去の事故件数に基づく参考指標です。経路から約72m以内の事故を、近いほど重く数えています。交通量や通行回数で補正した事故確率ではありません。",
+      "api_version": "2.0",
+      "dataset_id": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "noWeatherMatch": {
+      "fastest_id": "route-1",
+      "safest_id": "route-2",
+      "candidates": [
+        {
+          "duration": 600,
+          "distance": 1000,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          },
+          "accident_count": 2,
+          "fatal_accidents": 1,
+          "injury_accidents": 1,
+          "deaths": 1,
+          "injuries": 5,
+          "weather_match": {
+            "accident_count": 0,
+            "fatal_accidents": 0,
+            "injury_accidents": 0,
+            "deaths": 0,
+            "injuries": 0
+          },
+          "weighted_risk": 12.21,
+          "risk_per_km": 12.21,
+          "accident_points": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": 0,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005,
+                    35.0
+                  ]
+                },
+                "properties": {
+                  "deaths": 1,
+                  "injuries": 2,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 1,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.0005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 3,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              }
+            ]
+          },
+          "points_shown": 2,
+          "high_risk_sections": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": "route-1:segment-6",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.0046153846154,
+                      35.0
+                    ],
+                    [
+                      139.0053846153846,
+                      35.0
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 12,
+                  "segment_index": 6,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-3",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00230769230768,
+                      35.0
+                    ],
+                    [
+                      139.00307692307692,
+                      35.0
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 3,
+                  "segment_index": 3,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              }
+            ]
+          },
+          "high_risk_total": 2,
+          "navigation": {
+            "projection_lat_deg": 35.0,
+            "length_m": 910.8567728809412,
+            "vertex_distances_m": [
+              0.0,
+              910.8567728809412
+            ],
+            "sections": [
+              {
+                "id": "route-1:nav-3-3",
+                "start_segment_index": 3,
+                "end_segment_index": 3,
+                "start_m": 210.19771681867874,
+                "end_m": 280.263622424905,
+                "severity_weight": 3
+              },
+              {
+                "id": "route-1:nav-6-6",
+                "start_segment_index": 6,
+                "end_segment_index": 6,
+                "start_m": 420.3954336373575,
+                "end_m": 490.4613392435837,
+                "severity_weight": 12
+              }
+            ]
+          },
+          "id": "route-1",
+          "exact_condition_count": 0,
+          "extra_minutes": 0.0,
+          "within_detour": true
+        },
+        {
+          "duration": 750,
+          "distance": 1100,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.005,
+                35.001
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          },
+          "accident_count": 2,
+          "fatal_accidents": 0,
+          "injury_accidents": 2,
+          "deaths": 0,
+          "injuries": 11,
+          "weather_match": {
+            "accident_count": 0,
+            "fatal_accidents": 0,
+            "injury_accidents": 0,
+            "deaths": 0,
+            "injuries": 0
+          },
+          "weighted_risk": 3.64,
+          "risk_per_km": 3.309,
+          "accident_points": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": 1,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.0005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 3,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 2,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.001000000000005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 8,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              }
+            ]
+          },
+          "points_shown": 2,
+          "high_risk_sections": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": "route-2:segment-3",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00214285714284,
+                      35.00042857142857
+                    ],
+                    [
+                      139.00285714285715,
+                      35.000571428571426
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-2",
+                  "severity_weight": 11,
+                  "segment_index": 3,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              }
+            ]
+          },
+          "high_risk_total": 1,
+          "navigation": {
+            "projection_lat_deg": 35.00033333333334,
+            "length_m": 937.6090254921936,
+            "vertex_distances_m": [
+              0.0,
+              468.8045127460968,
+              937.6090254921936
+            ],
+            "sections": [
+              {
+                "id": "route-2:nav-3-3",
+                "start_segment_index": 3,
+                "end_segment_index": 3,
+                "start_m": 200.9162197483272,
+                "end_m": 267.8882929977696,
+                "severity_weight": 11
+              }
+            ]
+          },
+          "id": "route-2",
+          "exact_condition_count": 0,
+          "extra_minutes": 2.5,
+          "within_detour": true
+        },
+        {
+          "duration": 900,
+          "distance": 1400,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35
+              ],
+              [
+                139.005,
+                35.002
+              ],
+              [
+                139.01,
+                35
+              ]
+            ]
+          },
+          "accident_count": 2,
+          "fatal_accidents": 0,
+          "injury_accidents": 2,
+          "deaths": 0,
+          "injuries": 11,
+          "weather_match": {
+            "accident_count": 0,
+            "fatal_accidents": 0,
+            "injury_accidents": 0,
+            "deaths": 0,
+            "injuries": 0
+          },
+          "weighted_risk": 8.34,
+          "risk_per_km": 5.957,
+          "accident_points": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": 1,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.0005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 3,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 2,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0025,
+                    35.001000000000005
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 8,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              }
+            ]
+          },
+          "points_shown": 2,
+          "high_risk_sections": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": "route-3:segment-3",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00214285714284,
+                      35.00085714285714
+                    ],
+                    [
+                      139.00285714285715,
+                      35.00114285714286
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-3",
+                  "severity_weight": 11,
+                  "segment_index": 3,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              }
+            ]
+          },
+          "high_risk_total": 1,
+          "navigation": null,
+          "id": "route-3",
+          "exact_condition_count": 0,
+          "extra_minutes": 5.0,
+          "within_detour": true
+        }
+      ],
+      "extra_minutes": 2.5,
+      "risk_reduction_percent": 70.2,
+      "reason": "取得した3候補のうち、最短時間経路から+10分以内で、距離で重み付けしたリスクが最小の経路を選びました。追加2.5分、リスク70.2%減です。",
+      "warnings": [],
+      "relaxed_conditions": [],
+      "effective_conditions": {
+        "mode": "walk",
+        "period": "昼",
+        "day_type": "休日",
+        "weather": "霧"
+      },
+      "radius_m": 72,
+      "distance_weight_sigma_m": 24,
+      "aggregation_ms": 0,
+      "data_years": [
+        2025
+      ],
+      "risk_note": "過去の事故件数に基づく参考指標です。経路から約72m以内の事故を、近いほど重く数えています。雨・霧・雪を指定した場合は、同じ天候の事故をさらに重く数えます。交通量や通行回数で補正した事故確率ではありません。",
+      "api_version": "2.0",
+      "dataset_id": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "thinnedPoints": {
+      "fastest_id": "route-1",
+      "safest_id": "route-1",
+      "candidates": [
+        {
+          "duration": 600,
+          "distance": 1000,
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                139,
+                35.01
+              ],
+              [
+                139.01,
+                35.01
+              ]
+            ]
+          },
+          "accident_count": 255,
+          "fatal_accidents": 5,
+          "injury_accidents": 250,
+          "deaths": 5,
+          "injuries": 250,
+          "weather_match": {
+            "accident_count": 51,
+            "fatal_accidents": 3,
+            "injury_accidents": 48,
+            "deaths": 3,
+            "injuries": 48
+          },
+          "weighted_risk": 378.0,
+          "risk_per_km": 378.0,
+          "accident_points": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": 13,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00092,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 1,
+                  "injuries": 0,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 64,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002552,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 1,
+                  "injuries": 0,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 133,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00476,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 1,
+                  "injuries": 0,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 206,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007096,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 1,
+                  "injuries": 0,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 253,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0086,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 1,
+                  "injuries": 0,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 3,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0006,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 4,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.000632,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 5,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.000664,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 6,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.000696,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 7,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.000728,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 8,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00076,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 9,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.000792,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 10,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.000824,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 11,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.000856,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 12,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.000888,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 14,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.000952,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 15,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.000984,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 16,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001016,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 17,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001048,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 18,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00108,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 19,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001112,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 20,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001144,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 21,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001176,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 22,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001208,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 23,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00124,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 24,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001272,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 25,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001304,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 26,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001336,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 27,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001368,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 28,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0014,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 29,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001432,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 30,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001464,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 31,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001496,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 32,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001528,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 33,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00156,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 34,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001592,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 35,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001624,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 36,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001656,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 37,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001688,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 38,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00172,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 39,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001752,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 40,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001784,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 41,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001816,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 42,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001848,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 43,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00188,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 44,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001912,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 45,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001944,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 46,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.001976,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 47,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002008,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 48,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00204,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 49,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002072,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 50,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002104,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 51,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002136,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 52,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002168,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 54,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002232,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 55,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002264,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 56,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002296,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 57,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002328,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 58,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00236,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 59,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002392,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 60,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002424,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 61,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002456,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 62,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002488,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 63,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00252,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 65,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002584,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 66,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002616,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 67,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002648,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 68,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00268,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 69,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002712,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 70,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002744,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 71,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002776,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 72,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002808,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 73,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00284,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 74,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002872,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 75,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002904,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 76,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002936,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 77,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.002968,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 78,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 79,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003032,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 80,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003064,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 81,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003096,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 82,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003128,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 83,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00316,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 84,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003192,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 85,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003224,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 86,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003256,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 87,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003288,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 88,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00332,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 89,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003352,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 90,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003384,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 91,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003416,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 92,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003448,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 93,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00348,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 94,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003512,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 95,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003544,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 96,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003576,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 97,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003608,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 98,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00364,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 99,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003672,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 100,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003704,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 101,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003736,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 102,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003768,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 103,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0038,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 105,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003864,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 106,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003896,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 107,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003928,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 108,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00396,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 109,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.003992,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 110,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004024,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 111,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004056,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 112,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004088,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 113,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00412,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 114,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004152,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 115,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004184,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 116,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004216,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 117,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004248,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 118,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00428,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 119,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004312,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 120,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004344,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 121,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004376,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 122,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004408,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 123,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00444,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 124,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004472,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 125,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004504,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 126,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004536,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 127,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004568,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 128,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0046,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 129,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004632,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 130,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004664,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 131,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004696,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 132,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004728,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 134,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004792,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 135,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004824,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 136,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004856,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 137,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004888,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 138,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00492,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 139,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004952,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 140,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.004984,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 141,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005016,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 142,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005048,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 143,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00508,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 144,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005112,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 145,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005144,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 146,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005176,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 147,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005208,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 148,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00524,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 149,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005272,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 150,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005304,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 151,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005336,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 152,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005368,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 153,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0054,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 154,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005432,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 156,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005496,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 157,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005528,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 158,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00556,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 159,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005592,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 160,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005624,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 161,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005656,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 162,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005688,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 163,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00572,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 164,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005752,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 165,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005784,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 166,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005816,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 167,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005848,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 168,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00588,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 169,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005912,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 170,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005944,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 171,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.005976,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 172,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006008,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 173,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00604,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 174,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006072,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 175,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006104,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 176,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006136,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 177,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006168,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 178,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0062,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 179,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006232,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 180,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006264,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 181,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006296,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 182,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006328,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 183,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00636,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 184,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006392,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 185,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006424,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 186,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006456,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 187,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006488,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 188,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00652,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 189,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006552,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 190,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006584,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 191,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006616,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 192,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006648,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 193,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00668,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 194,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006712,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 195,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006744,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 196,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006776,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 197,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006808,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 198,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00684,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 199,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006872,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 200,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006904,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 201,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006936,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 202,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.006968,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 203,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 204,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007032,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 207,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007128,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 208,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00716,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 209,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007192,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 210,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007224,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 211,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007256,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 212,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007288,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 213,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00732,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 214,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007352,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 215,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007384,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 216,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007416,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 217,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007448,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 218,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00748,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 219,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007512,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 220,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007544,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 221,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007576,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 222,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007608,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 223,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00764,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 224,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007672,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 225,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007704,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 226,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007736,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 227,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007768,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 228,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.0078,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 229,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007832,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 230,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007864,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 231,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007896,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 232,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007928,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 233,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00796,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 234,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.007992,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 235,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008024,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 236,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008056,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 237,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008088,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 238,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00812,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 239,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008152,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 240,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008184,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 241,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008216,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 242,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008248,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 243,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00828,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 244,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008312,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 245,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008344,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 246,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008376,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 247,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008408,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 248,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.00844,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "雨",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 249,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008472,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 250,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008504,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 251,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008536,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 252,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008568,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 254,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008632,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 255,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008664,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              },
+              {
+                "type": "Feature",
+                "id": 256,
+                "geometry": {
+                  "type": "Point",
+                  "coordinates": [
+                    139.008696,
+                    35.01
+                  ]
+                },
+                "properties": {
+                  "deaths": 0,
+                  "injuries": 1,
+                  "source_year": 2025,
+                  "date": 20250101,
+                  "weather": "晴",
+                  "period": "昼",
+                  "day_type": "休日"
+                }
+              }
+            ]
+          },
+          "points_shown": 250,
+          "high_risk_sections": {
+            "type": "FeatureCollection",
+            "features": [
+              {
+                "type": "Feature",
+                "id": "route-1:segment-1",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00076923076924,
+                      35.01
+                    ],
+                    [
+                      139.00153846153847,
+                      35.01
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 33,
+                  "segment_index": 1,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-3",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00230769230768,
+                      35.01
+                    ],
+                    [
+                      139.00307692307692,
+                      35.01
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 33,
+                  "segment_index": 3,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-6",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.0046153846154,
+                      35.01
+                    ],
+                    [
+                      139.00538461538463,
+                      35.01
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 33,
+                  "segment_index": 6,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-9",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00692307692307,
+                      35.01
+                    ],
+                    [
+                      139.0076923076923,
+                      35.01
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 33,
+                  "segment_index": 9,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-2",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00153846153847,
+                      35.01
+                    ],
+                    [
+                      139.00230769230768,
+                      35.01
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 24,
+                  "segment_index": 2,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-4",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00307692307692,
+                      35.01
+                    ],
+                    [
+                      139.00384615384615,
+                      35.01
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 24,
+                  "segment_index": 4,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-5",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00384615384615,
+                      35.01
+                    ],
+                    [
+                      139.0046153846154,
+                      35.01
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 24,
+                  "segment_index": 5,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-7",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00538461538463,
+                      35.01
+                    ],
+                    [
+                      139.00615384615384,
+                      35.01
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 24,
+                  "segment_index": 7,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-8",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00615384615384,
+                      35.01
+                    ],
+                    [
+                      139.00692307692307,
+                      35.01
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 24,
+                  "segment_index": 8,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-10",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.0076923076923,
+                      35.01
+                    ],
+                    [
+                      139.00846153846155,
+                      35.01
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 24,
+                  "segment_index": 10,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-11",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.00846153846155,
+                      35.01
+                    ],
+                    [
+                      139.00923076923078,
+                      35.01
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 18,
+                  "segment_index": 11,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              },
+              {
+                "type": "Feature",
+                "id": "route-1:segment-0",
+                "geometry": {
+                  "type": "LineString",
+                  "coordinates": [
+                    [
+                      139.0,
+                      35.01
+                    ],
+                    [
+                      139.00076923076924,
+                      35.01
+                    ]
+                  ]
+                },
+                "properties": {
+                  "route_id": "route-1",
+                  "severity_weight": 6,
+                  "segment_index": 0,
+                  "source_vertex_start_index": 0,
+                  "source_vertex_end_index": 1
+                }
+              }
+            ]
+          },
+          "high_risk_total": 12,
+          "navigation": {
+            "projection_lat_deg": 35.01,
+            "length_m": 910.7454438680041,
+            "vertex_distances_m": [
+              0.0,
+              910.7454438680041
+            ],
+            "sections": [
+              {
+                "id": "route-1:nav-0-11",
+                "start_segment_index": 0,
+                "end_segment_index": 11,
+                "start_m": 0.0,
+                "end_m": 840.6881020320038,
+                "severity_weight": 300
+              }
+            ]
+          },
+          "id": "route-1",
+          "exact_condition_count": 51,
+          "extra_minutes": 0.0,
+          "within_detour": true
+        }
+      ],
+      "extra_minutes": 0.0,
+      "risk_reduction_percent": 0.0,
+      "reason": "今回は最短時間経路が事故を考慮した経路と同じです。",
+      "warnings": [
+        "経路候補が1本のみのため、経路間の比較はできません。"
+      ],
+      "relaxed_conditions": [],
+      "effective_conditions": {
+        "mode": "walk",
+        "period": "昼",
+        "day_type": "休日",
+        "weather": "雨"
+      },
+      "radius_m": 72,
+      "distance_weight_sigma_m": 24,
+      "aggregation_ms": 0,
+      "data_years": [
+        2025
+      ],
+      "risk_note": "過去の事故件数に基づく参考指標です。経路から約72m以内の事故を、近いほど重く数えています。雨・霧・雪を指定した場合は、同じ天候の事故をさらに重く数えます。交通量や通行回数で補正した事故確率ではありません。",
+      "api_version": "2.0",
+      "dataset_id": "0000000000000000000000000000000000000000000000000000000000000000"
     }
   }
 }
