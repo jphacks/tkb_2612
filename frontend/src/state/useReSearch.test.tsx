@@ -43,10 +43,10 @@ function geolocation() {
   });
   return {
     getCurrentPosition,
-    succeed: (fix: { lat: number; lon: number; accuracy: number }) =>
+    succeed: (fix: { lat: number; lon: number; accuracy: number; timestamp?: number }) =>
       getCurrentPosition.mock.calls.at(-1)![0]({
         coords: { latitude: fix.lat, longitude: fix.lon, accuracy: fix.accuracy },
-        timestamp: Date.now(),
+        timestamp: fix.timestamp ?? Date.now(),
       }),
     fail: (code: number) =>
       getCurrentPosition.mock.calls.at(-1)![1]({ code, PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 }),
@@ -58,7 +58,7 @@ function setup(source: Partial<ReSearchSource> = {}, beforeResume?: () => void) 
     kind: "device",
     selection: "safest",
     simulation: null,
-    fix: { lon: here.lon, lat: here.lat, accuracy: here.accuracy, timestamp: here.timestamp },
+    fix: { lon: here.lon, lat: here.lat, accuracy: here.accuracy, timestamp: Date.now() },
     fixFresh: true,
     ...source,
   };
@@ -101,6 +101,7 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   Reflect.deleteProperty(navigator, "geolocation");
   Reflect.deleteProperty(document, "visibilityState");
@@ -171,6 +172,40 @@ describe("useReSearch: 現在地からの明示的再検索（7.6）", () => {
     expect(view.navigation.start).not.toHaveBeenCalled();
   });
 
+  it.each(["古い", "未来", "NaN"])("再取得測位のtimestampが%sならconditions・routeを送信しない", async (kind) => {
+    const geo = geolocation();
+    const view = setup({ fixFresh: false });
+    await act(async () => view.result.current.reSearch.start());
+    const timestamp = kind === "古い" ? Date.now() - 60_000 : kind === "未来" ? Date.now() + 60_000 : NaN;
+    await act(async () => geo.succeed({ ...here, timestamp }));
+    expect(state(view).status).toBe("failed");
+    expect(view.refresh).not.toHaveBeenCalled();
+    expect(client.searchRoutes).not.toHaveBeenCalled();
+    expect(view.navigation.start).not.toHaveBeenCalled();
+    expect(view.onAdoptOrigin).not.toHaveBeenCalled();
+  });
+
+  it.each(["古い", "未来", "NaN"])("再試行の既存originのtimestampが%sなら再測位し、応答前に送信しない", async (kind) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const geo = geolocation();
+    client.searchRoutes.mockRejectedValueOnce(new ApiError("混雑", "service_busy", 503));
+    const fix = { ...here, timestamp: Date.now() };
+    const view = setup({ fix });
+    await act(async () => view.result.current.reSearch.start());
+    expect(state(view).status).toBe("failed");
+    if (kind === "古い") vi.setSystemTime(Date.now() + 5001);
+    else if (kind === "未来") vi.setSystemTime(Date.now() - 1000);
+    else fix.timestamp = NaN;
+    await act(async () => view.result.current.reSearch.retry());
+    expect(geo.getCurrentPosition).toHaveBeenCalledTimes(1);
+    expect(view.refresh).toHaveBeenCalledTimes(1);
+    expect(client.searchRoutes).toHaveBeenCalledTimes(1);
+    await act(async () => geo.succeed({ ...here, timestamp: Date.now() }));
+    expect(view.navigation.start).toHaveBeenCalledTimes(1);
+    expect(view.refresh).toHaveBeenCalledTimes(2);
+    expect(client.searchRoutes).toHaveBeenCalledTimes(2);
+  });
+
   it("模擬は位置の鮮度に関わらず停止位置を使い、GPSを呼ばず、模擬位置としてoriginにする", async () => {
     const geo = geolocation();
     const view = setup({
@@ -189,7 +224,7 @@ describe("useReSearch: 現在地からの明示的再検索（7.6）", () => {
   });
 
   it("目的地と20m未満なら検索できない旨を示し、conditionsもrouteも送らない", async () => {
-    const view = setup({ fix: { lon: dest.lon + 0.0001, lat: dest.lat, accuracy: 10, timestamp: 1_000 }, fixFresh: true });
+    const view = setup({ fix: { lon: dest.lon + 0.0001, lat: dest.lat, accuracy: 10, timestamp: Date.now() }, fixFresh: true });
     await act(async () => view.result.current.reSearch.start());
     await waitFor(() => expect(state(view).status).toBe("failed"));
     expect((state(view) as { message: string }).message).toBe(TOO_CLOSE);
@@ -235,11 +270,13 @@ describe("useReSearch: 現在地からの明示的再検索（7.6）", () => {
   });
 
   it("再試行で実機のoriginが古ければ、測位を取り直してから送信する", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     const geo = geolocation();
     client.searchRoutes.mockRejectedValueOnce(new ApiError("混雑", "service_busy", 503));
     const view = setup();
     await act(async () => view.result.current.reSearch.start());
     await waitFor(() => expect(state(view).status).toBe("failed"));
+    vi.setSystemTime(Date.now() + 5001);
     await act(async () => view.result.current.reSearch.retry());
     expect(geo.getCurrentPosition).toHaveBeenCalledTimes(1);
     expect(client.searchRoutes).toHaveBeenCalledTimes(1);

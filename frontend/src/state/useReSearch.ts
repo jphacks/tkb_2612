@@ -82,9 +82,14 @@ function measure(): Promise<PositionFix> {
   });
 }
 
-function validated(fix: PositionFix): PositionFix {
-  const finite = [fix.lat, fix.lon, fix.accuracy].every(Number.isFinite) && fix.accuracy > 0;
-  if (!finite) throw new Failure("現在地を正しく取得できませんでした。再試行してください");
+function freshTimestamp(fix: PositionFix, now: number): boolean {
+  const age = now - fix.timestamp;
+  return Number.isFinite(fix.timestamp) && age >= 0 && age <= 5000;
+}
+
+function validated(fix: PositionFix, now: number): PositionFix {
+  const finite = [fix.lat, fix.lon, fix.accuracy, fix.timestamp].every(Number.isFinite) && fix.accuracy > 0;
+  if (!finite || !freshTimestamp(fix, now)) throw new Failure("現在地を正しく取得できませんでした。再試行してください");
   if (fix.lat < 20 || fix.lat > 46 || fix.lon < 122 || fix.lon > 154)
     throw new Failure("日本国内の地点ではないため、再検索できません");
   if (fix.accuracy > 30)
@@ -147,9 +152,9 @@ export function useReSearch(params: Params) {
     try {
       let fix: PositionFix;
       const existing = snap.origin;
-      if (existing && (snap.kind === "simulation" || Date.now() - existing.fix.timestamp <= 5000)) {
+      if (existing && (snap.kind === "simulation" || freshTimestamp(existing.fix, Date.now()))) {
         fix = existing.fix;
-      } else if (snap.lastFix && (snap.lastFix.fresh || snap.kind === "simulation")) {
+      } else if (snap.lastFix && ((snap.lastFix.fresh && freshTimestamp(snap.lastFix.fix, Date.now())) || snap.kind === "simulation")) {
         fix = snap.lastFix.fix;
       } else if (import.meta.env.VITE_ENABLE_SIMULATION === "true" && snap.kind === "simulation") {
         throw new Failure("模擬位置を取得できませんでした");
@@ -158,7 +163,7 @@ export function useReSearch(params: Params) {
       }
       if (!alive()) return;
       snap.lastFix = null;
-      validated(fix);
+      validated(fix, snap.kind === "device" ? Date.now() : fix.timestamp);
       const place: Place = {
         label: import.meta.env.VITE_ENABLE_SIMULATION === "true" && snap.kind === "simulation" ? "模擬位置" : "現在地",
         lat: fix.lat,
