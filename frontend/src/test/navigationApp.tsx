@@ -30,6 +30,12 @@ export function startGroup(name: string) {
   return within(screen.getByRole("group", { name: `${name}経路` }));
 }
 
+/** 開始操作と、注意ダイアログでの確認までを行う。 */
+export function beginNavigation(group: string, button: "実機GPSで開始" | "模擬走行で開始") {
+  fireEvent.click(startGroup(group).getByRole("button", { name: button }));
+  fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "確認して開始" }));
+}
+
 /** 仮想時刻を進める。 */
 export function advance(ms: number) {
   act(() => {

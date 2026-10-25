@@ -3,11 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetApi } from "./test/apiMock";
 import {
   advance,
+  beginNavigation,
   installGeolocation,
   lastRoute,
   openResults,
   positionAt,
-  startGroup,
 } from "./test/navigationApp";
 
 vi.mock("./api/client", async () => (await import("./test/apiMock")).clientMock());
@@ -34,7 +34,7 @@ async function startDevice() {
   await openResults();
   const route = await lastRoute("fastest");
   vi.useFakeTimers();
-  fireEvent.click(startGroup("最短時間").getByRole("button", { name: "実機GPSで開始" }));
+  beginNavigation("最短時間", "実機GPSで開始");
   const feed = (progress: number, lateral = 0, accuracy = 10) => {
     advance(1000);
     gps.emit(positionAt(route, progress, lateral), accuracy);
@@ -99,7 +99,7 @@ describe("ナビの状態表示（手順10・5章）", () => {
     await openResults();
     fireEvent.click(screen.getByRole("radio", { name: "8倍" }));
     vi.useFakeTimers();
-    fireEvent.click(startGroup("最短時間").getByRole("button", { name: "模擬走行で開始" }));
+    beginNavigation("最短時間", "模擬走行で開始");
     advance(1000 * 20);
     expect(phase()).toHaveTextContent("進行中");
     advance(1000 * 600);

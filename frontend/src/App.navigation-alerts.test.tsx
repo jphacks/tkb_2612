@@ -1,13 +1,13 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetApi } from "./test/apiMock";
 import {
   advance,
+  beginNavigation,
   installGeolocation,
   lastRoute,
   openResults,
   positionAt,
-  startGroup,
 } from "./test/navigationApp";
 
 vi.mock("./api/client", async () => (await import("./test/apiMock")).clientMock());
@@ -34,7 +34,7 @@ async function startDevice() {
   const route = await lastRoute("fastest");
   const section = route.navigation!.sections[0];
   vi.useFakeTimers();
-  fireEvent.click(startGroup("最短時間").getByRole("button", { name: "実機GPSで開始" }));
+  beginNavigation("最短時間", "実機GPSで開始");
   const feed = (progress: number) => {
     advance(1000);
     gps.emit(positionAt(route, progress));

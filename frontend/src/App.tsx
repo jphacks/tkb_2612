@@ -21,15 +21,16 @@ import LocationInput, {
 import ConditionFields from "./components/ConditionFields";
 import { DataAttribution } from "./components/DataAttribution";
 import { LogoIntro } from "./components/LogoIntro";
+import { NavigationConfirmDialog } from "./components/NavigationConfirmDialog";
 import { NavigationPanel, SimulationBanner } from "./components/NavigationPanel";
-import { NavigationStart } from "./components/NavigationStart";
+import { NavigationStart, SELECTION_LABEL } from "./components/NavigationStart";
 import { ResultsPanel } from "./components/ResultsPanel";
 import { RouteMap } from "./components/RouteMap";
 import { buildNavigationLayers } from "./map/navigationData";
 import { useConditions } from "./state/useConditions";
 import { useCurrentLocation } from "./state/useCurrentLocation";
 import { useHealth } from "./state/useHealth";
-import { useNavigation } from "./state/useNavigation";
+import { useNavigation, type StartRequest } from "./state/useNavigation";
 import { useRouteSearch } from "./state/useRouteSearch";
 import type { RouteResponse } from "./lib/types";
 
@@ -74,6 +75,8 @@ export default function App() {
   const navigation = useNavigation({ result, mapAvailable: !mapUnavailable });
   const navigating = navigation.snapshot !== null;
   const [follow, setFollow] = useState(true);
+  // 注意の確認を待っている開始操作。確認の操作の中でだけ開始する。
+  const [pendingStart, setPendingStart] = useState<StartRequest | null>(null);
   useEffect(() => {
     // 追従は開始のたびに初期ONへ戻す。
     if (!navigating) setFollow(true);
@@ -434,7 +437,7 @@ export default function App() {
                         mapAvailable={!mapUnavailable}
                         error={navigation.startError}
                         onStart={(request) =>
-                          navigation.start({ ...request, forResult: result })
+                          setPendingStart({ ...request, forResult: result })
                         }
                       />
                       <ResultsPanel
@@ -477,6 +480,18 @@ export default function App() {
             {/* Outside the collapsible sidebar: attribution stays visible with the map. */}
             {attribution}
           </main>
+        )}
+        {pendingStart && (
+          <NavigationConfirmDialog
+            selectionLabel={SELECTION_LABEL[pendingStart.selection]}
+            kind={pendingStart.kind}
+            onCancel={() => setPendingStart(null)}
+            onConfirm={() => {
+              const request = pendingStart;
+              setPendingStart(null);
+              navigation.start(request);
+            }}
+          />
         )}
         {isDemo && (
           <details className="demo-menu" ref={demoMenu}>

@@ -2,7 +2,7 @@ import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFetchCounter } from "./test/fetchCounter";
 import { api, resetApi } from "./test/apiMock";
-import { advance, openResults, startGroup } from "./test/navigationApp";
+import { advance, beginNavigation, openResults, startGroup } from "./test/navigationApp";
 
 vi.mock("./api/client", async () => (await import("./test/apiMock")).clientMock());
 vi.mock("./components/LogoIntro", () => ({
@@ -35,7 +35,7 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
   it("模擬走行を開始すると、サイドバーの結果と条件エディタがナビ表示に置き換わり、地図は残る", async () => {
     await openResults();
     vi.useFakeTimers();
-    fireEvent.click(startGroup("事故履歴を考慮").getByRole("button", { name: "模擬走行で開始" }));
+    beginNavigation("事故履歴を考慮", "模擬走行で開始");
     const panel = screen.getByRole("complementary", { name: "ナビ" });
     expect(within(panel).getByRole("button", { name: "ナビを停止" })).toBeVisible();
     expect(within(panel).queryByRole("combobox", { name: "目的地" })).not.toBeInTheDocument();
@@ -63,7 +63,7 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
       places: api.searchPlaces.mock.calls.length,
     };
     vi.useFakeTimers();
-    fireEvent.click(startGroup("最短時間").getByRole("button", { name: "模擬走行で開始" }));
+    beginNavigation("最短時間", "模擬走行で開始");
     advance(120_000);
     expect(api.getHealth).toHaveBeenCalledTimes(before.health);
     expect(api.getConditions).toHaveBeenCalledTimes(before.conditions);
@@ -81,10 +81,10 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
     });
     await openResults();
     vi.useFakeTimers();
-    fireEvent.click(startGroup("最短時間").getByRole("button", { name: "模擬走行で開始" }));
+    beginNavigation("最短時間", "模擬走行で開始");
     expect(watchPosition).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "ナビを停止" }));
-    fireEvent.click(startGroup("最短時間").getByRole("button", { name: "実機GPSで開始" }));
+    beginNavigation("最短時間", "実機GPSで開始");
     expect(watchPosition).toHaveBeenCalledTimes(1);
     expect(watchPosition.mock.calls[0][2]).toEqual({
       enableHighAccuracy: true,
@@ -99,7 +99,7 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
 
   it("位置情報が使えない環境では実機GPSの開始を拒否し、理由と模擬走行を案内する", async () => {
     await openResults();
-    fireEvent.click(startGroup("最短時間").getByRole("button", { name: "実機GPSで開始" }));
+    beginNavigation("最短時間", "実機GPSで開始");
     expect(screen.getByRole("alert")).toHaveTextContent("模擬走行");
     expect(screen.getByRole("complementary", { name: "検索結果と条件" })).toBeVisible();
   });

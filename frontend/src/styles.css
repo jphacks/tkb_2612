@@ -1086,3 +1086,41 @@ svg {
   padding: 8px 6px;
   font-size: 12px;
 }
+.nav-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(15 23 42 / 0.5);
+}
+.nav-dialog {
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: 24px 20px 20px;
+  border-radius: 8px;
+  background: #fff;
+}
+.nav-dialog h2 {
+  font-size: 16px;
+}
+.nav-dialog-notice {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.nav-dialog-target {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.nav-dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 20px;
+}
