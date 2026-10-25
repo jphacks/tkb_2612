@@ -117,7 +117,13 @@ export const mapLayers: LayerSpecification[] = [
     id: "current-location-point",
     type: "circle",
     source: "current-location",
-    paint: { "circle-color": "#2563eb", "circle-radius": 7 },
+    paint: {
+      // 模擬走行の現在地は塗りなしの輪にして、実機の現在地と区別する。
+      "circle-color": ["case", ["==", ["get", "kind"], "simulation"], "#fff", "#2563eb"],
+      "circle-radius": 7,
+      "circle-stroke-color": ["case", ["==", ["get", "kind"], "simulation"], "#2563eb", "#fff"],
+      "circle-stroke-width": ["case", ["==", ["get", "kind"], "simulation"], 4, 3],
+    },
   },
 ];
 

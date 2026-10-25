@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -21,14 +21,20 @@ import LocationInput, {
 import ConditionFields from "./components/ConditionFields";
 import { DataAttribution } from "./components/DataAttribution";
 import { LogoIntro } from "./components/LogoIntro";
+import { NavigationPanel } from "./components/NavigationPanel";
+import { NavigationStart } from "./components/NavigationStart";
 import { ResultsPanel } from "./components/ResultsPanel";
 import { RouteMap } from "./components/RouteMap";
+import { buildNavigationLayers } from "./map/navigationData";
 import { useConditions } from "./state/useConditions";
 import { useCurrentLocation } from "./state/useCurrentLocation";
 import { useHealth } from "./state/useHealth";
+import { useNavigation } from "./state/useNavigation";
 import { useRouteSearch } from "./state/useRouteSearch";
+import type { RouteResponse } from "./lib/types";
 
 type Page = "places" | "conditions" | "results";
+const noop = () => {};
 const blank: LocationValue = { text: "", place: null };
 const scenarios: { id: Scenario; label: string }[] = [
   { id: "normal", label: "通常" },
@@ -64,6 +70,31 @@ export default function App() {
     scenario,
     onEdit: invalidate,
   });
+  const [mapUnavailable, setMapUnavailable] = useState(false);
+  const navigation = useNavigation({ result, mapAvailable: !mapUnavailable });
+  const navigating = navigation.snapshot !== null;
+  const [follow, setFollow] = useState(true);
+  useEffect(() => {
+    // 追従は開始のたびに初期ONへ戻す。
+    if (!navigating) setFollow(true);
+  }, [navigating]);
+  const navigationLayers = useMemo(
+    () => buildNavigationLayers(navigation.route, navigation.snapshot),
+    [navigation.route, navigation.snapshot],
+  );
+  const navigationRouteId = navigation.route?.id;
+  const navigationSelection = navigation.snapshot?.selection;
+  // ナビ中の地図は選んだ1本だけを描く（経路の切替は終了後だけ）。
+  const navigationResult = useMemo<RouteResponse | null>(() => {
+    if (!result || !navigation.route || !navigationSelection) return null;
+    return {
+      ...result,
+      candidates: [navigation.route],
+      fastest_id: navigation.route.id,
+      safest_id: navigationSelection === "safest" ? navigation.route.id : null,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, navigationRouteId, navigationSelection]);
   const location = useCurrentLocation((place) =>
     changePlace("origin", { text: place.label, place }),
   );
@@ -236,7 +267,7 @@ export default function App() {
           <button
             className="wordmark"
             type="button"
-            disabled={searching}
+            disabled={searching || navigating}
             onClick={() => {
               if (page !== "places") {
                 invalidate();
@@ -319,14 +350,20 @@ export default function App() {
             </button>
             <div className="map-stage">
               <RouteMap
-                result={result}
-                selectedRouteId={route.selectedRoute}
+                result={navigationResult ?? result}
+                selectedRouteId={navigationResult ? navigation.route!.id : route.selectedRoute}
                 selectedSectionId={route.selectedSection}
-                onSelectRoute={selectRoute}
+                onSelectRoute={navigating ? noop : selectRoute}
                 onSelectSection={route.setSelectedSection}
                 showAccidents={showAccidents}
                 onShowAccidents={setShowAccidents}
                 unavailable={scenario === "map-error"}
+                onUnavailableChange={setMapUnavailable}
+                navigation={
+                  navigating
+                    ? { layers: navigationLayers, follow, onFollowChange: setFollow }
+                    : undefined
+                }
               />
               {searching ? (
                 <div className="map-search-status result-empty" role="status">
@@ -366,45 +403,67 @@ export default function App() {
             <aside
               id="search-conditions"
               className="route-panel"
-              aria-label="検索結果と条件"
+              aria-label={navigating ? "ナビ" : "検索結果と条件"}
               hidden={!sidebarOpen}
             >
               <div className="panel-title">
                 <h1 ref={heading} tabIndex={-1}>
-                  検索結果と条件
+                  {navigating ? "ナビ" : "検索結果と条件"}
                 </h1>
               </div>
-              {result && route.selectedRoute && (
-                <ResultsPanel
-                  result={result}
-                  selectedRouteId={route.selectedRoute}
-                  onSelectRoute={selectRoute}
+              {navigation.snapshot ? (
+                <NavigationPanel
+                  snapshot={navigation.snapshot}
+                  onStop={navigation.stop}
                 />
+              ) : (
+                <>
+                  {result && route.selectedRoute && (
+                    <>
+                      <NavigationStart
+                        result={result}
+                        mapAvailable={!mapUnavailable}
+                        error={navigation.startError}
+                        onStart={(request) =>
+                          navigation.start({ ...request, forResult: result })
+                        }
+                      />
+                      <ResultsPanel
+                        result={result}
+                        selectedRouteId={route.selectedRoute}
+                        onSelectRoute={selectRoute}
+                      />
+                    </>
+                  )}
+                  <h2 className="panel-subtitle">検索条件</h2>
+                  {/* frontend-spec 3: inputs stay locked while searching; there is no cancel. */}
+                  <fieldset className="panel-editor" disabled={searching}>
+                    {healthNotice}
+                    {places}
+                    {fields}
+                    <button
+                      className="primary full"
+                      disabled={
+                        !confirmed ||
+                        searching ||
+                        conditions.busy ||
+                        health.blocked
+                      }
+                      onClick={() => void runSearch()}
+                    >
+                      <RefreshCw size={16} />
+                      再検索
+                    </button>
+                    <button
+                      className="text-button panel-back"
+                      onClick={() => setPage("conditions")}
+                    >
+                      <ArrowLeft size={15} />
+                      条件選択に戻る
+                    </button>
+                  </fieldset>
+                </>
               )}
-              <h2 className="panel-subtitle">検索条件</h2>
-              {/* frontend-spec 3: inputs stay locked while searching; there is no cancel. */}
-              <fieldset className="panel-editor" disabled={searching}>
-                {healthNotice}
-                {places}
-                {fields}
-                <button
-                  className="primary full"
-                  disabled={
-                    !confirmed || searching || conditions.busy || health.blocked
-                  }
-                  onClick={() => void runSearch()}
-                >
-                  <RefreshCw size={16} />
-                  再検索
-                </button>
-                <button
-                  className="text-button panel-back"
-                  onClick={() => setPage("conditions")}
-                >
-                  <ArrowLeft size={15} />
-                  条件選択に戻る
-                </button>
-              </fieldset>
             </aside>
             {/* Outside the collapsible sidebar: attribution stays visible with the map. */}
             {attribution}
@@ -422,6 +481,7 @@ export default function App() {
                   key={item.id}
                   type="button"
                   aria-pressed={scenario === item.id}
+                  disabled={navigating}
                   onClick={() => {
                     setScenario(item.id);
                     if (demoMenu.current) demoMenu.current.open = false;

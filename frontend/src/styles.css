@@ -18,6 +18,15 @@
   --border: #e2e8f0;
   --muted: #64748b;
   --soft: #f8fafc;
+  /* ナビ用。注意区間・参考情報・逸脱の表示に使う。 */
+  --caution: #d97706;
+  --caution-bg: #fffbeb;
+  --caution-border: #fcd34d;
+  --caution-text: #92400e;
+  --danger: #b91c1c;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+  --ink: #0f172a;
 }
 * {
   box-sizing: border-box;
@@ -930,4 +939,50 @@ svg {
   .app-results {
     --attribution-space: 64px;
   }
+}
+/* ナビ（既存のサイドバー・.result-content・.segmented・.result-metrics を再利用） */
+.nav-start {
+  padding-bottom: 16px;
+}
+.nav-start-row {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.nav-start-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.nav-start-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.nav-start-actions .primary,
+.nav-start-actions .secondary {
+  padding: 8px 6px;
+  font-size: 12px;
+}
+.nav-panel {
+  display: grid;
+  gap: 16px;
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+.sim-settings,
+.sim-controls {
+  display: grid;
+  gap: 16px;
+}
+.sim-seed-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 650;
+}
+.sim-seed-label + .date-input {
+  margin-top: 8px;
 }
