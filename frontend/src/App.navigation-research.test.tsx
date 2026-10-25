@@ -62,6 +62,25 @@ function setVisibility(state: "hidden" | "visible") {
 }
 
 describe("現在地からの明示的再検索の画面（手順12・7.6・7.7）", () => {
+  it("同一IDから事故考慮として開始し、再検索で経路が分かれても事故考慮を引き継ぐ", async () => {
+    api.searchRoutes.mockImplementationOnce((request: RouteRequest) =>
+      Promise.resolve(createDemoRouteResponse(request, "same")),
+    );
+    await openResults();
+    vi.useFakeTimers();
+    beginNavigation("安全ルート", "模擬走行で開始");
+    expect(screen.getByText("安全ルート", { selector: "dd" })).toBeVisible();
+    advance(10_000);
+    fireEvent.click(screen.getByRole("button", { name: "逸脱を試す" }));
+    advance(12_000);
+    fireEvent.click(screen.getByRole("button", { name: RESEARCH }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    const response = await api.searchRoutes.mock.results.at(-1)!.value;
+    expect(response.fastest_id).not.toBe(response.safest_id);
+    expect(screen.getByText("安全ルート", { selector: "dd" })).toBeVisible();
+    expect(api.searchRoutes).toHaveBeenCalledTimes(2);
+  });
+
   it("開始直後の位置確認中には再検索を案内しない", async () => {
     await openResults();
     vi.useFakeTimers();

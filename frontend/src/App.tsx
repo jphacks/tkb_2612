@@ -412,7 +412,7 @@ export default function App() {
                   } else if (result) {
                     setPendingStart({
                       forResult: result,
-                      selection: routeId === result.fastest_id ? "fastest" : "safest",
+                      selection: routeId === result.safest_id ? "safest" : "fastest",
                       kind: "device",
                     });
                   }

@@ -47,7 +47,7 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
     fireEvent.click(screen.getByRole("button", { name: /でナビを開始/ }));
     expect(screen.getAllByRole("button", { name: "実機GPSで開始" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "模擬走行で開始" })).toHaveLength(1);
-    expect(screen.queryByRole("group", { name: "安全ルート" })).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: scenario === "same" ? "安全ルート" : "最短ルート" })).toBeVisible();
     if (scenario === "same") expect(within(screen.getByRole("dialog")).getByText("同一経路")).toBeVisible();
   });
 
@@ -213,6 +213,19 @@ describe("模擬走行を含めないビルド", () => {
     gps.fail(1);
     expect(screen.getByText("位置情報の利用が許可されていません。設定を変更して再開してください")).toBeVisible();
     expect(document.body).not.toHaveTextContent("模擬");
+  });
+
+  it("フラグなしの同一IDの紙飛行機も事故考慮として開始する", async () => {
+    vi.stubEnv("VITE_ENABLE_SIMULATION", undefined);
+    installGeolocation();
+    api.searchRoutes.mockImplementationOnce((request: RouteRequest) =>
+      Promise.resolve(createDemoRouteResponse(request, "same")),
+    );
+    await openResults();
+    fireEvent.click(screen.getByRole("button", { name: /でナビを開始/ }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("安全ルートを実機GPSで開始します");
+    fireEvent.click(screen.getByRole("button", { name: "確認して開始" }));
+    expect(screen.getByText("安全ルート", { selector: "dd" })).toBeVisible();
   });
 
   it("非対応環境の開始拒否も模擬走行を案内しない", async () => {

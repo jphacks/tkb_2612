@@ -65,7 +65,7 @@ export function NavigationStart({
     return selections.flatMap(([selection, route]) =>
       route &&
       route.id === routeId &&
-      (selection === "fastest" || result.fastest_id !== result.safest_id)
+      (selection === "safest" || result.fastest_id !== result.safest_id)
         ? [
             {
               selection,
