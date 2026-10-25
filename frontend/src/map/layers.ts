@@ -7,6 +7,7 @@ import type {
 } from "maplibre-gl";
 import type { RouteResponse } from "../lib/types";
 import { routeColors, routeTone } from "../components/RouteCallouts";
+import { mapColor } from "./colors";
 
 export type NavigationLayers = {
   location: FeatureCollection<Point>;
@@ -36,96 +37,105 @@ const linePaint: LineLayerSpecification["paint"] = {
 
 // 見た目維持の暫定として全候補をroute-fastestに入れ、route-safestは空にする（6章と異なる）。
 // 選定2経路化は利用者判断待ち。合意後はfastest_id/safest_idのgeometryを各sourceへ分割する。
-export const mapLayers: LayerSpecification[] = [
-  {
-    id: "route-fastest-line",
-    type: "line",
-    source: "route-fastest",
-    paint: { ...linePaint },
-    layout: { "line-cap": "round", "line-join": "round" },
-  },
-  {
-    id: "route-safest-line",
-    type: "line",
-    source: "route-safest",
-    paint: { ...linePaint },
-    layout: { "line-cap": "round", "line-join": "round" },
-  },
-  {
-    id: "route-hit",
-    type: "line",
-    source: "route-fastest",
-    paint: { "line-width": 22, "line-opacity": 0 },
-  },
-  {
-    id: "navigation-route-line",
-    type: "line",
-    source: "navigation-route",
-    paint: { "line-color": "#2563eb", "line-width": 7 },
-  },
-  {
-    id: "route-high-risk-line",
-    type: "line",
-    source: "route-high-risk",
-    paint: { "line-color": "#d97706", "line-width": ["case", ["get", "selected"], 12, 7] },
-    layout: { "line-cap": "round" },
-  },
-  {
-    id: "section-hit",
-    type: "line",
-    source: "route-high-risk",
-    paint: { "line-width": 28, "line-opacity": 0 },
-  },
-  {
-    id: "navigation-alert-line",
-    type: "line",
-    source: "navigation-alert",
-    filter: ["==", ["geometry-type"], "LineString"],
-    paint: { "line-color": "#d97706", "line-width": 7 },
-  },
-  {
-    id: "navigation-alert-point",
-    type: "circle",
-    source: "navigation-alert",
-    filter: ["==", ["geometry-type"], "Point"],
-    paint: { "circle-color": "#d97706", "circle-radius": 7 },
-  },
-  {
-    id: "route-accidents-point",
-    type: "circle",
-    source: "route-accidents",
-    paint: {
-      "circle-radius": 7,
-      "circle-color": "#fff",
-      "circle-stroke-color": "#d97706",
-      "circle-stroke-width": 3,
+// 色はstyles.cssの:rootのトークンを読む（層を（再）作成するたびに取得する）。
+export function buildMapLayers(): LayerSpecification[] {
+  const blue = mapColor("--blue");
+  const caution = mapColor("--caution");
+  const surface = mapColor("--surface");
+  return [
+    {
+      id: "route-fastest-line",
+      type: "line",
+      source: "route-fastest",
+      paint: { ...linePaint },
+      layout: { "line-cap": "round", "line-join": "round" },
     },
-  },
-  {
-    id: "accident-hit",
-    type: "circle",
-    source: "route-accidents",
-    paint: { "circle-radius": 22, "circle-opacity": 0 },
-  },
-  {
-    id: "current-accuracy-fill",
-    type: "fill",
-    source: "current-accuracy",
-    paint: { "fill-color": "#2563eb", "fill-opacity": 0.15 },
-  },
-  {
-    id: "current-location-point",
-    type: "circle",
-    source: "current-location",
-    paint: {
-      // 模擬走行の現在地は塗りなしの輪にして、実機の現在地と区別する。
-      "circle-color": ["case", ["==", ["get", "kind"], "simulation"], "#fff", "#2563eb"],
-      "circle-radius": 7,
-      "circle-stroke-color": ["case", ["==", ["get", "kind"], "simulation"], "#2563eb", "#fff"],
-      "circle-stroke-width": ["case", ["==", ["get", "kind"], "simulation"], 4, 3],
+    {
+      id: "route-safest-line",
+      type: "line",
+      source: "route-safest",
+      paint: { ...linePaint },
+      layout: { "line-cap": "round", "line-join": "round" },
     },
-  },
-];
+    {
+      id: "route-hit",
+      type: "line",
+      source: "route-fastest",
+      paint: { "line-width": 22, "line-opacity": 0 },
+    },
+    {
+      id: "navigation-route-line",
+      type: "line",
+      source: "navigation-route",
+      paint: { "line-color": blue, "line-width": 7 },
+    },
+    {
+      id: "route-high-risk-line",
+      type: "line",
+      source: "route-high-risk",
+      paint: { "line-color": caution, "line-width": ["case", ["get", "selected"], 12, 7] },
+      layout: { "line-cap": "round" },
+    },
+    {
+      id: "section-hit",
+      type: "line",
+      source: "route-high-risk",
+      paint: { "line-width": 28, "line-opacity": 0 },
+    },
+    {
+      id: "navigation-alert-line",
+      type: "line",
+      source: "navigation-alert",
+      filter: ["==", ["geometry-type"], "LineString"],
+      paint: { "line-color": caution, "line-width": 7 },
+    },
+    {
+      id: "navigation-alert-point",
+      type: "circle",
+      source: "navigation-alert",
+      filter: ["==", ["geometry-type"], "Point"],
+      paint: { "circle-color": caution, "circle-radius": 7 },
+    },
+    {
+      id: "route-accidents-point",
+      type: "circle",
+      source: "route-accidents",
+      paint: {
+        "circle-radius": 7,
+        "circle-color": surface,
+        "circle-stroke-color": caution,
+        "circle-stroke-width": 3,
+      },
+    },
+    {
+      id: "accident-hit",
+      type: "circle",
+      source: "route-accidents",
+      paint: { "circle-radius": 22, "circle-opacity": 0 },
+    },
+    {
+      id: "current-accuracy-fill",
+      type: "fill",
+      source: "current-accuracy",
+      paint: { "fill-color": blue, "fill-opacity": 0.15 },
+    },
+    {
+      id: "current-location-point",
+      type: "circle",
+      source: "current-location",
+      paint: {
+        // 模擬走行の現在地は塗りなしの輪にして、実機の現在地と区別する。
+        "circle-color": ["case", ["==", ["get", "kind"], "simulation"], surface, blue],
+        "circle-radius": 7,
+        "circle-stroke-color": ["case", ["==", ["get", "kind"], "simulation"], blue, surface],
+        "circle-stroke-width": ["case", ["==", ["get", "kind"], "simulation"], 4, 3],
+      },
+    },
+  ];
+}
+
+/** source IDの一覧など、色に依存しない参照用。 */
+export const mapLayers: LayerSpecification[] = buildMapLayers();
 
 type LayerState = {
   data: Record<string, FeatureCollection>;
@@ -183,10 +193,11 @@ export function restoreMapLayers(map: Map, styleReady = false): void {
         source.setData(data);
       }
     }
-    for (let index = mapLayers.length - 1; index >= 0; index--) {
-      const layer = mapLayers[index];
+    const layers = buildMapLayers();
+    for (let index = layers.length - 1; index >= 0; index--) {
+      const layer = layers[index];
       if (!map.getLayer(layer.id)) {
-        const before = mapLayers
+        const before = layers
           .slice(index + 1)
           .find((next) => map.getLayer(next.id));
         map.addLayer(layer, before?.id);

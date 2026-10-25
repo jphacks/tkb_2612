@@ -27,6 +27,7 @@
   --danger-bg: #fef2f2;
   --danger-border: #fecaca;
   --ink: #0f172a;
+  --surface: #fff;
 }
 * {
   box-sizing: border-box;
@@ -552,9 +553,9 @@ svg {
   margin-top: 16px;
 }
 .warning {
-  border-color: #fcd34d;
-  color: #92400e;
-  background: #fffbeb;
+  border-color: var(--caution-border);
+  color: var(--caution-text);
+  background: var(--caution-bg);
 }
 .app-results {
   /* Height of the data attribution bar below the map (also clears the demo menu). */
@@ -992,7 +993,7 @@ svg {
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
 }
 .nav-status.is-caution {
   border-color: var(--caution-border);
@@ -1062,7 +1063,7 @@ svg {
   padding: 8px 12px;
   border-radius: 8px;
   background: var(--ink);
-  color: #fff;
+  color: var(--surface);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -1101,7 +1102,7 @@ svg {
   overflow: auto;
   padding: 24px 20px 20px;
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
 }
 .nav-dialog h2 {
   font-size: 16px;
@@ -1146,7 +1147,7 @@ svg {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
   font-size: 12px;
   line-height: 1.7;
 }
