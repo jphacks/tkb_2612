@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { Crosshair, Eye, EyeOff, MapPin, Minus, Plus, X } from "lucide-react";
-import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
+import type { Map as MapLibreMap, MapEventType } from "maplibre-gl";
 import type {
   AccidentFeature,
   RouteCandidate,
@@ -18,10 +18,16 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import "./map.css";
 import {
+  disposeMapLayers,
+  markMapStyleLoading,
+  restoreMapLayers,
+  setRouteLayers,
+} from "../map/layers";
+import { isFatalMapError } from "../map/errors";
+import {
   RouteCallouts,
   featuredRoutes,
   routeAnchor,
-  routeColors,
   routeTone,
   type MapPoint,
   type MapSize,
@@ -136,6 +142,7 @@ function LiveMap(props: LiveMapProps) {
   useEffect(() => {
     let disposed = false;
     let map: MapLibreMap | undefined;
+    const cleanups: (() => void)[] = [];
     void import("maplibre-gl")
       .then((maplibre) => {
         if (disposed || !container.current) return;
@@ -162,8 +169,15 @@ function LiveMap(props: LiveMapProps) {
             ),
           );
         };
-        map.on("move", reportPositions);
-        map.on("resize", reportPositions);
+        const listen = <T extends keyof MapEventType>(
+          type: T,
+          handler: (event: MapEventType[T]) => void,
+        ) => {
+          map!.on(type, handler);
+          cleanups.push(() => map!.off(type, handler));
+        };
+        listen("move", reportPositions);
+        listen("resize", reportPositions);
         map.addControl(
           new maplibre.NavigationControl({ showCompass: false }),
           "top-right",
@@ -172,89 +186,48 @@ function LiveMap(props: LiveMapProps) {
           new maplibre.AttributionControl({ compact: false }),
           "bottom-right",
         );
-        map.on("load", () => {
+        const restore = (styleReady = false) => {
           if (disposed || !map) return;
-          const empty = { type: "FeatureCollection" as const, features: [] };
-          map.addSource("routes", { type: "geojson", data: empty });
-          map.addSource("sections", { type: "geojson", data: empty });
-          map.addSource("accidents", { type: "geojson", data: empty });
-          map.addLayer({
-            id: "route-lines",
-            type: "line",
-            source: "routes",
-            paint: {
-              "line-color": ["get", "color"],
-              "line-width": ["case", ["get", "selected"], 7, 4],
-              "line-opacity": 1,
-            },
-            layout: { "line-cap": "round", "line-join": "round" },
-          });
-          map.addLayer({
-            id: "route-hit",
-            type: "line",
-            source: "routes",
-            paint: { "line-width": 22, "line-opacity": 0 },
-          });
-          map.addLayer({
-            id: "section-lines",
-            type: "line",
-            source: "sections",
-            paint: {
-              "line-color": "#d97706",
-              "line-width": ["case", ["get", "selected"], 12, 7],
-            },
-            layout: { "line-cap": "round" },
-          });
-          map.addLayer({
-            id: "section-hit",
-            type: "line",
-            source: "sections",
-            paint: { "line-width": 28, "line-opacity": 0 },
-          });
-          map.addLayer({
-            id: "accident-points",
-            type: "circle",
-            source: "accidents",
-            paint: {
-              "circle-radius": 7,
-              "circle-color": "#fff",
-              "circle-stroke-color": "#d97706",
-              "circle-stroke-width": 3,
-            },
-          });
-          map.addLayer({
-            id: "accident-hit",
-            type: "circle",
-            source: "accidents",
-            paint: { "circle-radius": 22, "circle-opacity": 0 },
-          });
-          map.on("click", (event) => {
-            if (!map) return;
-            const features = map.queryRenderedFeatures(event.point, {
-              layers: ["accident-hit", "section-hit", "route-hit"],
-            });
-            const accident = features.find(
-              (feature) => feature.layer.id === "accident-hit",
-            );
-            if (accident) {
-              current.current.onAccident(Number(accident.id));
-              return;
-            }
-            const section = features.find(
-              (feature) => feature.layer.id === "section-hit",
-            );
-            if (section) {
-              current.current.onSelectSection(String(section.id));
-              return;
-            }
-            const route = features.find(
-              (feature) => feature.layer.id === "route-hit",
-            );
-            if (route) current.current.onSelectRoute(String(route.id));
-          });
-          setReady(true);
+          setRouteLayers(map, current.current);
+          restoreMapLayers(map, styleReady);
+          if (styleReady) setReady(true);
+        };
+        listen("load", () => restore(true));
+        listen("style.load", () => restore(true));
+        listen("styledataloading", () => {
+          if (!disposed && map) markMapStyleLoading(map);
         });
-        map.on("error", () => {
+        listen("styledata", () => {
+          if (!disposed && map) restoreMapLayers(map);
+        });
+        listen("click", (event) => {
+          if (!map || !["accident-hit", "section-hit", "route-hit"].every((id) => map!.getLayer(id))) return;
+          const features = map.queryRenderedFeatures(event.point, {
+            layers: ["accident-hit", "section-hit", "route-hit"],
+          });
+          const accident = features.find(
+            (feature) => feature.layer.id === "accident-hit",
+          );
+          if (accident) {
+            current.current.onAccident(Number(accident.id));
+            return;
+          }
+          const section = features.find(
+            (feature) => feature.layer.id === "section-hit",
+          );
+          if (section) {
+            current.current.onSelectSection(String(section.id));
+            return;
+          }
+          const route = features.find(
+            (feature) => feature.layer.id === "route-hit",
+          );
+          if (route) current.current.onSelectRoute(String(route.id));
+        });
+        listen("error", (event) => {
+          if (!disposed && map && isFatalMapError(event, map.getStyle() != null)) current.current.onUnavailable();
+        });
+        listen("webglcontextlost", () => {
           if (!disposed) current.current.onUnavailable();
         });
       })
@@ -263,6 +236,8 @@ function LiveMap(props: LiveMapProps) {
       });
     return () => {
       disposed = true;
+      cleanups.forEach((cleanup) => cleanup());
+      if (map) disposeMapLayers(map);
       map?.remove();
       mapRef.current = null;
     };
@@ -284,46 +259,7 @@ function LiveMap(props: LiveMapProps) {
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map) return;
-    const result = props.result;
-    const selected = result?.candidates.find(
-      (route) => route.id === props.selectedRouteId,
-    );
-    const routes = result?.candidates ?? [];
-    const selectedLast = [...routes].sort(
-      (a, b) =>
-        Number(a.id === props.selectedRouteId) -
-        Number(b.id === props.selectedRouteId),
-    );
-    (map.getSource("routes") as GeoJSONSource).setData({
-      type: "FeatureCollection",
-      features: selectedLast.map((route) => ({
-        type: "Feature",
-        id: route.id,
-        geometry: route.geometry,
-        properties: {
-          selected: route.id === props.selectedRouteId,
-          color: routeColors[routeTone(route.id, result!)],
-        },
-      })),
-    });
-    (map.getSource("sections") as GeoJSONSource).setData({
-      type: "FeatureCollection",
-      features: (selected?.high_risk_sections.features ?? []).map(
-        (section) => ({
-          ...section,
-          properties: {
-            ...section.properties,
-            selected: section.id === props.selectedSectionId,
-          },
-        }),
-      ),
-    });
-    (map.getSource("accidents") as GeoJSONSource).setData({
-      type: "FeatureCollection",
-      features: props.showAccidents
-        ? (selected?.accident_points.features ?? [])
-        : [],
-    });
+    setRouteLayers(map, props);
   }, [
     ready,
     props.result,
