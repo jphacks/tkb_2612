@@ -995,16 +995,16 @@ svg {
   display: flex;
   gap: 8px;
   padding: 12px;
-  border: 1px solid var(--caution-border);
+  border: 1px solid var(--danger-border);
   border-radius: 6px;
-  background: var(--caution-bg);
-  color: var(--caution-text);
+  background: var(--danger-bg);
+  color: var(--danger);
   font-size: 12px;
   line-height: 1.7;
 }
 .nav-alert > svg {
   margin-top: 4px;
-  color: var(--caution);
+  color: var(--danger);
 }
 .nav-alert-count {
   font-weight: 600;
