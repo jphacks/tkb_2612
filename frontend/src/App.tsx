@@ -29,7 +29,6 @@ import {
   SimulationBanner,
 } from "./components/NavigationPanel";
 import { NavigationStart, SELECTION_LABEL } from "./components/NavigationStart";
-import { ResultsPanel } from "./components/ResultsPanel";
 import { RouteMap } from "./components/RouteMap";
 import { buildNavigationLayers } from "./map/navigationData";
 import { useConditions } from "./state/useConditions";
@@ -65,7 +64,9 @@ export default function App() {
     useState<GeocodeAttribution>([]);
   const [showAccidents, setShowAccidents] = useState(true);
   const [scenario, setScenario] = useState<Scenario>("normal");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The result page opens with the sidebar closed so the map is fully visible.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarToggle = useRef<HTMLButtonElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const demoMenu = useRef<HTMLDetailsElement>(null);
   const confirmed = !!origin.place && !!dest.place;
@@ -90,11 +91,15 @@ export default function App() {
   const navigating = navigation.snapshot !== null;
   const [follow, setFollow] = useState(true);
   // 注意の確認を待っている開始操作。確認の操作の中でだけ開始する。
+  const [startRouteId, setStartRouteId] = useState<string | null>(null);
   const [pendingStart, setPendingStart] = useState<StartRequest | null>(null);
   useEffect(() => {
     // 追従は開始のたびに初期ONへ戻す。
     if (!navigating) setFollow(true);
   }, [navigating]);
+  useEffect(() => {
+    setStartRouteId(null);
+  }, [result, navigating]);
   const navigationLayers = useMemo(
     () => buildNavigationLayers(navigation.route, navigation.snapshot),
     [navigation.route, navigation.snapshot],
@@ -143,9 +148,13 @@ export default function App() {
 
   const panel = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (!intro) heading.current?.focus();
+    if (intro) return;
+    // The page heading of the result page sits in the closed sidebar.
+    (page === "results" && !sidebarOpen
+      ? sidebarToggle
+      : heading
+    ).current?.focus();
   }, [page, intro, navigationBusy]);
-  // ナビ表示と通常表示の切替では、前の内容のスクロール位置を引き継がない。
   useEffect(() => {
     panel.current?.scrollTo?.(0, 0);
   }, [navigationBusy, reSearch.state.status]);
@@ -196,7 +205,7 @@ export default function App() {
       location.setMessage(
         "検索を開始したため、現在地の取得を中止しました。出発地は変更されません。",
       );
-    if (page !== "results") setSidebarOpen(true);
+    if (page !== "results") setSidebarOpen(false);
     setPage("results");
     await route.run(
       async (signal) => {
@@ -275,7 +284,6 @@ export default function App() {
       busy={conditions.busy}
       warning={conditions.warning}
       info={conditions.info}
-      demo={isDemo}
       compact={page === "results"}
     />
   );
@@ -378,6 +386,7 @@ export default function App() {
         ) : (
           <main className={`result-page${sidebarOpen ? " sidebar-open" : ""}`}>
             <button
+              ref={sidebarToggle}
               className="sidebar-toggle"
               type="button"
               aria-label={
@@ -396,6 +405,7 @@ export default function App() {
                 selectedSectionId={route.selectedSection}
                 onSelectRoute={navigating ? noop : selectRoute}
                 onSelectSection={route.setSelectedSection}
+                onNavigate={setStartRouteId}
                 showAccidents={showAccidents}
                 onShowAccidents={setShowAccidents}
                 unavailable={scenario === "map-error"}
@@ -449,12 +459,12 @@ export default function App() {
               id="search-conditions"
               ref={panel}
               className="route-panel"
-              aria-label={navigationBusy ? "ナビ" : "検索結果と条件"}
+              aria-label={navigationBusy ? "ナビ" : "検索条件"}
               hidden={!sidebarOpen}
             >
               <div className="panel-title">
                 <h1 ref={heading} tabIndex={-1}>
-                  {navigationBusy ? "ナビ" : "検索結果と条件"}
+                  {navigationBusy ? "ナビ" : "検索条件"}
                 </h1>
               </div>
               {navigation.snapshot ? (
@@ -494,24 +504,6 @@ export default function App() {
                       {reSearch.notice}
                     </p>
                   )}
-                  {result && route.selectedRoute && (
-                    <>
-                      <NavigationStart
-                        result={result}
-                        mapAvailable={!mapUnavailable}
-                        error={navigation.startError}
-                        onStart={(request) =>
-                          setPendingStart({ ...request, forResult: result })
-                        }
-                      />
-                      <ResultsPanel
-                        result={result}
-                        selectedRouteId={route.selectedRoute}
-                        onSelectRoute={selectRoute}
-                      />
-                    </>
-                  )}
-                  <h2 className="panel-subtitle">検索条件</h2>
                   {/* frontend-spec 3: inputs stay locked while searching; there is no cancel. */}
                   <fieldset className="panel-editor" disabled={searching}>
                     {healthNotice}
@@ -541,11 +533,21 @@ export default function App() {
                 </>
               )}
             </aside>
-            {/* Outside the collapsible sidebar: attribution stays visible with the map. */}
-            {attribution}
           </main>
         )}
         <UpdateNotice />
+        {result && startRouteId && !navigating && (
+          <NavigationStart
+            key={startRouteId}
+            result={result}
+            routeId={startRouteId}
+            hidden={pendingStart !== null}
+            onClose={() => setStartRouteId(null)}
+            mapAvailable={!mapUnavailable}
+            error={navigation.startError}
+            onStart={(request) => setPendingStart({ ...request, forResult: result })}
+          />
+        )}
         {pendingStart && (
           <NavigationConfirmDialog
             selectionLabel={SELECTION_LABEL[pendingStart.selection]}
@@ -555,6 +557,7 @@ export default function App() {
               const request = pendingStart;
               setPendingStart(null);
               navigation.start(request);
+              setSidebarOpen(true);
             }}
           />
         )}

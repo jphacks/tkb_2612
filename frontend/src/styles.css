@@ -373,8 +373,9 @@ svg {
 .next-button {
   display: flex;
   width: fit-content;
-  min-width: 180px;
   max-width: 100%;
+  min-height: 40px;
+  padding: 8px 16px;
   margin-top: 32px;
   margin-left: auto;
   justify-content: flex-end;
@@ -540,9 +541,10 @@ svg {
   gap: 16px;
   margin-top: 32px;
 }
+/* Sized to its label, like the next button on the places page. */
 .form-actions .primary {
-  flex: 1;
-  max-width: 300px;
+  min-height: 40px;
+  padding: 8px 16px;
 }
 .notice {
   padding: 12px 14px;
@@ -558,8 +560,6 @@ svg {
   background: var(--caution-bg);
 }
 .app-results {
-  /* Height of the data attribution bar below the map (also clears the demo menu). */
-  --attribution-space: 88px;
   height: 100dvh;
   overflow: hidden;
 }
@@ -571,9 +571,7 @@ svg {
 }
 .map-stage {
   position: absolute;
-  inset: 0 0 var(--attribution-space);
-  /* Route cards must not spill over the attribution bar on short screens. */
-  overflow: hidden;
+  inset: 0;
   background: #f1f5f9;
 }
 .sidebar-open .map-stage {
@@ -599,7 +597,7 @@ svg {
   position: absolute;
   top: 16px;
   left: 16px;
-  bottom: calc(var(--attribution-space) + 16px);
+  bottom: 16px;
   width: 360px;
   background: #fff;
   border: 1px solid var(--border);
@@ -837,15 +835,8 @@ svg {
     padding-left: 16px;
     padding-right: 16px;
   }
-  .form-actions .primary {
-    padding-left: 12px;
-    padding-right: 12px;
-  }
   .result-page {
     --sidebar-space: 0px;
-  }
-  .app-results {
-    --attribution-space: 120px;
   }
   .route-panel {
     width: min(340px, calc(100% - 72px));
@@ -861,9 +852,6 @@ svg {
 .group-heading > .text-button,
 .all-option {
   min-height: 44px;
-}
-.result-content {
-  padding: 0 16px;
 }
 .map-legend {
   bottom: 76px;
@@ -885,10 +873,6 @@ svg {
     transition: none !important;
   }
 }
-.panel-subtitle {
-  margin: 24px 16px 0;
-  font-size: 16px;
-}
 .data-attribution {
   color: var(--muted);
   font-size: 11px;
@@ -899,46 +883,16 @@ svg {
   margin: 4px 0 0;
   padding-left: 16px;
 }
-.result-page > .data-attribution {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: var(--attribution-space);
-  overflow-y: auto;
-  padding: 8px 16px;
-  background: #fff;
-  border-top: 1px solid var(--border);
-  font-size: 10px;
-  line-height: 1.6;
-}
-.result-page > .data-attribution p {
-  margin: 0;
-}
-.result-page > .data-attribution ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 16px;
-  margin: 2px 0 0;
-  padding: 0;
-  list-style: none;
-}
 .form-page .data-attribution {
   margin-top: 40px;
   padding: 0;
 }
-.app-results .demo-menu {
-  bottom: calc(var(--attribution-space) + 12px);
-}
-/* Short screens (e.g. a landscape phone): keep the attribution bar inside the
-   viewport instead of letting the 400px minimum push it below the fold. */
+/* Short screens (e.g. a landscape phone): the 400px minimums would push the
+   sidebar bottom below the fold of the 100dvh, overflow-hidden result page. */
 @media (max-height: 480px) {
   .result-page,
   .map-stage .route-map-shell {
     min-height: 0;
-  }
-  .app-results {
-    --attribution-space: 64px;
   }
 }
 /* ナビ（既存のサイドバー・.result-content・.segmented・.result-metrics を再利用） */

@@ -49,23 +49,31 @@ describe("RouteMap", () => {
         });
       const props = mapProps(createDemoRouteResponse(request));
       render(<RouteMap {...props} />);
-      const cards = within(
-        screen.getByRole("group", { name: "表示する経路" }),
-      ).getAllByRole("button");
+      const group = screen.getByRole("group", { name: "表示する経路" });
+      const cards = [...group.querySelectorAll<HTMLElement>(".map-route-card")];
       expect(cards).toHaveLength(2);
       const considered = cards.find((card) =>
-        card.textContent?.includes("事故履歴を考慮"),
+        card.textContent?.includes("安全ルート"),
       )!;
       const fastest = cards.find((card) =>
-        card.textContent?.includes("最短時間"),
+        card.textContent?.includes("最短ルート"),
       )!;
       expect(considered).toHaveClass("route-considered");
       expect(fastest).toHaveClass("route-fastest");
-      const line = screen.getByRole("button", { name: "最短時間を選択" });
+      // Each card offers selection and a navigation start button.
+      expect(
+        within(fastest).getByRole("button", { name: "最短ルートでナビを開始" }),
+      ).toBeInTheDocument();
+      const line = screen.getByRole("button", { name: "最短ルートを選択" });
       expect(line).toHaveClass("route-fastest");
       fireEvent.pointerEnter(fastest);
       expect(line).toHaveClass("is-hovered");
-      fireEvent.click(fastest);
+      fireEvent.click(
+        within(fastest).getByRole("button", {
+          name: /^最短ルート/,
+          pressed: false,
+        }),
+      );
       expect(props.onSelectRoute).toHaveBeenCalledWith(
         props.result!.fastest_id,
       );
@@ -92,7 +100,7 @@ describe("RouteMap", () => {
   it("connects route and section selection, and only shows factual accident fields", () => {
     const props = mapProps(createDemoRouteResponse(request));
     render(<RouteMap {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "最短時間を選択" }));
+    fireEvent.click(screen.getByRole("button", { name: "最短ルートを選択" }));
     expect(props.onSelectRoute).toHaveBeenCalledWith(props.result?.fastest_id);
     const selected = props.result!.candidates.find(
       (route) => route.id === props.selectedRouteId,
@@ -169,12 +177,24 @@ describe("RouteMap", () => {
     const { rerender } = render(<RouteMap {...props} />);
     expect(
       screen.getAllByRole("button", {
-        name: "最短時間・事故履歴を考慮（同一経路）を選択",
+        name: "最短ルート・安全ルート（同一経路）を選択",
       }),
     ).toHaveLength(1);
     rerender(<RouteMap {...props} unavailable />);
     expect(screen.getByText("地図を利用できません")).toBeVisible();
     expect(screen.getByRole("group", { name: "表示する経路" })).toBeVisible();
+  });
+
+  it("tells that navigation is not available yet instead of doing nothing", () => {
+    const props = mapProps(createDemoRouteResponse(request));
+    render(<RouteMap {...props} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "安全ルートでナビを開始" }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "ナビの開始は準備中です。",
+    );
+    expect(props.onSelectRoute).not.toHaveBeenCalled();
   });
 });
 

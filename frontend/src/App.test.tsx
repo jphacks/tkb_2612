@@ -130,10 +130,21 @@ async function openConditions() {
   return user;
 }
 
+async function openSidebar(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(
+    screen.getByRole("button", { name: "条件サイドバーを開く" }),
+  );
+}
+
 async function openResults() {
   const user = await openConditions();
   await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
   await screen.findByRole("group", { name: "表示する経路" });
+  // The result page opens with the sidebar closed.
+  expect(
+    screen.getByRole("button", { name: "条件サイドバーを開く" }),
+  ).toHaveAttribute("aria-expanded", "false");
+  await openSidebar(user);
   return user;
 }
 
@@ -149,7 +160,7 @@ describe("App search flow and condition ownership", () => {
   it("keeps conditions visible and preserves them when the sidebar is hidden and reopened", async () => {
     const user = await openResults();
     const sidebar = screen.getByRole("complementary", {
-      name: "検索結果と条件",
+      name: "検索条件",
     });
     expect(
       within(sidebar).getByRole("combobox", { name: "目的地" }),
@@ -233,14 +244,14 @@ describe("App search flow and condition ownership", () => {
   it("clears old routes immediately on condition edits and sends the new values only on re-search", async () => {
     const user = await openResults();
     expect(
-      screen.getByRole("button", { name: "最短時間を選択" }),
+      screen.getByRole("button", { name: "最短ルートを選択" }),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: "雨" }));
     expect(
       screen.queryByRole("group", { name: "表示する経路" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "最短時間を選択" }),
+      screen.queryByRole("button", { name: "最短ルートを選択" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText("変更した条件で再検索してください。"),
@@ -264,6 +275,7 @@ describe("App search flow and condition ownership", () => {
     api.getConditions.mockImplementationOnce(() => pending.promise);
     await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
     await screen.findByRole("heading", { name: "ルートを検索しています" });
+    await openSidebar(user);
     expect(api.searchRoutes).not.toHaveBeenCalled();
     expect(
       screen.queryByRole("button", { name: /キャンセル/ }),
@@ -289,14 +301,13 @@ describe("App search flow and condition ownership", () => {
     ).toBeEnabled();
   });
 
-  it("shows why automatic day type and weather were chosen", async () => {
+  it("shows why the automatic day type was chosen", async () => {
     await openConditions();
     expect(
       await screen.findByText(/自動：(平日|休日)（.+）/),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(/自動：晴（Open-Meteo、.+の予報・デモの固定値）/),
-    ).toBeInTheDocument();
+    // The weather supplement (source and model note) is no longer shown.
+    expect(screen.queryByText(/自動：晴（Open-Meteo/)).not.toBeInTheDocument();
     expect(screen.getByText(/祝日表の収録範囲外/)).toBeInTheDocument();
   });
 
@@ -329,7 +340,8 @@ describe("App search flow and condition ownership", () => {
       weather: "晴",
       day_type: "休日",
     });
-  });
+  }, // Several scenario switches and the sidebar step run close to the 5s default.
+  15_000);
 
   it("keeps zero-accident results explicit without presenting an accident-considered route", async () => {
     const user = await openResults();
@@ -337,14 +349,14 @@ describe("App search flow and condition ownership", () => {
     const group = await screen.findByRole("group", { name: "表示する経路" });
     await waitFor(() =>
       expect(
-        within(group).queryByRole("button", { name: /事故履歴を考慮/ }),
+        within(group).queryByRole("button", { name: /^安全ルート(?!でナビ)/ }),
       ).not.toBeInTheDocument(),
     );
     expect(
-      within(group).getByRole("button", { name: /最短時間/ }),
+      within(group).getByRole("button", { name: /^最短ルート(?!でナビ)/ }),
     ).toBeInTheDocument();
     expect(
-      within(group).getByRole("button", { name: /最短時間.*過去事故 0 件/ }),
+      within(group).getByRole("button", { name: /最短ルート.*過去事故 0 件/ }),
     ).toBeInTheDocument();
   });
 
@@ -391,6 +403,7 @@ describe("App search flow and condition ownership", () => {
     api.searchRoutes.mockImplementationOnce(() => pending.promise);
     await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
     await screen.findByRole("heading", { name: "ルートを検索しています" });
+    await openSidebar(user);
     const signal = api.searchRoutes.mock.calls[0][1] as AbortSignal;
 
     act(() =>
@@ -465,6 +478,7 @@ describe("App search flow and condition ownership", () => {
     );
     await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
     await screen.findByRole("group", { name: "表示する経路" });
+    await openSidebar(user);
     expect(
       await screen.findByText(
         "事故データを準備しています。時間をおいて再試行してください。",
@@ -504,34 +518,6 @@ describe("App search flow and condition ownership", () => {
 });
 
 describe("App result comparison and failures (frontend-spec 5, 10)", () => {
-  it("shows the aggregation settings and all candidates in the sidebar and syncs the selection with the map", async () => {
-    const user = await openResults();
-    const sidebar = screen.getByRole("complementary", {
-      name: "検索結果と条件",
-    });
-    const response: RouteResponse =
-      await api.searchRoutes.mock.results.at(-1)?.value;
-    await user.click(within(sidebar).getByText("集計条件と全候補"));
-    expect(
-      within(sidebar).getByText(`${response.data_years.join("・")}年`),
-    ).toBeVisible();
-    const fastestIndex = response.candidates.findIndex(
-      (route) => route.id === response.fastest_id,
-    );
-    await user.click(
-      within(sidebar).getByRole("button", { name: `候補${fastestIndex + 1}` }),
-    );
-    expect(
-      screen.getByRole("button", { name: "最短時間を選択" }),
-    ).toHaveAttribute("aria-pressed", "true");
-
-    // Editing a condition clears the table together with the result.
-    await user.click(within(sidebar).getByRole("radio", { name: "雨" }));
-    expect(
-      within(sidebar).queryByText("集計条件と全候補"),
-    ).not.toBeInTheDocument();
-  });
-
   it.each([
     ["no_route", 502, /道路に近い地点/],
     ["route_too_long", 422, /80km.*近づけて/],
@@ -557,6 +543,7 @@ describe("App result comparison and failures (frontend-spec 5, 10)", () => {
       expect(
         within(alert).getByRole("button", { name: "再試行" }),
       ).toBeEnabled();
+      await openSidebar(user);
       expect(screen.getByRole("combobox", { name: "目的地" })).toHaveValue(
         DEMO_PLACES[1].label,
       );
@@ -601,23 +588,11 @@ describe("App result comparison and failures (frontend-spec 5, 10)", () => {
     );
   });
 
-  it("keeps live attribution visible on the result page when the sidebar is closed", async () => {
-    const user = await openResults();
-    // The helper uses the demo origin; the next render reads live mode.
-    mode.demo = false;
-    await user.click(
-      screen.getByRole("button", { name: "条件サイドバーを閉じる" }),
-    );
-    const footer = screen.getByRole("contentinfo", { name: "データの出典" });
-    expect(footer).toBeVisible();
+  it("shows no data attribution footer on the result page", async () => {
+    await openResults();
     expect(
-      within(footer).getByText(/過去の事故記録に基づく参考指標/),
-    ).toBeVisible();
-    expect(
-      within(footer).getByRole("link", {
-        name: "Weather data by Open-Meteo.com",
-      }),
-    ).toBeVisible();
+      screen.queryByRole("contentinfo", { name: "データの出典" }),
+    ).not.toBeInTheDocument();
   });
 
   it("explains a health network failure with the possible expired login", async () => {
