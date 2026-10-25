@@ -103,15 +103,15 @@ https://github.com/user-attachments/assets/9fa12b72-b40f-47f4-bb0c-326380478c1c
 ### 活用した技術
 #### API・データ
   * [警察庁 交通事故統計オープンデータ](https://www.npa.go.jp/publications/statistics/koutsuu/opendata/index_opendata.html)（本票 2019〜2025年、約218万件）と、内閣府「国民の祝日」CSV
-  * OSRM（FOSSGIS が公開する routing.openstreetmap.de）：徒歩・自転車・自動車の経路候補の取得
+  * OSRM：徒歩・自転車・自動車の経路候補の取得
   * Geoapify Geocoding API：住所検索
   * Open-Meteo：出発日時・地点の天気予報
-  * OpenFreeMap（OpenStreetMap / OpenMapTiles）：地図タイル
-  * ブラウザの API：Geolocation（現在地・ナビ）、Web Speech（接近通知の読み上げ）、Screen Wake Lock（ナビ中の画面点灯）、Service Worker（PWA）
+  * OpenFreeMap：地図タイル
+  * ブラウザの API：Geolocation、Web Speech、Screen Wake Lock、Service Worker
 
   #### フレームワーク・ライブラリ・モジュール
-  * フロントエンド：React 19、TypeScript、Vite、MapLibre GL JS、Ajv、openapi-typescript、lucide-react、Vitest、Testing Library
-  * バックエンド：Rust、Axum、hyper、Tokio、reqwest、csv、encoding_rs、zip・roxmltree、flate2、sha2
+  * フロントエンド：React、TypeScript、Vite、openapi-typescript
+  * バックエンド：Rust、Axum
   * 基盤：Docker、GitHub Actions、Cloudflare Tunnel
 
   #### デバイス
