@@ -986,3 +986,52 @@ svg {
 .sim-seed-label + .date-input {
   margin-top: 8px;
 }
+.nav-status {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+.nav-status.is-caution {
+  border-color: var(--caution-border);
+  background: var(--caution-bg);
+  color: var(--caution-text);
+}
+.nav-status.is-danger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.nav-phase {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.nav-cause {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.nav-fix {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+}
+.nav-fix > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.nav-fix dt {
+  opacity: 0.8;
+}
+.nav-fix dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

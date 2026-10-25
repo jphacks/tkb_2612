@@ -1,55 +1,17 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App from "./App";
-import {
-  createDemoConditions,
-  createDemoRouteResponse,
-  demoHealth,
-  DEMO_PLACES,
-  findDemoPlaces,
-} from "./api/demo";
-import type { LatLon, RouteRequest, Scenario } from "./lib/types";
 import { createFetchCounter } from "./test/fetchCounter";
+import { api, resetApi } from "./test/apiMock";
+import { advance, openResults, startGroup } from "./test/navigationApp";
 
-const api = vi.hoisted(() => ({
-  getHealth: vi.fn(),
-  getConditions: vi.fn(),
-  searchPlaces: vi.fn(),
-  searchRoutes: vi.fn(),
-}));
-vi.mock("./api/client", async () => ({
-  ApiError: (await import("./api/errors")).ApiError,
-  isDemo: true,
-  ...api,
-}));
+vi.mock("./api/client", async () => (await import("./test/apiMock")).clientMock());
 vi.mock("./components/LogoIntro", () => ({
   LogoIntro: ({ onComplete }: { onComplete: () => void }) => (
     <button onClick={onComplete}>動画をスキップして開始</button>
   ),
 }));
 
-beforeEach(() => {
-  api.getHealth.mockReset().mockResolvedValue(demoHealth);
-  api.searchPlaces
-    .mockReset()
-    .mockImplementation((query: string) => Promise.resolve(findDemoPlaces(query)));
-  api.getConditions
-    .mockReset()
-    .mockImplementation((datetime: string, origin?: LatLon, dest?: LatLon) =>
-      Promise.resolve(createDemoConditions(datetime, origin && dest ? origin : undefined)),
-    );
-  api.searchRoutes
-    .mockReset()
-    .mockImplementation((request: RouteRequest, _signal?: AbortSignal, scenario?: Scenario) =>
-      Promise.resolve(
-        createDemoRouteResponse(
-          request,
-          scenario === "same" || scenario === "zero" ? scenario : "normal",
-        ),
-      ),
-    );
-});
+beforeEach(resetApi);
 
 afterEach(() => {
   vi.useRealTimers();
@@ -57,32 +19,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   Reflect.deleteProperty(navigator, "geolocation");
 });
-
-/** 検索結果画面まで進める（実時間）。 */
-export async function openResults() {
-  const user = userEvent.setup();
-  render(<App />);
-  await user.click(screen.getByRole("button", { name: "動画をスキップして開始" }));
-  await user.click(screen.getByRole("button", { name: "現在地を使う（デモ）" }));
-  fireEvent.change(screen.getByRole("combobox", { name: "目的地" }), { target: { value: "上野" } });
-  await user.click(await screen.findByRole("option", { name: DEMO_PLACES[1].label }));
-  await user.click(screen.getByRole("button", { name: "条件を選ぶ" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "ルートを比較する" })).toBeEnabled());
-  await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
-  await screen.findByRole("group", { name: "表示する経路" });
-  return user;
-}
-
-function startGroup(name: string) {
-  return within(screen.getByRole("group", { name: `${name}経路` }));
-}
-
-/** 以降のナビを仮想時刻で進める。 */
-function advance(ms: number) {
-  act(() => {
-    vi.advanceTimersByTime(ms);
-  });
-}
 
 describe("ナビ中の画面構成と結線（手順10）", () => {
   it("開始操作は選定2経路だけに置き、事故0件で事故考慮が無ければ最短時間だけにする", async () => {

@@ -48,3 +48,19 @@ export function formatKilometres(metres: number): string {
 export function formatExtraMinutes(minutes: number): string {
   return `+${minutes.toFixed(1)}分`;
 }
+
+/** ナビの残り距離（10m単位に切り上げ済みの値）。1km以上はkm、未満はm。 */
+export function formatRemainingDistance(metres: number): string {
+  return metres < 1000 ? `${metres} m` : `${(metres / 1000).toFixed(2)} km`;
+}
+
+/** 最後の位置の時点。実機は端末の時刻、模擬は走行開始からの仮想秒。 */
+export function formatPositionTime(
+  kind: "device" | "simulation",
+  timestamp: number,
+): string {
+  if (kind === "simulation") return `走行開始から${Math.floor(timestamp / 1000)}秒`;
+  const date = new Date(timestamp);
+  const two = (value: number) => String(value).padStart(2, "0");
+  return `${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}`;
+}
