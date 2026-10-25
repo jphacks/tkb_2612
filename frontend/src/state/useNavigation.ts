@@ -26,7 +26,7 @@ export interface StartRequest {
   simulation?: SimulationSettings;
 }
 
-/** 7.6: 再検索のために停止したナビから引き継ぐ内容。位置は補正前の最後の測位。 */
+/** 7.6: 再検索のために停止したナビから引き継ぐ内容。実機は補正前の最後の測位、模擬は停止位置からの測位関数。 */
 export interface ReSearchSource {
   kind: NavigationKind;
   selection: NavigationSelection;
@@ -34,6 +34,8 @@ export interface ReSearchSource {
   fix: PositionFix | null;
   /** 精度30m以下かつ5秒以内（実機は端末時計、模擬は仮想時計）。 */
   fixFresh: boolean;
+  /** 停止した模擬位置源。呼ぶたびに新しい仮想時刻の未補正測位を返す。 */
+  measureSimulation: (() => PositionFix | null) | null;
 }
 
 export interface NavigationControl {
@@ -48,7 +50,7 @@ export interface NavigationControl {
   setMultiplier(value: SimulationMultiplier): void;
   setJitter(value: boolean): void;
   tryDeviation(): void;
-  /** 再検索の開始。位置源・音声を止め、最後の未補正測位と選定種別を返す。 */
+  /** 再検索の開始。位置源・音声を止め、未補正測位/模擬測位関数と選定種別を返す。 */
   takeForReSearch(): ReSearchSource | null;
 }
 
@@ -189,6 +191,7 @@ export function useNavigation({ result, mapAvailable }: Options): NavigationCont
       simulation: snap.simulation
         ? { seed: snap.simulation.seed, multiplier: snap.simulation.multiplier, jitter: snap.simulation.jitter }
         : null,
+      measureSimulation: active.stopForReSearch(),
       fix,
       fixFresh: !!fix && fix.accuracy <= 30 && age >= 0 && age <= 5000,
     };

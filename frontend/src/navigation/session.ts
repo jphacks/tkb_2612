@@ -246,11 +246,23 @@ export class NavigationSession {
     this.pause("hidden", kind);
   }
 
+  /** 再検索用に停止した模擬位置源だけを引き継ぐ。タイマー・判定器・音声は終了する。 */
+  stopForReSearch(): (() => PositionFix | null) | null {
+    const simulator = this.simulator;
+    simulator?.pause();
+    this.finishStop("stop", simulator !== null);
+    return simulator ? () => simulator.measureStoppedPosition() : null;
+  }
+
   stop(reason: SpeechCancelReason = "stop"): void {
+    this.finishStop(reason);
+  }
+
+  private finishStop(reason: SpeechCancelReason, retainSimulation = false): void {
     if (this.lifecycle === "stopped") return;
     this.lifecycle = "stopped";
     this.stopTimer();
-    this.source.stop();
+    if (!retainSimulation) this.source.stop();
     this.matcher.stop();
     this.speech.cancel(reason);
     this.wake.release();

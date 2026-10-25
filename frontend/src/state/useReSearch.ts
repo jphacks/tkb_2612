@@ -32,6 +32,7 @@ export const SIMULATION_RESEARCH_NOTE = "模擬位置から条件と経路を取
 /** 再試行用のメモリ内snapshot。入力編集・unmountで破棄する。 */
 interface Snapshot {
   kind: NavigationKind;
+  measureSimulation: (() => PositionFix | null) | null;
   selection: NavigationSelection;
   simulation: SimulationSettings | null;
   /** 位置の再取得前は最後の未補正測位。使い切ったらnull。 */
@@ -152,12 +153,14 @@ export function useReSearch(params: Params) {
     try {
       let fix: PositionFix;
       const existing = snap.origin;
-      if (existing && (snap.kind === "simulation" || freshTimestamp(existing.fix, Date.now()))) {
+      if (snap.kind === "simulation") {
+        const measured = snap.measureSimulation?.();
+        if (!measured) throw new Failure("模擬位置を取得できませんでした");
+        fix = measured;
+      } else if (existing && freshTimestamp(existing.fix, Date.now())) {
         fix = existing.fix;
-      } else if (snap.lastFix && ((snap.lastFix.fresh && freshTimestamp(snap.lastFix.fix, Date.now())) || snap.kind === "simulation")) {
+      } else if (snap.lastFix && snap.lastFix.fresh && freshTimestamp(snap.lastFix.fix, Date.now())) {
         fix = snap.lastFix.fix;
-      } else if (import.meta.env.VITE_ENABLE_SIMULATION === "true" && snap.kind === "simulation") {
-        throw new Failure("模擬位置を取得できませんでした");
       } else {
         fix = await measure();
       }
@@ -241,6 +244,7 @@ export function useReSearch(params: Params) {
     if (!taken) return;
     snapshot.current = {
       kind: taken.kind,
+      measureSimulation: taken.measureSimulation,
       selection: taken.selection,
       simulation: taken.simulation,
       lastFix: taken.fix ? { fix: taken.fix, fresh: taken.fixFresh } : null,

@@ -46,7 +46,7 @@ Vは元頂点数（API上限15,000）、Eは統合後の正長辺数（E<=V−1�
 | 選択枝、始点観測/初回探索フラグ・開始p、前回時刻、受理/良好/使用可能/探索開始時刻 | 固定個数 |
 | 前回良好測位、最終受理測位、今回結果と最後の確定p/時刻 | 各1個（参照共有あり） |
 | 確認・到着の開始時刻とカウンタ | 各1組、回数は3で飽和 |
-| simulatorの乱数・時計・倍率・停止期限など | 固定個数 |
+| simulatorの乱数・時計・倍率・停止期限・進捗tick・測位時刻オフセットなど | 固定個数 |
 
 永続状態はO(V+H)。更新時の射影列・候補MapもO(V)が上限で、走行履歴を追加しない。計算は射影O(V)、交差比較は近傍数Kに対してO(K²)、各仮説の遷移探索は二分探索と予測進捗の範囲内の辺数に依存する。全体の最悪計算量はO(V²)で、Tには依存しない。実機の最大経路での処理時間は人工テストとは別の評価対象。
 
@@ -111,6 +111,7 @@ class NavigationSimulator implements PositionSource {
   stopReason: SimulationStopReason | null
   start(realNow: number, consumer: PositionConsumer): void
   pump(realNow: number): void
+  measureStoppedPosition(): PositionFix | null
   pause(): void
   resume(realNow: number): void
   stop(): void
@@ -119,6 +120,13 @@ class NavigationSimulator implements PositionSource {
   tryDeviation(): void
   report(status: MatchStatus, reason?: SimulationStopReason): void
 }
+
+// measureStoppedPositionはpaused/stoppedでのみ呼べる（他の状態では例外）。
+// tickの進捗を保ち、現在の仮想時刻を1秒進めて未補正測位を1回返す。consumerには配信しない。
+// emitと同じLCG2回（揺らぎOFFでも消費）・左120mオフセット・accuracy=10m・injectを使う。
+// injectのvirtualSecondsは新しい仮想時刻/1000。nullなら欠測でも時計・乱数は保持する。
+// 追加の時刻オフセットは以後のpumpにも反映し、stopで0に戻す。
+// 呼ばない場合はオフセット0で従来の測位列を維持する。
 
 // matcher.ts
 // MatchStatus、MatchResultをexport。
@@ -232,3 +240,5 @@ frontendディレクトリ、node_modules導入済み、ネットワークなし
 このうち**2m seed1/2と5m seed1の3入力には誤差20m超の確定が残る**。改善した残り3入力も既決の専用検査のままとし、例外を追加/削除しない。d=2/5mの揺らぎOFF、d=5m ONのseed3/42、d=10/15/20mの従来のseed全件は引き続き誤差条件を必須とする。10m ONはさらにseed1〜512を全件必須としている。
 
 後続の通知/逸脱/音声との結合、DOMライフサイクル、実API接続、実機の測位特性や最大経路の性能は本コアの人工入力試験とは別の評価対象である。
+
+再検索は `NavigationSession.stopForReSearch()` で模擬位置源を一時停止し、タイマー・判定器・音声を終了する。返す測位関数だけを再試行snapshotに保持し、毎試行で1回呼ぶ。成功・入力編集・unmountでsnapshotを破棄する。成功後は従来どおり新経路・同seedから初期化し、旧位置源の進捗・時刻・乱数・逸脱状態は引き継がない。

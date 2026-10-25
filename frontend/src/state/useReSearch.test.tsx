@@ -54,12 +54,14 @@ function geolocation() {
 }
 
 function setup(source: Partial<ReSearchSource> = {}, beforeResume?: () => void) {
+  let virtualTimestamp = here.timestamp;
   const taken: ReSearchSource = {
     kind: "device",
     selection: "safest",
     simulation: null,
     fix: { lon: here.lon, lat: here.lat, accuracy: here.accuracy, timestamp: Date.now() },
     fixFresh: true,
+    measureSimulation: vi.fn(() => ({ ...here, timestamp: virtualTimestamp += 1000 })),
     ...source,
   };
   const navigation = {
@@ -206,7 +208,7 @@ describe("useReSearch: 現在地からの明示的再検索（7.6）", () => {
     expect(client.searchRoutes).toHaveBeenCalledTimes(2);
   });
 
-  it("模擬は位置の鮮度に関わらず停止位置を使い、GPSを呼ばず、模擬位置としてoriginにする", async () => {
+  it("模擬は停止位置から新しい測位を生成し、GPSを呼ばず、模擬位置としてoriginにする", async () => {
     const geo = geolocation();
     const view = setup({
       kind: "simulation",
@@ -216,11 +218,29 @@ describe("useReSearch: 現在地からの明示的再検索（7.6）", () => {
     });
     await act(async () => view.result.current.reSearch.start());
     await waitFor(() => expect(view.navigation.start).toHaveBeenCalled());
+    expect(view.taken.measureSimulation).toHaveBeenCalledTimes(1);
     expect(geo.getCurrentPosition).not.toHaveBeenCalled();
     expect(view.onAdoptOrigin).toHaveBeenCalledWith({ label: "模擬位置", lat: here.lat, lon: here.lon });
     expect(view.navigation.start).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "simulation", simulation: { seed: 7, multiplier: 4, jitter: false } }),
     );
+  });
+
+  it("模擬測位が欠測なら旧測位を使わず送信を止め、再試行で再生成する", async () => {
+    const geo = geolocation();
+    const measureSimulation = vi.fn()
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce({ ...here, timestamp: 3000 });
+    const view = setup({ kind: "simulation", measureSimulation });
+    await act(async () => view.result.current.reSearch.start());
+    expect(state(view)).toMatchObject({ status: "failed", message: "模擬位置を取得できませんでした" });
+    expect(view.refresh).not.toHaveBeenCalled();
+    expect(client.searchRoutes).not.toHaveBeenCalled();
+    expect(geo.getCurrentPosition).not.toHaveBeenCalled();
+    await act(async () => view.result.current.reSearch.retry());
+    expect(measureSimulation).toHaveBeenCalledTimes(2);
+    expect(client.searchRoutes).toHaveBeenCalledTimes(1);
+    expect(view.navigation.start).toHaveBeenCalledTimes(1);
   });
 
   it("目的地と20m未満なら検索できない旨を示し、conditionsもrouteも送らない", async () => {

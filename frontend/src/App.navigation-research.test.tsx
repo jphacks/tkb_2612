@@ -1,6 +1,8 @@
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDemoRouteResponse } from "./api/demo";
+import { NavigationSimulator } from "./navigation/simulator";
+import { NavigationSession } from "./navigation/session";
 import { ApiError } from "./api/errors";
 import { api, resetApi } from "./test/apiMock";
 import { openNavigationSidebar, advance, startGroup, beginNavigation, openResults } from "./test/navigationApp";
@@ -163,6 +165,34 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
     expect(searches()).toBe(failed + 1);
     expect(screen.getByText("模擬走行中（実際の現在地ではありません）")).toBeVisible();
     expect(phase()).toHaveTextContent(/測位待ち|照合保留/);
+  });
+
+  it("模擬走行の再検索と失敗後の各再試行で、新仮想時刻の未補正測位を毎回originにする", async () => {
+    await deviate();
+    const measure = vi.spyOn(NavigationSimulator.prototype, "measureStoppedPosition");
+    const lastRaw = vi.spyOn(NavigationSession.prototype, "lastUncorrectedFix");
+    api.searchRoutes.mockRejectedValueOnce(new ApiError("混雑", "service_busy", 503));
+    api.searchRoutes.mockRejectedValueOnce(new ApiError("混雑", "service_busy", 503));
+    fireEvent.click(screen.getByRole("button", { name: RESEARCH }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    const oldFix = lastRaw.mock.results[0].value!;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        fireEvent.click(screen.getByRole("button", { name: "再試行" }));
+        await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+      }
+      expect(measure).toHaveBeenCalledTimes(attempt + 1);
+      const fix = measure.mock.results[attempt].value!;
+      expect(fix.timestamp).toBe(oldFix.timestamp + (attempt + 1) * 1000);
+      const origin = { lat: fix.lat, lon: fix.lon };
+      expect(api.searchRoutes.mock.calls.at(-1)![0].origin).toEqual(origin);
+      expect(api.getConditions.mock.calls.at(-1)![1]).toMatchObject(origin);
+      expect(origin).not.toEqual({ lat: oldFix.lat, lon: oldFix.lon });
+      if (attempt < 2) expect(screen.getByRole("button", { name: "再試行" })).toBeVisible();
+    }
+    expect(screen.getByText("模擬走行中（実際の現在地ではありません）")).toBeVisible();
+    advance(2000);
+    expect(measure).toHaveBeenCalledTimes(3);
   });
 
   it("失敗後に入力を編集すると、再試行ボタンは消えて通常の入力へ戻る", async () => {
