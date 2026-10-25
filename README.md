@@ -99,3 +99,66 @@ https://github.com/user-attachments/assets/9fa12b72-b40f-47f4-bb0c-326380478c1c
 - **仕様とスキーマを先に固め、テストで守る開発**：OpenAPI 3.1から型と検証スキーマを自動生成しています。バックエンドとフロントエンドが同一の応答例を通過することをテストで検証しています。
 - **検索条件を自動設定しつつ手動で上書きできる** 出発日時から時間帯と天候を自動で設定するので、利用者は条件を選ばなくても検索できます。手動で選んだ条件は自動取得で上書きされず、出発日時を変えたときだけ自動設定に戻ります。
 
+## 動かし方
+
+### Dockerで起動してlocalhostで確認する
+
+APIサーバ・フロントエンド・事故データを1つのイメージに入れ、手元の `http://localhost:8080/` で確認します。経路・住所検索・天気は外部のサービスに接続します。
+
+必要なもの：Docker、Rust 1.88以上（事故データの前処理に使用）、[Geoapify](https://www.geoapify.com/) のAPIキー（住所検索に使用）。
+
+1. 事故データの前処理を行い、releaseを作ります。リポジトリの `accident/` を読み、`backend/data/releases/<release_id>/` に出力します。最後に出力される `release_id` を控えてください。
+
+   ```bash
+   cargo run --release --manifest-path backend/Cargo.toml --bin prepare_release -- \
+       --accident-dir accident --holidays accident/syukujitsu.csv --output backend/data
+   RELEASE_ID=$(basename "$(ls -d backend/data/releases/*)")
+   ```
+
+2. イメージをビルドします。`VITE_ENABLE_SIMULATION=true` を付けると、実際に移動しなくてもナビを試せる模擬走行を使えます。
+
+   ```bash
+   docker build \
+     --build-arg ACCIDENT_RELEASE=backend/data/releases/$RELEASE_ID \
+     --build-arg VITE_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/liberty \
+     --build-arg VITE_ROUTING_ATTRIBUTION="© OpenStreetMap contributors / Routing: FOSSGIS (routing.openstreetmap.de)" \
+     --build-arg VITE_MAP_ATTRIBUTION="OpenFreeMap © OpenMapTiles Data from OpenStreetMap" \
+     --build-arg VITE_ENABLE_SIMULATION=true \
+     -t acciless-navi:local .
+   ```
+
+3. Geoapifyのキーをファイルに保存し、接続先を書いた環境変数ファイルを作ります。キーはリポジトリの外に置いてください。
+
+   ```bash
+   printf %s 'GeoapifyのAPIキー' > ~/geoapify.key
+   chmod 600 ~/geoapify.key
+   cat > ~/acciless.env <<'EOF'
+   PORT=8080
+   UPSTREAM_GATE=local
+   OSRM_WALK_BASE_URL=https://routing.openstreetmap.de/routed-foot/
+   OSRM_BIKE_BASE_URL=https://routing.openstreetmap.de/routed-bike/
+   OSRM_CAR_BASE_URL=https://routing.openstreetmap.de/routed-car/
+   GEOAPIFY_BASE_URL=https://api.geoapify.com/
+   GEOAPIFY_API_KEY_FILE=/secrets/geoapify/key
+   OPEN_METEO_BASE_URL=https://api.open-meteo.com/
+   EXTERNAL_USER_AGENT=acciless-navi-local/0.1 (+https://github.com/jphacks/tkb_2612)
+   ROUTING_ATTRIBUTION=© OpenStreetMap contributors / Routing: FOSSGIS (routing.openstreetmap.de)
+   GEOCODING_ATTRIBUTION=[{"text":"Powered by Geoapify","url":"https://www.geoapify.com/"}]
+   EOF
+   ```
+
+4. コンテナを起動します。キーのファイルを読めるように、自分のユーザーIDで実行します。
+
+   ```bash
+   docker run -d --name acciless-navi --user "$(id -u):$(id -g)" \
+     -p 127.0.0.1:8080:8080 --env-file ~/acciless.env \
+     -v ~/geoapify.key:/secrets/geoapify/key:ro \
+     acciless-navi:local
+   curl -s http://127.0.0.1:8080/api/health
+   ```
+
+   事故データの読み込み中は `/api/health` が503を返します。`"status":"ok"` になったら、ブラウザで `http://localhost:8080/` を開きます。
+
+5. 止めるときは `docker rm -f acciless-navi` を実行します。
+
+経路検索には、FOSSGISが公開しているOSRM（routing.openstreetmap.de）を使います。動作確認の範囲で利用し、大量の検索は行わないでください。本番環境への配備は [`deploy/README.md`](deploy/README.md)、フロントエンドだけを開発サーバーで動かす方法は [`frontend/README.md`](frontend/README.md) を参照してください。
