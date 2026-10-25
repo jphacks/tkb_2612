@@ -61,8 +61,12 @@
 
 #### デモ動画（柏駅から運河駅まで）
 
-https://github.com/user-attachments/assets/02e9b3f5-f077-42d3-8b86-923ba4aee2c4
 
+
+https://github.com/user-attachments/assets/9fa12b72-b40f-47f4-bb0c-326380478c1c
+
+
+※今回は、ナビを実際に使用できてはいないため、模擬走行という形でナビの機能を紹介しています
 
 ### 特長
 
