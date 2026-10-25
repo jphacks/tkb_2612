@@ -6,7 +6,7 @@ export const SAFETY_NOTICE =
 export const WALKING_NOTICE = "徒歩の場合も、歩きながら画面を注視しないでください。";
 
 export interface NavigationConfirmDialogProps {
-  /** 例: 最短時間 */
+  /** 例: 最短ルート */
   selectionLabel: string;
   kind: NavigationKind;
   onConfirm: () => void;
@@ -66,7 +66,7 @@ export function NavigationConfirmDialog({
           <p>{WALKING_NOTICE}</p>
         </div>
         <p className="nav-dialog-target">
-          {selectionLabel}経路を{kind === "simulation" ? "模擬走行" : "実機GPS"}で開始します
+          {selectionLabel}を{kind === "simulation" ? "模擬走行" : "実機GPS"}で開始します
         </p>
         <div className="nav-dialog-actions">
           <button type="button" className="secondary" onClick={onCancel}>

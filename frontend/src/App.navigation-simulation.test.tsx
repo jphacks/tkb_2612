@@ -26,7 +26,7 @@ const position = () => `${marker().getAttribute("cx")},${marker().getAttribute("
 async function startSimulation() {
   await openResults();
   vi.useFakeTimers();
-  beginNavigation("最短時間", "模擬走行で開始");
+  beginNavigation("最短ルート", "模擬走行で開始");
 }
 
 describe("模擬走行の区別とSimulationControls（手順10・7.7）", () => {
@@ -44,17 +44,18 @@ describe("模擬走行の区別とSimulationControls（手順10・7.7）", () =>
 
   it("倍率1/2/4/8を選べ、seedと揺らぎを開始前に設定でき、走行中のseedは表示のみ", async () => {
     await openResults();
-    const settings = screen.getByRole("group", { name: "最短時間経路" });
-    expect(settings).toBeVisible();
+    const settings = startGroup("最短ルート");
+    fireEvent.click(screen.getByText("模擬走行の設定"));
+    expect(settings.getByRole("button", { name: "模擬走行で開始" })).toBeVisible();
     const seed = screen.getByLabelText(/seed/);
     fireEvent.change(seed, { target: { value: "-1" } });
     expect(seed).toHaveAttribute("aria-invalid", "true");
-    expect(startGroup("最短時間").getByRole("button", { name: "模擬走行で開始" })).toBeDisabled();
+    expect(startGroup("最短ルート").getByRole("button", { name: "模擬走行で開始" })).toBeDisabled();
     fireEvent.change(seed, { target: { value: "42" } });
     fireEvent.click(screen.getByRole("radio", { name: "4倍" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "位置の揺らぎ（半径8m）" }));
     vi.useFakeTimers();
-    beginNavigation("最短時間", "模擬走行で開始");
+    beginNavigation("最短ルート", "模擬走行で開始");
     expect(screen.getByText("倍率 4倍・進行中")).toBeVisible();
     const controls = within(screen.getByLabelText("模擬走行の操作"));
     expect(controls.getByText("42")).toBeVisible();

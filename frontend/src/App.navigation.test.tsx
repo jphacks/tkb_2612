@@ -1,5 +1,7 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createDemoRouteResponse } from "./api/demo";
+import type { RouteRequest } from "./lib/types";
 import { createFetchCounter } from "./test/fetchCounter";
 import { api, resetApi } from "./test/apiMock";
 import { advance, beginNavigation, openResults, startGroup } from "./test/navigationApp";
@@ -21,21 +23,63 @@ afterEach(() => {
 });
 
 describe("ナビ中の画面構成と結線（手順10）", () => {
-  it("開始操作は選定2経路だけに置き、事故0件で事故考慮が無ければ最短時間だけにする", async () => {
+  it("開始操作は選定2経路の既存カードから開く", async () => {
     await openResults();
-    expect(screen.getAllByRole("button", { name: "実機GPSで開始" })).toHaveLength(2);
-    expect(screen.getAllByRole("button", { name: "模擬走行で開始" })).toHaveLength(2);
-    startGroup("最短時間").getByRole("button", { name: "実機GPSで開始" });
-    startGroup("事故履歴を考慮").getByRole("button", { name: "模擬走行で開始" });
-    // 全候補の比較表には開始操作がない。
-    const table = screen.getByRole("table");
-    expect(within(table).queryByRole("button", { name: /開始/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /でナビを開始/ })).toHaveLength(2);
+    for (const name of ["最短ルート", "安全ルート"]) {
+      const group = startGroup(name);
+      expect(group.getByRole("button", { name: "実機GPSで開始" })).toBeEnabled();
+      expect(group.getByRole("button", { name: "模擬走行で開始" })).toBeEnabled();
+    }
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it.each(["zero", "same"] as const)("%sでは1枚の選定カードだけから開始できる", async (scenario) => {
+    api.searchRoutes.mockImplementationOnce((request: RouteRequest) =>
+      Promise.resolve(createDemoRouteResponse(request, scenario)),
+    );
+    await openResults();
+    expect(screen.getAllByRole("button", { name: /でナビを開始/ })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: /でナビを開始/ }));
+    expect(screen.getAllByRole("button", { name: "実機GPSで開始" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "模擬走行で開始" })).toHaveLength(1);
+    expect(screen.queryByRole("group", { name: "安全ルート" })).not.toBeInTheDocument();
+    if (scenario === "same") expect(within(screen.getByRole("dialog")).getByText("同一経路")).toBeVisible();
+  });
+
+  it("開始方法を閉じると既存カードに戻り、フォーカスも紙飛行機ボタンへ戻す", async () => {
+    await openResults();
+    const button = screen.getByRole("button", { name: "最短ルートでナビを開始" });
+    button.focus();
+    fireEvent.click(button);
+    const dialog = screen.getByRole("dialog", { name: "ナビ開始" });
+    expect(within(dialog).getByRole("button", { name: "実機GPSで開始" })).toHaveFocus();
+    const close = within(dialog).getByRole("button", { name: "閉じる" });
+    close.focus();
+    fireEvent.keyDown(close, { key: "Tab" });
+    expect(within(dialog).getByRole("button", { name: "実機GPSで開始" })).toHaveFocus();
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(button).toHaveFocus();
+  });
+
+  it("地図を使えないときは開始を拒否し、操作可能な要素にフォーカスを置く", async () => {
+    const user = await openResults();
+    await user.click(screen.getByText("デモ状態切替"));
+    await user.click(screen.getByRole("button", { name: "地図利用不可" }));
+    await screen.findByText("地図を利用できません");
+    await screen.findByRole("button", { name: "最短ルートでナビを開始" });
+    const group = startGroup("最短ルート");
+    expect(group.getByRole("button", { name: "実機GPSで開始" })).toBeDisabled();
+    expect(group.getByRole("button", { name: "模擬走行で開始" })).toBeDisabled();
+    expect(screen.getByText("模擬走行の設定").closest("summary")).toHaveFocus();
+    expect(screen.queryByRole("complementary", { name: "ナビ" })).not.toBeInTheDocument();
   });
 
   it("模擬走行を開始すると、サイドバーの結果と条件エディタがナビ表示に置き換わり、地図は残る", async () => {
     await openResults();
     vi.useFakeTimers();
-    beginNavigation("事故履歴を考慮", "模擬走行で開始");
+    beginNavigation("安全ルート", "模擬走行で開始");
     const panel = screen.getByRole("complementary", { name: "ナビ" });
     expect(within(panel).getByRole("button", { name: "ナビを停止" })).toBeVisible();
     expect(within(panel).queryByRole("combobox", { name: "目的地" })).not.toBeInTheDocument();
@@ -48,7 +92,7 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
     // 比較入力の抑止：ヘッダーのロゴ（地点入力へ戻る）と状態切替も使えない。
     expect(screen.getByRole("button", { name: "AcciLessNavi 地点入力へ" })).toBeDisabled();
     fireEvent.click(within(panel).getByRole("button", { name: "ナビを停止" }));
-    expect(screen.getByRole("complementary", { name: "検索結果と条件" })).toBeVisible();
+    expect(screen.getByRole("complementary", { name: "検索条件" })).toBeVisible();
     expect(screen.getByRole("group", { name: "表示する経路" })).toBeVisible();
   });
 
@@ -63,7 +107,7 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
       places: api.searchPlaces.mock.calls.length,
     };
     vi.useFakeTimers();
-    beginNavigation("最短時間", "模擬走行で開始");
+    beginNavigation("最短ルート", "模擬走行で開始");
     advance(120_000);
     expect(api.getHealth).toHaveBeenCalledTimes(before.health);
     expect(api.getConditions).toHaveBeenCalledTimes(before.conditions);
@@ -81,10 +125,10 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
     });
     await openResults();
     vi.useFakeTimers();
-    beginNavigation("最短時間", "模擬走行で開始");
+    beginNavigation("最短ルート", "模擬走行で開始");
     expect(watchPosition).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "ナビを停止" }));
-    beginNavigation("最短時間", "実機GPSで開始");
+    beginNavigation("最短ルート", "実機GPSで開始");
     expect(watchPosition).toHaveBeenCalledTimes(1);
     expect(watchPosition.mock.calls[0][2]).toEqual({
       enableHighAccuracy: true,
@@ -99,22 +143,23 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
 
   it("位置情報が使えない環境では実機GPSの開始を拒否し、理由と模擬走行を案内する", async () => {
     await openResults();
-    beginNavigation("最短時間", "実機GPSで開始");
+    beginNavigation("最短ルート", "実機GPSで開始");
     expect(screen.getByRole("alert")).toHaveTextContent("模擬走行");
-    expect(screen.getByRole("complementary", { name: "検索結果と条件" })).toBeVisible();
+    expect(screen.getByRole("complementary", { name: "検索条件" })).toBeVisible();
   });
 
   it("開始・終了でサイドバーの見出しへフォーカスを移し、前の内容のスクロール位置を引き継がない", async () => {
     await openResults();
-    const panel = screen.getByRole("complementary", { name: "検索結果と条件" });
+    fireEvent.click(screen.getByRole("button", { name: "条件サイドバーを開く" }));
+    const panel = screen.getByRole("complementary", { name: "検索条件" });
     const scrollTo = vi.fn();
     panel.scrollTo = scrollTo as unknown as typeof panel.scrollTo;
     vi.useFakeTimers();
-    beginNavigation("最短時間", "模擬走行で開始");
+    beginNavigation("最短ルート", "模擬走行で開始");
     expect(screen.getByRole("heading", { name: "ナビ", level: 1 })).toHaveFocus();
     expect(scrollTo).toHaveBeenCalledWith(0, 0);
     fireEvent.click(screen.getByRole("button", { name: "ナビを停止" }));
-    expect(screen.getByRole("heading", { name: "検索結果と条件", level: 1 })).toHaveFocus();
+    expect(screen.getByRole("heading", { name: "検索条件", level: 1 })).toHaveFocus();
   });
 
   it("位置・進捗・通知済みIDをストレージ・URL・履歴・コンソールへ出さない", async () => {
@@ -127,7 +172,7 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
     const error = vi.spyOn(console, "error");
     const href = window.location.href;
     vi.useFakeTimers();
-    beginNavigation("最短時間", "模擬走行で開始");
+    beginNavigation("最短ルート", "模擬走行で開始");
     advance(120_000);
     expect(setItem).not.toHaveBeenCalled();
     expect(pushState).not.toHaveBeenCalled();

@@ -561,7 +561,7 @@ export default function App() {
             }}
           />
         )}
-        {isDemo && (
+        {isDemo && !navigationBusy && (
           <details className="demo-menu" ref={demoMenu}>
             <summary>
               <SlidersHorizontal size={15} />

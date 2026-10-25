@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetApi } from "./test/apiMock";
 import {
   advance,
+  startGroup,
   beginNavigation,
   installGeolocation,
   lastRoute,
@@ -34,7 +35,7 @@ async function startDevice() {
   await openResults();
   const route = await lastRoute("fastest");
   vi.useFakeTimers();
-  beginNavigation("最短時間", "実機GPSで開始");
+  beginNavigation("最短ルート", "実機GPSで開始");
   const feed = (progress: number, lateral = 0, accuracy = 10) => {
     advance(1000);
     gps.emit(positionAt(route, progress, lateral), accuracy);
@@ -52,7 +53,7 @@ describe("ナビの状態表示（手順10・5章）", () => {
     expect(screen.getByText("残り距離（概算）")).toBeVisible();
     expect(screen.getByText("残り時間（概算）")).toBeVisible();
     expect(metrics()).toHaveTextContent(/km|m/);
-    expect(screen.getByText("最短時間", { selector: "dd" })).toBeVisible();
+    expect(screen.getByText("最短ルート", { selector: "dd" })).toBeVisible();
     expect(screen.getByText("条件と事故データは検索時点のものです")).toBeVisible();
   });
 
@@ -97,9 +98,11 @@ describe("ナビの状態表示（手順10・5章）", () => {
 
   it("模擬走行は到着まで進み、到着では残りを0にして位置源を止める", async () => {
     await openResults();
+    startGroup("最短ルート");
+    fireEvent.click(screen.getByText("模擬走行の設定"));
     fireEvent.click(screen.getByRole("radio", { name: "8倍" }));
     vi.useFakeTimers();
-    beginNavigation("最短時間", "模擬走行で開始");
+    beginNavigation("最短ルート", "模擬走行で開始");
     advance(1000 * 20);
     expect(phase()).toHaveTextContent("進行中");
     advance(1000 * 600);

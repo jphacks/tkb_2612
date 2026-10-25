@@ -21,7 +21,7 @@ export const RESEARCH_INTERRUPTED =
 export const TOO_CLOSE =
   "現在地と目的地の直線距離が20m未満のため、再検索できません";
 export const NO_SAFEST =
-  "事故履歴を考慮した経路がありません。最短時間経路から開始する場合は、開始操作を行ってください";
+  "安全ルートがありません。最短ルートから開始する場合は、開始操作を行ってください";
 export const STAGE_TEXT: Record<ReSearchStage, string> = {
   locating: "現在地を取得しています",
   conditions: "条件を取得しています",

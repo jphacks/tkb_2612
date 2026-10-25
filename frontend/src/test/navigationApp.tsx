@@ -27,7 +27,12 @@ export async function openResults() {
 }
 
 export function startGroup(name: string) {
-  return within(screen.getByRole("group", { name: `${name}経路` }));
+  if (!screen.queryByRole("group", { name: name })) {
+    const close = screen.queryByRole("button", { name: "閉じる" });
+    if (close) fireEvent.click(close);
+    fireEvent.click(screen.getByRole("button", { name: new RegExp(`${name}.*でナビを開始`) }));
+  }
+  return within(screen.getByRole("group", { name: name }));
 }
 
 /** 開始操作と、注意ダイアログでの確認までを行う。 */

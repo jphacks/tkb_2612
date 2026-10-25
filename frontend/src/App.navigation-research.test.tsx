@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDemoRouteResponse } from "./api/demo";
 import { ApiError } from "./api/errors";
 import { api, resetApi } from "./test/apiMock";
-import { advance, beginNavigation, openResults } from "./test/navigationApp";
+import { advance, startGroup, beginNavigation, openResults } from "./test/navigationApp";
 import type { RouteRequest, RouteResponse } from "./lib/types";
 
 vi.mock("./api/client", async () => (await import("./test/apiMock")).clientMock());
@@ -37,10 +37,12 @@ function deferred<T>() {
 /** 4倍の模擬走行を開始し、逸脱の表示まで進める。 */
 async function deviate() {
   await openResults();
+  startGroup("最短ルート");
+  fireEvent.click(screen.getByText("模擬走行の設定"));
   fireEvent.click(screen.getByRole("radio", { name: "4倍" }));
   fireEvent.change(screen.getByLabelText(/seed/), { target: { value: "42" } });
   vi.useFakeTimers();
-  beginNavigation("最短時間", "模擬走行で開始");
+  beginNavigation("最短ルート", "模擬走行で開始");
   advance(10_000);
   fireEvent.click(screen.getByRole("button", { name: "逸脱を試す" }));
   // 4倍なので、実時間3秒は仮想12秒（逸脱の確定は10秒・3測位）。
@@ -59,7 +61,7 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
   it("開始直後の位置確認中には再検索を案内しない", async () => {
     await openResults();
     vi.useFakeTimers();
-    beginNavigation("最短時間", "模擬走行で開始");
+    beginNavigation("最短ルート", "模擬走行で開始");
     advance(3_000);
     expect(phase()).toHaveTextContent("照合保留");
     expect(screen.queryByRole("button", { name: RESEARCH })).not.toBeInTheDocument();
@@ -179,7 +181,7 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
   it("事故考慮経路なしで返ったときは、最短時間へ自動で切り替えず開始操作を案内する", async () => {
     await openResults();
     vi.useFakeTimers();
-    beginNavigation("事故履歴を考慮", "模擬走行で開始");
+    beginNavigation("安全ルート", "模擬走行で開始");
     advance(10_000);
     fireEvent.click(screen.getByRole("button", { name: "逸脱を試す" }));
     advance(12_000);
@@ -192,9 +194,9 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
     });
     expect(screen.queryByRole("complementary", { name: "ナビ" })).not.toBeInTheDocument();
     expect(
-      screen.getByText("事故履歴を考慮した経路がありません。最短時間経路から開始する場合は、開始操作を行ってください"),
+      screen.getByText("安全ルートがありません。最短ルートから開始する場合は、開始操作を行ってください"),
     ).toBeVisible();
-    expect(screen.queryByRole("group", { name: "事故履歴を考慮経路" })).not.toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "最短時間経路" })).toBeVisible();
+    expect(screen.queryByRole("group", { name: "安全ルート" })).not.toBeInTheDocument();
+    expect(startGroup("最短ルート").getByRole("button", { name: "模擬走行で開始" })).toBeVisible();
   });
 });

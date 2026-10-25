@@ -34,7 +34,7 @@ async function startDevice() {
   const route = await lastRoute("fastest");
   const section = route.navigation!.sections[0];
   vi.useFakeTimers();
-  beginNavigation("最短時間", "実機GPSで開始");
+  beginNavigation("最短ルート", "実機GPSで開始");
   const feed = (progress: number) => {
     advance(1000);
     gps.emit(positionAt(route, progress));
