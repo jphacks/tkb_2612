@@ -12,6 +12,26 @@ import type {
 
 export type Departure = "now" | "custom";
 
+function effectKey(
+  origin: LatLon | null,
+  dest: LatLon | null,
+  departure: Departure,
+  dateTime: string,
+  revision: number,
+  scenario: Scenario,
+): string {
+  return JSON.stringify([
+    origin?.lat,
+    origin?.lon,
+    dest?.lat,
+    dest?.lon,
+    departure,
+    dateTime,
+    revision,
+    scenario === "conditions-error",
+  ]);
+}
+
 const initialValues: ConditionValues = {
   mode: "walk",
   period: "all",
@@ -58,6 +78,8 @@ export function useConditions({ origin, dest, scenario, onEdit }: Options) {
   const request = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const confirmed = !!origin && !!dest;
+  // 再検索で取得済みの条件を、同じ入力変更で重ねて取り直さないための印。
+  const adopted = useRef<string | null>(null);
 
   function updateValues(next: ConditionValues) {
     valuesRef.current = next;
@@ -93,6 +115,8 @@ export function useConditions({ origin, dest, scenario, onEdit }: Options) {
   async function refresh(
     signal: AbortSignal,
     currentScenario: Scenario,
+    /** 7.6: 再検索の新originと、現在時刻での取得。 */
+    override?: { origin: LatLon; dest: LatLon; datetime: string },
   ): Promise<ConditionValues> {
     const current = ++generation.current;
     setBusy(true);
@@ -101,12 +125,16 @@ export function useConditions({ origin, dest, scenario, onEdit }: Options) {
       let message = "";
       try {
         const datetime = toTokyoIso(
-          departure === "now" ? toTokyoInput(new Date()) : dateTime,
+          override
+            ? override.datetime
+            : departure === "now"
+              ? toTokyoInput(new Date())
+              : dateTime,
         );
         data = await getConditions(
           datetime,
-          confirmed ? origin : undefined,
-          confirmed ? dest : undefined,
+          override ? override.origin : confirmed ? origin : undefined,
+          override ? override.dest : confirmed ? dest : undefined,
           signal,
           currentScenario === "conditions-error" ? currentScenario : "normal",
         );
@@ -144,7 +172,40 @@ export function useConditions({ origin, dest, scenario, onEdit }: Options) {
     return valuesRef.current;
   }
 
+  /**
+   * 7.6 現在地からの再検索: 新originで条件を15分未満でも必ず1回取り直す。
+   * 出発日時は「現在」にし、customだった場合だけ自動項目をautoへ戻す（nowのmanualは保持）。
+   * 呼出し側は同じ同期区間でoriginを新しい値へ更新する。その変更による自動取得は行わない。
+   */
+  function refreshForReSearch(
+    newOrigin: LatLon,
+    newDest: LatLon,
+    signal: AbortSignal,
+    currentScenario: Scenario,
+  ): Promise<ConditionValues> {
+    request.current?.abort();
+    if (departure === "custom") {
+      autoRef.current = { period: true, day_type: true, weather: true };
+      setAuto(autoRef.current);
+    }
+    const now = toTokyoInput(new Date());
+    setDeparture("now");
+    setDateTime(now);
+    adopted.current = effectKey(newOrigin, dest, "now", now, revision, scenario);
+    return refresh(signal, currentScenario, {
+      origin: newOrigin,
+      dest: newDest,
+      datetime: now,
+    });
+  }
+
   useEffect(() => {
+    const key = effectKey(origin, dest, departure, dateTime, revision, scenario);
+    if (adopted.current === key) {
+      adopted.current = null;
+      return;
+    }
+    adopted.current = null;
     const abort = new AbortController();
     request.current?.abort();
     request.current = abort;
@@ -177,5 +238,6 @@ export function useConditions({ origin, dest, scenario, onEdit }: Options) {
     resetAuto,
     changeDeparture,
     valuesForSearch,
+    refreshForReSearch,
   };
 }

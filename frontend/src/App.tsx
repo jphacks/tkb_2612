@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -21,13 +21,29 @@ import LocationInput, {
 import ConditionFields from "./components/ConditionFields";
 import { DataAttribution } from "./components/DataAttribution";
 import { LogoIntro } from "./components/LogoIntro";
+import { NavigationConfirmDialog } from "./components/NavigationConfirmDialog";
+import {
+  NavigationPanel,
+  ReSearchNotice,
+  ReSearchPanel,
+} from "./components/NavigationPanel";
+import { NavigationStart } from "./components/NavigationStart";
+import { SELECTION_LABEL } from "./components/navigationLabels";
+import { SimulationBanner } from "./components/SimulationBanner";
 import { RouteMap } from "./components/RouteMap";
+import { buildNavigationLayers } from "./map/navigationData";
 import { useConditions } from "./state/useConditions";
 import { useCurrentLocation } from "./state/useCurrentLocation";
 import { useHealth } from "./state/useHealth";
+import { START_MESSAGE, useNavigation, type StartRequest } from "./state/useNavigation";
+import { useReSearch } from "./state/useReSearch";
+import { UpdateNotice } from "./components/UpdateNotice";
+import { setUpdateBlocked } from "./pwa/register";
 import { useRouteSearch } from "./state/useRouteSearch";
+import type { RouteResponse } from "./lib/types";
 
 type Page = "places" | "conditions" | "results";
+const noop = () => {};
 const blank: LocationValue = { text: "", place: null };
 const scenarios: { id: Scenario; label: string }[] = [
   { id: "normal", label: "通常" },
@@ -59,12 +75,67 @@ export default function App() {
   const health = useHealth();
   const route = useRouteSearch();
   const { invalidate, searching, result } = route;
+  // 入力の編集は、結果の解除に加えて再検索の再試行snapshotも破棄する（3章）。
+  const discardReSearch = useRef(() => {});
+  function edit() {
+    discardReSearch.current();
+    invalidate();
+  }
   const conditions = useConditions({
     origin: origin.place,
     dest: dest.place,
     scenario,
-    onEdit: invalidate,
+    onEdit: edit,
   });
+  const [mapUnavailable, setMapUnavailable] = useState(false);
+  const navigation = useNavigation({ result, mapAvailable: !mapUnavailable });
+  const navigating = navigation.snapshot !== null;
+  const [follow, setFollow] = useState(true);
+  // 注意の確認を待っている開始操作。確認の操作の中でだけ開始する。
+  const [startRouteId, setStartRouteId] = useState<string | null>(null);
+  const [pendingStart, setPendingStart] = useState<StartRequest | null>(null);
+  useEffect(() => {
+    // 追従は開始のたびに初期ONへ戻す。
+    if (!navigating) setFollow(true);
+  }, [navigating]);
+  useEffect(() => {
+    setStartRouteId(null);
+  }, [result, navigating]);
+  const navigationLayers = useMemo(
+    () => buildNavigationLayers(navigation.route, navigation.snapshot),
+    [navigation.route, navigation.snapshot],
+  );
+  const navigationRouteId = navigation.route?.id;
+  const navigationSelection = navigation.snapshot?.selection;
+  // ナビ中の地図は選んだ1本だけを描く（経路の切替は終了後だけ）。
+  const navigationResult = useMemo<RouteResponse | null>(() => {
+    if (!result || !navigation.route || !navigationSelection) return null;
+    return {
+      ...result,
+      candidates: [navigation.route],
+      fastest_id: navigation.route.id,
+      safest_id: navigationSelection === "safest" ? navigation.route.id : null,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, navigationRouteId, navigationSelection]);
+  const reSearch = useReSearch({
+    navigation,
+    route,
+    conditions,
+    dest: dest.place,
+    scenario,
+    onAdoptOrigin: (place) => setOrigin({ text: place.label, place }),
+    onRouteSuccess: (response) => health.noteRouteDataset(response.dataset_id),
+  });
+  discardReSearch.current = reSearch.discard;
+  const reSearching = reSearch.state.status === "searching";
+  const navigationBusy = navigating || reSearching;
+  useEffect(() => {
+    setUpdateBlocked("navigation", navigationBusy);
+  }, [navigationBusy]);
+  useEffect(() => {
+    setUpdateBlocked("search", searching);
+  }, [searching]);
   const location = useCurrentLocation((place) =>
     changePlace("origin", { text: place.label, place }),
   );
@@ -76,6 +147,7 @@ export default function App() {
       )
     : "";
 
+  const panel = useRef<HTMLElement>(null);
   useEffect(() => {
     if (intro) return;
     // The page heading of the result page sits in the closed sidebar.
@@ -83,10 +155,13 @@ export default function App() {
       ? sidebarToggle
       : heading
     ).current?.focus();
-  }, [page, intro]);
+  }, [page, intro, navigationBusy]);
+  useEffect(() => {
+    panel.current?.scrollTo?.(0, 0);
+  }, [navigationBusy, reSearch.state.status]);
 
   function changePlace(which: "origin" | "dest", next: LocationValue) {
-    invalidate();
+    edit();
     if (which === "origin") {
       location.cancel();
       setOrigin(next);
@@ -122,6 +197,7 @@ export default function App() {
         return;
       }
     }
+    reSearch.discard();
     // Inputs are locked while searching, so a pending GPS request must not
     // overwrite the origin and abort this search when it completes later.
     const wasLocating = location.locating;
@@ -241,10 +317,10 @@ export default function App() {
           <button
             className="wordmark"
             type="button"
-            disabled={searching}
+            disabled={searching || navigationBusy}
             onClick={() => {
               if (page !== "places") {
-                invalidate();
+                edit();
                 setPage("places");
               }
             }}
@@ -325,22 +401,46 @@ export default function App() {
             </button>
             <div className="map-stage">
               <RouteMap
-                result={result}
-                selectedRouteId={route.selectedRoute}
+                result={navigationResult ?? result}
+                selectedRouteId={navigationResult ? navigation.route!.id : route.selectedRoute}
                 selectedSectionId={route.selectedSection}
-                onSelectRoute={selectRoute}
+                onSelectRoute={navigating ? noop : selectRoute}
                 onSelectSection={route.setSelectedSection}
+                onNavigate={(routeId) => {
+                  if (import.meta.env.VITE_ENABLE_SIMULATION === "true") {
+                    setStartRouteId(routeId);
+                  } else if (result) {
+                    setPendingStart({
+                      forResult: result,
+                      selection: routeId === result.safest_id ? "safest" : "fastest",
+                      kind: "device",
+                    });
+                  }
+                }}
                 showAccidents={showAccidents}
                 onShowAccidents={setShowAccidents}
                 unavailable={scenario === "map-error"}
+                onUnavailableChange={setMapUnavailable}
+                navigation={
+                  navigating
+                    ? { layers: navigationLayers, follow, onFollowChange: setFollow, alert: navigation.snapshot!, announcement: START_MESSAGE[navigation.snapshot!.kind] }
+                    : undefined
+                }
               />
+              {/* サイドバーを閉じても、模擬走行であることは地図の上に常時出す。 */}
+              {import.meta.env.VITE_ENABLE_SIMULATION === "true" && navigation.snapshot?.simulation && !sidebarOpen && (
+                <SimulationBanner snapshot={navigation.snapshot} />
+              )}
+              {import.meta.env.VITE_ENABLE_SIMULATION !== "true" && navigation.startError && (
+                <p className="nav-start-error notice warning" role="alert">{navigation.startError}</p>
+              )}
               {searching ? (
                 <div className="map-search-status result-empty" role="status">
                   <Navigation className="spin" size={28} />
                   <h2>ルートを検索しています</h2>
                   <p>応答があるまでお待ちください。</p>
                 </div>
-              ) : error ? (
+              ) : reSearch.state.status !== "idle" ? null : error ? (
                 <div className="map-search-status result-empty" role="alert">
                   <h2>検索できませんでした</h2>
                   <p>{error}</p>
@@ -371,42 +471,110 @@ export default function App() {
             </div>
             <aside
               id="search-conditions"
+              ref={panel}
               className="route-panel"
-              aria-label="検索条件"
+              aria-label={navigationBusy ? "ナビ" : "検索条件"}
               hidden={!sidebarOpen}
             >
               <div className="panel-title">
                 <h1 ref={heading} tabIndex={-1}>
-                  検索条件
+                  {navigationBusy ? "ナビ" : "検索条件"}
                 </h1>
               </div>
-              {/* frontend-spec 3: inputs stay locked while searching; there is no cancel. */}
-              <fieldset className="panel-editor" disabled={searching}>
-                {healthNotice}
-                {places}
-                {fields}
-                <button
-                  className="primary full"
-                  disabled={
-                    !confirmed || searching || conditions.busy || health.blocked
-                  }
-                  onClick={() => void runSearch()}
-                >
-                  <RefreshCw size={16} />
-                  再検索
-                </button>
-                <button
-                  className="text-button panel-back"
-                  onClick={() => setPage("conditions")}
-                >
-                  <ArrowLeft size={15} />
-                  条件選択に戻る
-                </button>
-              </fieldset>
+              {navigation.snapshot ? (
+                <NavigationPanel
+                  snapshot={navigation.snapshot}
+                  onStop={navigation.stop}
+                  onPause={navigation.pause}
+                  onResume={navigation.resume}
+                  onMultiplier={navigation.setMultiplier}
+                  onJitter={navigation.setJitter}
+                  onTryDeviation={navigation.tryDeviation}
+                  onReSearch={reSearch.start}
+                />
+              ) : reSearch.state.status === "searching" ? (
+                <ReSearchPanel
+                  stage={reSearch.state.stage}
+                  kind={reSearch.state.kind}
+                />
+              ) : (
+                <>
+                  {reSearch.state.status === "failed" && (
+                    <ReSearchNotice
+                      message={reSearch.state.message}
+                      kind={reSearch.state.kind}
+                      onRetry={reSearch.retry}
+                    />
+                  )}
+                  {reSearch.state.status === "interrupted" && (
+                    <ReSearchNotice
+                      message="再検索を中断しました。安全な場所で再試行してください"
+                      kind={reSearch.state.kind}
+                      onRetry={reSearch.retry}
+                    />
+                  )}
+                  {reSearch.notice && (
+                    <p className="notice warning panel-notice" role="status">
+                      {reSearch.notice}
+                    </p>
+                  )}
+                  {/* frontend-spec 3: inputs stay locked while searching; there is no cancel. */}
+                  <fieldset className="panel-editor" disabled={searching}>
+                    {healthNotice}
+                    {places}
+                    {fields}
+                    <button
+                      className="primary full"
+                      disabled={
+                        !confirmed ||
+                        searching ||
+                        conditions.busy ||
+                        health.blocked
+                      }
+                      onClick={() => void runSearch()}
+                    >
+                      <RefreshCw size={16} />
+                      再検索
+                    </button>
+                    <button
+                      className="text-button panel-back"
+                      onClick={() => setPage("conditions")}
+                    >
+                      <ArrowLeft size={15} />
+                      条件選択に戻る
+                    </button>
+                  </fieldset>
+                </>
+              )}
             </aside>
           </main>
         )}
-        {isDemo && (
+        <UpdateNotice />
+        {import.meta.env.VITE_ENABLE_SIMULATION === "true" && result && startRouteId && !navigating && (
+          <NavigationStart
+            key={startRouteId}
+            result={result}
+            routeId={startRouteId}
+            hidden={pendingStart !== null}
+            onClose={() => setStartRouteId(null)}
+            mapAvailable={!mapUnavailable}
+            error={navigation.startError}
+            onStart={(request) => setPendingStart({ ...request, forResult: result })}
+          />
+        )}
+        {pendingStart && (
+          <NavigationConfirmDialog
+            selectionLabel={SELECTION_LABEL[pendingStart.selection]}
+            kind={pendingStart.kind}
+            onCancel={() => setPendingStart(null)}
+            onConfirm={() => {
+              const request = pendingStart;
+              setPendingStart(null);
+              navigation.start(request);
+            }}
+          />
+        )}
+        {isDemo && !navigationBusy && (
           <details className="demo-menu" ref={demoMenu}>
             <summary>
               <SlidersHorizontal size={15} />
@@ -418,19 +586,20 @@ export default function App() {
                   key={item.id}
                   type="button"
                   aria-pressed={scenario === item.id}
+                  disabled={navigationBusy}
                   onClick={() => {
                     setScenario(item.id);
                     if (demoMenu.current) demoMenu.current.open = false;
                     if (item.id === "empty") {
-                      invalidate();
+                      edit();
                       setPage("places");
                     } else if (
                       item.id === "conditions-error" ||
                       scenario === "conditions-error"
                     )
-                      invalidate();
+                      edit();
                     else if (page === "results" && confirmed) {
-                      invalidate();
+                      edit();
                       void runSearch(item.id, true);
                     }
                   }}

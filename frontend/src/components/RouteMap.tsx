@@ -6,7 +6,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Crosshair, Eye, EyeOff, MapPin, Minus, Plus, X } from "lucide-react";
+import { Crosshair, Eye, EyeOff, LocateFixed, MapPin, Minus, Plus, X } from "lucide-react";
 import type { Map as MapLibreMap, MapEventType } from "maplibre-gl";
 import type {
   AccidentFeature,
@@ -19,10 +19,14 @@ import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import "./map.css";
 import {
   disposeMapLayers,
+  emptyNavigationLayers,
   markMapStyleLoading,
   restoreMapLayers,
+  setNavigationLayers,
   setRouteLayers,
+  type NavigationLayers,
 } from "../map/layers";
+import { NavigationAlertPopup, type NavigationAlert } from "./NavigationAlertPopup";
 import { isFatalMapError } from "../map/errors";
 import {
   FASTEST_LABEL,
@@ -35,6 +39,15 @@ import {
   type MapSize,
 } from "./RouteCallouts";
 
+/** ナビ中だけ渡す。比較用の経路カードを隠し、ナビ用レイヤーを重ねる。 */
+export type NavigationMapProps = {
+  layers: NavigationLayers;
+  alert?: NavigationAlert;
+  announcement?: string;
+  follow: boolean;
+  onFollowChange: (follow: boolean) => void;
+};
+
 export type RouteMapProps = {
   result: RouteResponse | null;
   selectedRouteId: string | null;
@@ -44,6 +57,10 @@ export type RouteMapProps = {
   showAccidents: boolean;
   onShowAccidents?: (show: boolean) => void;
   unavailable: boolean;
+  navigation?: NavigationMapProps;
+  onNavigate?: (id: string) => void;
+  /** 経路と位置を描けない状態（7.8）を上位へ伝える。 */
+  onUnavailableChange?: (unavailable: boolean) => void;
 };
 
 type Coordinate = number[];
@@ -179,6 +196,10 @@ function LiveMap(props: LiveMapProps) {
           cleanups.push(() => map!.off(type, handler));
         };
         listen("move", reportPositions);
+        // 手動のパンだけが追従を解除する（easeToでは発火しない）。
+        listen("dragstart", () => {
+          current.current.navigation?.onFollowChange(false);
+        });
         listen("resize", reportPositions);
         map.addControl(
           new maplibre.NavigationControl({ showCompass: false }),
@@ -191,6 +212,8 @@ function LiveMap(props: LiveMapProps) {
         const restore = (styleReady = false) => {
           if (disposed || !map) return;
           setRouteLayers(map, current.current);
+          if (current.current.navigation)
+            setNavigationLayers(map, current.current.navigation.layers);
           restoreMapLayers(map, styleReady);
           if (styleReady) setReady(true);
         };
@@ -281,6 +304,27 @@ function LiveMap(props: LiveMapProps) {
     props.showAccidents,
   ]);
 
+  const navigationLayers = props.navigation?.layers;
+  const navigationApplied = useRef(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || (!navigationLayers && !navigationApplied.current)) return;
+    navigationApplied.current = !!navigationLayers;
+    setNavigationLayers(map, navigationLayers ?? emptyNavigationLayers());
+  }, [ready, navigationLayers]);
+
+  // 追従は現在地へ中心を寄せるだけ。測位ごとのfitBounds・回転・ズーム変更はしない。
+  const followTarget = props.navigation?.follow
+    ? navigationLayers?.location.features[0]?.geometry.coordinates
+    : undefined;
+  const followLon = followTarget?.[0];
+  const followLat = followTarget?.[1];
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map || followLon === undefined || followLat === undefined) return;
+    map.easeTo({ center: [followLon, followLat], duration: 300 });
+  }, [ready, followLon, followLat]);
+
   useEffect(() => {
     const map = mapRef.current;
     const points = props.result?.candidates.flatMap(
@@ -336,7 +380,10 @@ export function RouteMap(props: RouteMapProps) {
     showAccidents,
     onShowAccidents,
     unavailable,
+    navigation,
+    onUnavailableChange,
   } = props;
+  const navigating = !!navigation;
   const routes = result?.candidates ?? [];
   const selectedRoute = routes.find((route) => route.id === selectedRouteId);
   const [accidentId, setAccidentId] = useState<number | null>(null);
@@ -394,6 +441,9 @@ export function RouteMap(props: RouteMapProps) {
       ? import.meta.env.VITE_MAP_STYLE_URL
       : undefined;
   const disabled = unavailable || liveFailed;
+  useEffect(() => {
+    onUnavailableChange?.(disabled);
+  }, [disabled, onUnavailableChange]);
   const scale = Math.min(
     size.width / (WIDTH / actualZoom),
     size.height / (HEIGHT / actualZoom),
@@ -628,10 +678,60 @@ export function RouteMap(props: RouteMapProps) {
                   </g>
                 );
               })}
+            {navigation && (
+              <g className="map-navigation" aria-hidden="true">
+                {navigation.layers.route.features.map((feature, index) => (
+                  <polyline
+                    key={index}
+                    className="map-nav-route"
+                    points={path(feature.geometry.coordinates)}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+                {navigation.layers.accuracy.features.map((feature, index) => (
+                  <polygon
+                    key={index}
+                    className="map-nav-accuracy"
+                    points={path(feature.geometry.coordinates[0])}
+                  />
+                ))}
+                {navigation.layers.alert.features.map((feature) =>
+                  feature.geometry.type === "LineString" ? (
+                    <polyline
+                      key={String(feature.id)}
+                      className="map-nav-alert"
+                      points={path(feature.geometry.coordinates)}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ) : (
+                    <circle
+                      key={String(feature.id)}
+                      className="map-nav-alert-point"
+                      cx={project(feature.geometry.coordinates)[0]}
+                      cy={project(feature.geometry.coordinates)[1]}
+                      r="9"
+                    />
+                  ),
+                )}
+                {navigation.layers.location.features.map((feature, index) => (
+                  <circle
+                    key={index}
+                    className={`map-nav-location${feature.properties?.kind === "simulation" ? " is-simulation" : ""}`}
+                    cx={project(feature.geometry.coordinates)[0]}
+                    cy={project(feature.geometry.coordinates)[1]}
+                    r="9"
+                  />
+                ))}
+              </g>
+            )}
           </svg>
         </div>
       )}
-      {result && (
+      <NavigationAlertPopup
+        alert={!disabled ? navigation?.alert : undefined}
+        announcement={!disabled && navigation ? navigation.announcement : ""}
+      />
+      {result && !navigating && (
         <RouteCallouts
           result={result}
           positions={disabled ? {} : styleUrl ? livePositions : positions}
@@ -640,7 +740,7 @@ export function RouteMap(props: RouteMapProps) {
           hoveredRouteId={hoveredRouteId}
           onSelectRoute={onSelectRoute}
           onHoverRoute={setHoveredRouteId}
-          onNavigate={() => setNavNotice(true)}
+          onNavigate={(id) => props.onNavigate ? props.onNavigate(id) : setNavNotice(true)}
           detached={disabled}
         />
       )}
@@ -688,18 +788,39 @@ export function RouteMap(props: RouteMapProps) {
       )}
       {!disabled && (
         <div className="map-legend" aria-label="地図の凡例">
-          <span>
-            <i className="legend-considered" />
-            {SAFE_LABEL}
-          </span>
-          <span>
-            <i className="legend-fastest" />
-            {FASTEST_LABEL}
-          </span>
+          {navigating ? (
+            <span>
+              <i className="legend-fastest" />
+              ナビ経路
+            </span>
+          ) : (
+            <>
+              <span>
+                <i className="legend-considered" />
+                {SAFE_LABEL}
+              </span>
+              <span>
+                <i className="legend-fastest" />
+                {FASTEST_LABEL}
+              </span>
+            </>
+          )}
           <span>
             <i className="legend-section" />
             注意区間
           </span>
+          {navigating && (
+            <>
+              <span>
+                <i className="legend-location" />
+                現在地
+              </span>
+              <span>
+                <i className="legend-accuracy" />
+                測位の精度範囲
+              </span>
+            </>
+          )}
           {showAccidents && (
             <span>
               <i className="legend-accident" />
@@ -707,6 +828,16 @@ export function RouteMap(props: RouteMapProps) {
             </span>
           )}
         </div>
+      )}
+      {!disabled && styleUrl && navigation && !navigation.follow && (
+        <button
+          type="button"
+          className="map-follow-button"
+          onClick={() => navigation.onFollowChange(true)}
+        >
+          <LocateFixed size={16} aria-hidden="true" />
+          現在地に追従
+        </button>
       )}
       {!disabled && selectedAccident && (
         <AccidentPopup

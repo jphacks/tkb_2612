@@ -18,6 +18,16 @@
   --border: #e2e8f0;
   --muted: #64748b;
   --soft: #f8fafc;
+  /* ナビ用。注意区間・参考情報・逸脱の表示に使う。 */
+  --caution: #d97706;
+  --caution-bg: #fffbeb;
+  --caution-border: #fcd34d;
+  --caution-text: #92400e;
+  --danger: #b91c1c;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+  --ink: #0f172a;
+  --surface: #fff;
 }
 * {
   box-sizing: border-box;
@@ -545,9 +555,9 @@ svg {
   margin-top: 16px;
 }
 .warning {
-  border-color: #fcd34d;
-  color: #92400e;
-  background: #fffbeb;
+  border-color: var(--caution-border);
+  color: var(--caution-text);
+  background: var(--caution-bg);
 }
 .app-results {
   height: 100dvh;
@@ -884,4 +894,291 @@ svg {
   .map-stage .route-map-shell {
     min-height: 0;
   }
+}
+/* ナビ：既存のサイドバー・フォーム部品と共通トークンを使う。 */
+.nav-start {
+  color: var(--ink);
+}
+.nav-start-row {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.nav-start-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.nav-start-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.nav-start-actions .primary,
+.nav-start-actions .secondary {
+  padding: 8px 6px;
+  font-size: 12px;
+}
+.nav-panel {
+  padding: 16px;
+  color: var(--ink);
+  font-size: 13px;
+  display: grid;
+  gap: 16px;
+}
+.sim-settings,
+.sim-controls {
+  display: grid;
+  gap: 16px;
+}
+.sim-seed-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 650;
+}
+.sim-seed-label + .date-input {
+  margin-top: 8px;
+}
+.nav-status {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.nav-status.is-caution {
+  border-color: var(--caution-border);
+  background: var(--caution-bg);
+  color: var(--caution-text);
+}
+.nav-status.is-danger {
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.nav-phase {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.nav-cause {
+  font-size: 12px;
+  line-height: 1.7;
+}
+.nav-fix {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+}
+.nav-fix > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.nav-fix dt {
+  opacity: 0.8;
+}
+.nav-fix dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.nav-alert {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--danger-border);
+  border-radius: 6px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.nav-alert > svg {
+  margin-top: 4px;
+  color: var(--danger);
+}
+.nav-alert-count {
+  font-weight: 600;
+}
+.nav-panel > .notice {
+  margin-top: 0;
+}
+.nav-sim-banner {
+  display: grid;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.nav-sim-banner strong {
+  font-size: 13px;
+}
+.map-stage > .nav-sim-banner {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  width: max-content;
+  max-width: calc(100% - 152px);
+  text-align: center;
+}
+.nav-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.nav-actions .secondary {
+  padding: 8px 6px;
+  font-size: 12px;
+}
+.nav-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(15 23 42 / 0.5);
+}
+.nav-dialog {
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: 24px 20px 20px;
+  border-radius: 8px;
+  background: var(--surface);
+}
+.nav-dialog h2 {
+  font-size: 16px;
+}
+.nav-dialog-notice {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.8;
+}
+.nav-dialog-target {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.nav-dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 20px;
+}
+.nav-research,
+.nav-research-notice {
+  display: grid;
+  gap: 8px;
+}
+.nav-research-notice {
+  padding-top: 16px;
+}
+.nav-research-notice .notice {
+  margin-top: 0;
+}
+.update-notice {
+  position: fixed;
+  left: 12px;
+  bottom: calc(var(--attribution-space, 0px) + 12px);
+  z-index: 35;
+  display: grid;
+  gap: 2px;
+  max-width: min(320px, calc(100% - 24px));
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.panel-notice {
+  margin: 16px;
+}
+
+.nav-dialog-backdrop[hidden] {
+  display: none;
+}
+.nav-settings {
+  margin: 12px 0 16px;
+  border-top: 1px solid var(--border);
+}
+.nav-settings summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 48px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.nav-settings[open] summary svg {
+  transform: rotate(180deg);
+}
+.nav-settings-body {
+  padding-bottom: 16px;
+}
+.nav-metrics {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+}
+.nav-metrics > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.nav-metrics dt {
+  color: var(--muted);
+}
+.nav-metrics dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.nav-reference-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.map-stage > .nav-start-error {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 64px;
+  z-index: 6;
+}
+
+/* 地図上の受動通知。下端の凡例・帰属の上に固定する。追従中の現在地は中央にあるので覆わず、
+   現在地の位置で上下を切り替えると追従の移動中に表示が往復する。 */
+.nav-approach-region {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 100px;
+  z-index: 6;
+  max-width: 360px;
+  margin-inline: auto;
+  pointer-events: none;
+}
+.nav-alert > svg {
+  flex-shrink: 0;
 }

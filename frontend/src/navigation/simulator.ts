@@ -23,6 +23,7 @@ export class NavigationSimulator implements PositionSource {
   private real = 0;
   private virtual = 0;
   private tick = 0;
+  private measurementTimeOffset = 0;
   private deviationUntil = -1;
   private holdingSince: number | null = null;
   private endDeadline: number;
@@ -52,7 +53,7 @@ export class NavigationSimulator implements PositionSource {
   }
   stop(): void {
     this.state = "idle"; this.consumer = null; this.seed = (this.options.seed ?? 1) >>> 0;
-    this.virtual = 0; this.tick = 0; this.clock.set(0); this.deviationUntil = -1; this.holdingSince = null; this.stopReason = null;
+    this.virtual = 0; this.tick = 0; this.measurementTimeOffset = 0; this.clock.set(0); this.deviationUntil = -1; this.holdingSince = null; this.stopReason = null;
     this.endDeadline = this.route.duration * 1000 + 15000;
     this.feedbackStatus = "waiting"; this.feedbackReason = undefined;
   }
@@ -64,8 +65,8 @@ export class NavigationSimulator implements PositionSource {
     if (elapsed > 5000) { this.pause(); return; }
     this.real = realNow;
     const target = this.virtual + elapsed * this.multiplier;
-    while ((this.tick + 1) * 1000 <= target && this.state === "running") {
-      this.tick++; this.virtual = this.tick * 1000; this.clock.set(this.virtual); this.emit(); this.checkDeadline();
+    while ((this.tick + 1) * 1000 + this.measurementTimeOffset <= target && this.state === "running") {
+      this.tick++; this.virtual = this.tick * 1000 + this.measurementTimeOffset; this.clock.set(this.virtual); this.emit(); this.checkDeadline();
     }
     if (this.state === "running") { this.virtual = target; this.clock.set(target); }
   }
@@ -83,7 +84,19 @@ export class NavigationSimulator implements PositionSource {
       this.state = "stopped"; this.stopReason = this.feedbackReason ?? (["poor-accuracy", "waiting"].includes(this.feedbackStatus) ? "精度不足" : "照合保留");
     }
   }
+  /** 停止進捗を保ち、仮想時刻だけ1秒進めて未補正測位を返す。配信しない。 */
+  measureStoppedPosition(): PositionFix | null {
+    if (this.state !== "paused" && this.state !== "stopped") throw new Error("模擬走行を停止してから測位してください");
+    this.measurementTimeOffset += 1000;
+    this.virtual += 1000;
+    this.clock.set(this.virtual);
+    return this.generateFix(this.virtual);
+  }
   private emit(): void {
+    const fix = this.generateFix(this.tick * 1000 + this.measurementTimeOffset);
+    if (fix) this.consumer?.(fix);
+  }
+  private generateFix(timestamp: number): PositionFix | null {
     const at = pointAtProgress(this.geometry, Math.min(this.geometry.lengthM, this.progressSpeedMps * this.tick));
     const a = this.geometry.points[at.segmentIndex], b = this.geometry.points[at.segmentIndex + 1];
     const len = Math.hypot(b.x - a.x, b.y - a.y);
@@ -91,8 +104,7 @@ export class NavigationSimulator implements PositionSource {
     this.seed = lcgNext(this.seed); const r = 8 * Math.sqrt(this.seed / 4294967296);
     this.seed = lcgNext(this.seed); const theta = 2 * Math.PI * this.seed / 4294967296;
     const position = unprojectPoint(this.geometry, { x: at.point.x - (b.y - a.y) * offset + (this.jitter ? r * Math.cos(theta) : 0), y: at.point.y + (b.x - a.x) * offset + (this.jitter ? r * Math.sin(theta) : 0) });
-    const fix = { ...position, accuracy: 10, timestamp: this.tick * 1000 };
-    const injected = this.options.inject ? this.options.inject(fix, this.tick) : fix;
-    if (injected) this.consumer?.(injected);
+    const fix = { ...position, accuracy: 10, timestamp };
+    return this.options.inject ? this.options.inject(fix, timestamp / 1000) : fix;
   }
 }

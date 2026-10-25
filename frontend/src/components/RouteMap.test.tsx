@@ -146,6 +146,32 @@ describe("RouteMap", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("模式図でもナビ中は、ナビ経路・現在地（模擬は輪）・通知中区間を重ね、比較カードを隠す", () => {
+    const props = mapProps(createDemoRouteResponse(request));
+    const route = props.result!.candidates[0];
+    const layers = emptyNavigationLayers();
+    layers.route.features.push({ type: "Feature", geometry: route.geometry, properties: {} });
+    layers.location.features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: route.geometry.coordinates[1] },
+      properties: { kind: "simulation", onRoute: true },
+    });
+    layers.alert.features.push({
+      type: "Feature",
+      id: "a",
+      geometry: { type: "LineString", coordinates: route.geometry.coordinates.slice(1, 3) },
+      properties: {},
+    });
+    const { container } = render(
+      <RouteMap {...props} navigation={{ layers, follow: true, onFollowChange: vi.fn() }} />,
+    );
+    expect(container.querySelectorAll(".map-nav-route")).toHaveLength(1);
+    expect(container.querySelector(".map-nav-location")).toHaveClass("is-simulation");
+    expect(container.querySelectorAll(".map-nav-alert")).toHaveLength(1);
+    expect(screen.queryByRole("group", { name: "表示する経路" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "現在地に追従" })).not.toBeInTheDocument();
+  });
+
   it("labels coincident recommendations as one route and preserves comparison when the map is unavailable", () => {
     const props = mapProps(createDemoRouteResponse(request, "same"));
     const { rerender } = render(<RouteMap {...props} />);
@@ -523,5 +549,63 @@ describe("RouteMapの実地図内部契約", () => {
     expect(map.remove).toHaveBeenCalledTimes(1);
     for (const listeners of map.listeners.values()) expect(listeners.size).toBe(0);
     expect(map.off).toHaveBeenCalledTimes(map.on.mock.calls.length);
+  });
+});
+
+describe("RouteMapのナビ表示（手順10・11）", () => {
+  beforeEach(() => {
+    live.maps.length = 0;
+    vi.stubEnv("VITE_API_MODE", "live");
+    vi.stubEnv("VITE_MAP_STYLE_URL", "https://example.invalid/style.json");
+  });
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  function navLayers(lon: number, lat: number) {
+    const layers = emptyNavigationLayers();
+    layers.location.features.push({ type: "Feature", geometry: { type: "Point", coordinates: [lon, lat] }, properties: { kind: "simulation", onRoute: true } });
+    return layers;
+  }
+  const easeTo = (map: MockMap) => (map as unknown as { easeTo: ReturnType<typeof vi.fn> }).easeTo;
+
+  it("ナビ用4レイヤーのデータをそのままsourceへ流し込み、比較カードを隠し、ナビ終了で消去する", async () => {
+    const { map, props, rerender } = await renderLive();
+    const layers = navLayers(139.77, 35.69);
+    layers.route.features.push({ type: "Feature", geometry: props.result!.candidates[0].geometry, properties: {} });
+    const navigation = { layers, follow: true, onFollowChange: vi.fn() };
+    rerender(<RouteMap {...props} navigation={navigation} />);
+    expect(map.getSource("current-location")!.data).toEqual(layers.location);
+    expect(map.getSource("navigation-route")!.data).toEqual(layers.route);
+    expect(screen.queryByRole("group", { name: "表示する経路" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("地図の凡例")).toHaveTextContent("現在地");
+    rerender(<RouteMap {...props} />);
+    for (const id of ["current-location", "current-accuracy", "navigation-route", "navigation-alert"])
+      expect(map.getSource(id)!.data.features).toEqual([]);
+    expect(screen.getByRole("group", { name: "表示する経路" })).toBeVisible();
+  });
+
+  it("追従ONでは現在地へ中心を寄せるだけで、fitBoundsを繰り返さない。手動パンで解除し、操作で復帰できる", async () => {
+    const { map, props, rerender } = await renderLive();
+    const onFollowChange = vi.fn();
+    rerender(<RouteMap {...props} navigation={{ layers: navLayers(139.77, 35.69), follow: true, onFollowChange }} />);
+    expect(easeTo(map)).toHaveBeenLastCalledWith({ center: [139.77, 35.69], duration: 300 });
+    const fits = map.fitBounds.mock.calls.length;
+    rerender(<RouteMap {...props} navigation={{ layers: navLayers(139.771, 35.691), follow: true, onFollowChange }} />);
+    expect(easeTo(map)).toHaveBeenCalledTimes(2);
+    expect(map.fitBounds).toHaveBeenCalledTimes(fits);
+    act(() => map.emit("dragstart"));
+    expect(onFollowChange).toHaveBeenCalledWith(false);
+    rerender(<RouteMap {...props} navigation={{ layers: navLayers(139.772, 35.692), follow: false, onFollowChange }} />);
+    expect(easeTo(map)).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "現在地に追従" }));
+    expect(onFollowChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it("経路と位置を描けない状態を上位へ伝える", async () => {
+    const onUnavailableChange = vi.fn();
+    const props = { ...mapProps(createDemoRouteResponse(request)), onUnavailableChange };
+    const { map } = await renderLive(props);
+    expect(onUnavailableChange).toHaveBeenLastCalledWith(false);
+    act(() => map.emit("webglcontextlost", {}));
+    expect(onUnavailableChange).toHaveBeenLastCalledWith(true);
   });
 });
