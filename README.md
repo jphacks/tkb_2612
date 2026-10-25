@@ -99,6 +99,34 @@ https://github.com/user-attachments/assets/9fa12b72-b40f-47f4-bb0c-326380478c1c
 - **仕様とスキーマを先に固め、テストで守る開発**：OpenAPI 3.1から型と検証スキーマを自動生成しています。バックエンドとフロントエンドが同一の応答例を通過することをテストで検証しています。
 - **検索条件を自動設定しつつ手動で上書きできる** 出発日時から時間帯と天候を自動で設定するので、利用者は条件を選ばなくても検索できます。手動で選んだ条件は自動取得で上書きされず、出発日時を変えたときだけ自動設定に戻ります。
 
+## 開発技術
+### 活用した技術
+#### API・データ
+  * [警察庁 交通事故統計オープンデータ](https://www.npa.go.jp/publications/statistics/koutsuu/opendata/index_opendata.html)（本票 2019〜2025年、約218万件）と、内閣府「国民の祝日」CSV
+  * OSRM（FOSSGIS が公開する routing.openstreetmap.de）：徒歩・自転車・自動車の経路候補の取得
+  * Geoapify Geocoding API：住所検索
+  * Open-Meteo：出発日時・地点の天気予報
+  * OpenFreeMap（OpenStreetMap / OpenMapTiles）：地図タイル
+  * ブラウザの API：Geolocation（現在地・ナビ）、Web Speech（接近通知の読み上げ）、Screen Wake Lock（ナビ中の画面点灯）、Service Worker（PWA）
+
+  #### フレームワーク・ライブラリ・モジュール
+  * フロントエンド：React 19、TypeScript、Vite、MapLibre GL JS、Ajv、openapi-typescript、lucide-react、Vitest、Testing Library
+  * バックエンド：Rust、Axum、hyper、Tokio、reqwest、csv、encoding_rs、zip・roxmltree、flate2、sha2
+  * 基盤：Docker、GitHub Actions、Cloudflare Tunnel
+
+  #### デバイス
+  * スマートフォン
+  * PC のブラウザ
+
+  ### 独自技術
+  #### ハッカソンで開発した独自機能・技術
+  * **事故リスクで経路を比べる計算エンジン**：OSRM の候補経路ごとに、経路からの距離でガウス重み（σ=24m）を付けて周辺の事故を集計します。移動手段・時間帯・曜日区分で事故を絞り込み、雨・霧・雪の日は天候が一致する事故の重みを上げます。そのうえで「遠回りの許容時間」の範囲で最も安全な経路を選びます。
+    [`backend/src/domain/`](backend/src/domain/)、[`docs/route-scoring-decision.md`](docs/route-scoring-decision.md)、
+* **往復・重複区間に強い GPS の照合**：経路が往復したり重なったりする区間でも、進行方向の複数の仮説を並行して追い、取り違えずに現在地を経路に合わせます。実機 GPS と模擬走行が同じ判定器を通ります。
+  [`frontend/src/navigation/matcher.ts`](frontend/src/navigation/matcher.ts)、commit `87bbbc7`
+* **危険区間への接近通知と模擬走行**：移動手段ごとの距離（徒歩80m・自転車150m・自動車300m）で接近を判定し、地図上の表示と音声で知らせます。運転中に操作を求めない受動的な表示です。デモ用のビルドでは、経路の上を走る模擬走行で動作を確認できます。
+  [`frontend/src/navigation/alerts.ts`](frontend/src/navigation/alerts.ts)、commit `a94e4bb`、PR #20（`d8fc96b`）
+
 ## 動かし方
 
 ### Dockerで起動してlocalhostで確認する
