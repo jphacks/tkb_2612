@@ -56,7 +56,9 @@ vi.mock("maplibre-gl", () => ({
     layers = new Map<string, import("maplibre-gl").LayerSpecification>();
     listeners = new Map<string, Set<() => void>>();
     loaded = false;
-    constructor() { live.maps.push(this); }
+    constructor() {
+      live.maps.push(this);
+    }
     emit(name: string) {
       if (name === "load") this.loaded = true;
       this.listeners.get(name)?.forEach((listener) => listener());
@@ -69,7 +71,8 @@ vi.mock("maplibre-gl", () => ({
       this.listeners.get(name)?.delete(listener);
     }
     isStyleLoaded = () => this.loaded;
-    getStyle = () => this.loaded ? { version: 8, sources: {}, layers: [] } : undefined;
+    getStyle = () =>
+      this.loaded ? { version: 8, sources: {}, layers: [] } : undefined;
     getSource = (id: string) => this.sources.get(id);
     getLayer = (id: string) => this.layers.get(id);
     addSource(id: string, spec: { data: import("geojson").FeatureCollection }) {
@@ -247,9 +250,8 @@ describe("live App wiring (frontend-spec 3, 4, 5, 11)", () => {
     await user.click(screen.getByRole("button", { name: "条件を選ぶ" }));
     await ready();
     expect(screen.getByText("自動：休日（祝日：文化の日）")).toBeVisible();
-    expect(
-      screen.getByText("自動：雨（Open-Meteo、11/3 14:00の予報）"),
-    ).toBeVisible();
+    // The weather supplement (source and target time) is intentionally not shown.
+    expect(screen.queryByText(/自動：雨（Open-Meteo/)).toBeNull();
     const conditionCalls = counter.fetch.mock.calls.filter(([input]) =>
       String(input).startsWith("/api/conditions?"),
     );
@@ -288,11 +290,12 @@ describe("live App wiring (frontend-spec 3, 4, 5, 11)", () => {
     });
     expect(counter.count("/api/route")).toBe(1);
     const checkpoint = counter.mark();
-    await user.click(
-      screen.getByRole("button", { name: "条件サイドバーを閉じる" }),
-    );
+    // The sidebar starts closed; toggling it never calls the API.
     await user.click(
       screen.getByRole("button", { name: "条件サイドバーを開く" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "条件サイドバーを閉じる" }),
     );
     expect(counter.count(undefined, checkpoint)).toBe(0);
   });
@@ -371,14 +374,16 @@ describe("live App wiring (frontend-spec 3, 4, 5, 11)", () => {
   });
 
   // 日時とAPIの固定応答を対にする。境界や祝日をフロントの計算で求めない。
-  it.each<[
-    name: string,
-    datetime: string,
-    period: ConditionsResponse["period"],
-    dayType: ConditionsResponse["day_type"],
-    reason: string,
-    covered: boolean,
-  ]>([
+  it.each<
+    [
+      name: string,
+      datetime: string,
+      period: ConditionsResponse["period"],
+      dayType: ConditionsResponse["day_type"],
+      reason: string,
+      covered: boolean,
+    ]
+  >([
     ["3:59", "2026-11-06T03:59", "深夜", "平日", "平日", true],
     ["4:00", "2026-11-06T04:00", "早朝", "平日", "平日", true],
     ["8:59", "2026-11-06T08:59", "早朝", "平日", "平日", true],
@@ -435,7 +440,9 @@ describe("live App wiring (frontend-spec 3, 4, 5, 11)", () => {
         lat: "35.01",
         lon: "139.00",
       });
-      expect(screen.getByLabelText("出発日時（日本時間）")).toHaveValue(datetime);
+      expect(screen.getByLabelText("出発日時（日本時間）")).toHaveValue(
+        datetime,
+      );
       expect(screen.getByRole("radio", { name: "日時を指定" })).toHaveAttribute(
         "aria-checked",
         "true",
@@ -459,13 +466,13 @@ describe("live App wiring (frontend-spec 3, 4, 5, 11)", () => {
       ).toHaveAttribute("aria-pressed", "true");
       if (covered)
         expect(screen.queryByText(/祝日表の収録範囲外の日付/)).toBeNull();
-      else
-        expect(screen.getByText(/祝日表の収録範囲外の日付/)).toBeVisible();
+      else expect(screen.getByText(/祝日表の収録範囲外の日付/)).toBeVisible();
     },
   );
 
   it.each([
-    ["conditions.currentOk", "自動：曇（Open-Meteo、10/24 09:00の現況）"],
+    // ok: the weather is applied, but its source supplement is not shown.
+    ["conditions.currentOk", null],
     ["conditions.past", "過去の日時の天気は自動設定できません。"],
     ["conditions.outOfRange", "指定日時は天気予報の対象期間外です。"],
     ["conditions.unavailable", "天気の取得元を利用できません。"],
@@ -473,7 +480,8 @@ describe("live App wiring (frontend-spec 3, 4, 5, 11)", () => {
   ])("displays the server's weather status for %s", async (name, message) => {
     automatic = structuredClone(c2[name].body);
     await openConditions();
-    expect(screen.getByText(message)).toBeVisible();
+    if (message) expect(screen.getByText(message)).toBeVisible();
+    else expect(screen.queryByText(/自動：曇（Open-Meteo/)).toBeNull();
     if (automatic.weather_status !== "ok")
       expect(
         group("天気").getByRole("button", { name: "指定しない" }),
@@ -653,6 +661,10 @@ describe("live App wiring (frontend-spec 3, 4, 5, 11)", () => {
     await user.dblClick(
       screen.getByRole("button", { name: "ルートを比較する" }),
     );
+    // The result page opens with the sidebar closed.
+    await user.click(
+      screen.getByRole("button", { name: "条件サイドバーを開く" }),
+    );
     expect(screen.getByRole("button", { name: "再検索" })).toBeDisabled();
     expect(counter.count("/api/route")).toBe(1);
     await act(async () => pending.resolve(json(routeExample)));
@@ -672,19 +684,27 @@ describe("live Appの地図初期化との競合", () => {
       const user = await openConditions();
       const pending = deferred<Response>();
       routeHandler = () => pending.promise;
-      await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
+      await user.click(
+        screen.getByRole("button", { name: "ルートを比較する" }),
+      );
       await waitFor(() => expect(live.maps).toHaveLength(1));
       const map = live.maps[0];
       expect(map.sources.size).toBe(0);
       await act(async () => pending.resolve(json(routeExample)));
       await screen.findByRole("group", { name: "表示する経路" });
+      // The result page opens with the sidebar closed.
+      await user.click(
+        screen.getByRole("button", { name: "条件サイドバーを開く" }),
+      );
       let latest: RouteResponse | null = routeExample;
 
       if (operation === "再検索") {
         // 前の応答とgeometry・区間・事故点が異なる契約例を返す。
-        latest = structuredClone(openapi.paths["/api/route"].post.responses["200"].content[
-          "application/json"
-        ].examples.singleRoute.value) as RouteResponse;
+        latest = structuredClone(
+          openapi.paths["/api/route"].post.responses["200"].content[
+            "application/json"
+          ].examples.singleRoute.value,
+        ) as RouteResponse;
         latest.effective_conditions = { ...routeExample.effective_conditions };
         const next = deferred<Response>();
         routeHandler = () => next.promise;
@@ -693,7 +713,9 @@ describe("live Appの地図初期化との競合", () => {
         await screen.findByRole("group", { name: "表示する経路" });
       } else if (operation === "条件変更") {
         await user.click(screen.getByRole("radio", { name: "雪" }));
-        expect(screen.queryByRole("group", { name: "表示する経路" })).toBeNull();
+        expect(
+          screen.queryByRole("group", { name: "表示する経路" }),
+        ).toBeNull();
         latest = null;
       }
 
@@ -701,29 +723,55 @@ describe("live Appの地図初期化との競合", () => {
       expect(live.maps).toHaveLength(1);
       expect(map.sources.size).toBe(0);
       act(() => map.emit("load"));
-      expect([...map.sources.keys()].sort()).toEqual([
-        "route-fastest", "route-safest", "route-high-risk", "route-accidents",
-        "current-location", "current-accuracy", "navigation-route", "navigation-alert",
-      ].sort());
+      expect([...map.sources.keys()].sort()).toEqual(
+        [
+          "route-fastest",
+          "route-safest",
+          "route-high-risk",
+          "route-accidents",
+          "current-location",
+          "current-accuracy",
+          "navigation-route",
+          "navigation-alert",
+        ].sort(),
+      );
       const selected = latest?.candidates[0];
       expect(map.sources.get("route-fastest")!.data).toEqual({
         type: "FeatureCollection",
-        features: selected ? [{
-          type: "Feature", id: selected.id, geometry: selected.geometry,
-          properties: { selected: true, color: "#16a34a" },
-        }] : [],
+        features: selected
+          ? [
+              {
+                type: "Feature",
+                id: selected.id,
+                geometry: selected.geometry,
+                properties: { selected: true, color: "#16a34a" },
+              },
+            ]
+          : [],
       });
       expect(map.sources.get("route-high-risk")!.data).toEqual({
         type: "FeatureCollection",
-        features: selected?.high_risk_sections.features.map((section) => ({
-          ...section, properties: { ...section.properties, selected: false },
-        })) ?? [],
+        features:
+          selected?.high_risk_sections.features.map((section) => ({
+            ...section,
+            properties: { ...section.properties, selected: false },
+          })) ?? [],
       });
       expect(map.sources.get("route-accidents")!.data).toEqual({
-        type: "FeatureCollection", features: selected?.accident_points.features ?? [],
+        type: "FeatureCollection",
+        features: selected?.accident_points.features ?? [],
       });
-      for (const id of ["route-safest", "current-location", "current-accuracy", "navigation-route", "navigation-alert"])
-        expect(map.sources.get(id)!.data).toEqual({ type: "FeatureCollection", features: [] });
+      for (const id of [
+        "route-safest",
+        "current-location",
+        "current-accuracy",
+        "navigation-route",
+        "navigation-alert",
+      ])
+        expect(map.sources.get(id)!.data).toEqual({
+          type: "FeatureCollection",
+          features: [],
+        });
       expect(map.remove).not.toHaveBeenCalled();
       expect(screen.queryByText("地図を利用できません")).toBeNull();
     },

@@ -21,7 +21,6 @@ import LocationInput, {
 import ConditionFields from "./components/ConditionFields";
 import { DataAttribution } from "./components/DataAttribution";
 import { LogoIntro } from "./components/LogoIntro";
-import { ResultsPanel } from "./components/ResultsPanel";
 import { RouteMap } from "./components/RouteMap";
 import { useConditions } from "./state/useConditions";
 import { useCurrentLocation } from "./state/useCurrentLocation";
@@ -50,7 +49,9 @@ export default function App() {
     useState<GeocodeAttribution>([]);
   const [showAccidents, setShowAccidents] = useState(true);
   const [scenario, setScenario] = useState<Scenario>("normal");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The result page opens with the sidebar closed so the map is fully visible.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const sidebarToggle = useRef<HTMLButtonElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const demoMenu = useRef<HTMLDetailsElement>(null);
   const confirmed = !!origin.place && !!dest.place;
@@ -76,7 +77,12 @@ export default function App() {
     : "";
 
   useEffect(() => {
-    if (!intro) heading.current?.focus();
+    if (intro) return;
+    // The page heading of the result page sits in the closed sidebar.
+    (page === "results" && !sidebarOpen
+      ? sidebarToggle
+      : heading
+    ).current?.focus();
   }, [page, intro]);
 
   function changePlace(which: "origin" | "dest", next: LocationValue) {
@@ -124,7 +130,7 @@ export default function App() {
       location.setMessage(
         "検索を開始したため、現在地の取得を中止しました。出発地は変更されません。",
       );
-    if (page !== "results") setSidebarOpen(true);
+    if (page !== "results") setSidebarOpen(false);
     setPage("results");
     await route.run(
       async (signal) => {
@@ -203,7 +209,6 @@ export default function App() {
       busy={conditions.busy}
       warning={conditions.warning}
       info={conditions.info}
-      demo={isDemo}
       compact={page === "results"}
     />
   );
@@ -306,6 +311,7 @@ export default function App() {
         ) : (
           <main className={`result-page${sidebarOpen ? " sidebar-open" : ""}`}>
             <button
+              ref={sidebarToggle}
               className="sidebar-toggle"
               type="button"
               aria-label={
@@ -366,22 +372,14 @@ export default function App() {
             <aside
               id="search-conditions"
               className="route-panel"
-              aria-label="検索結果と条件"
+              aria-label="検索条件"
               hidden={!sidebarOpen}
             >
               <div className="panel-title">
                 <h1 ref={heading} tabIndex={-1}>
-                  検索結果と条件
+                  検索条件
                 </h1>
               </div>
-              {result && route.selectedRoute && (
-                <ResultsPanel
-                  result={result}
-                  selectedRouteId={route.selectedRoute}
-                  onSelectRoute={selectRoute}
-                />
-              )}
-              <h2 className="panel-subtitle">検索条件</h2>
               {/* frontend-spec 3: inputs stay locked while searching; there is no cancel. */}
               <fieldset className="panel-editor" disabled={searching}>
                 {healthNotice}
@@ -406,8 +404,6 @@ export default function App() {
                 </button>
               </fieldset>
             </aside>
-            {/* Outside the collapsible sidebar: attribution stays visible with the map. */}
-            {attribution}
           </main>
         )}
         {isDemo && (

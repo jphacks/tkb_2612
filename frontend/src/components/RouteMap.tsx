@@ -25,7 +25,9 @@ import {
 } from "../map/layers";
 import { isFatalMapError } from "../map/errors";
 import {
+  FASTEST_LABEL,
   RouteCallouts,
+  SAFE_LABEL,
   featuredRoutes,
   routeAnchor,
   routeTone,
@@ -83,9 +85,9 @@ function keyActivate(event: KeyboardEvent<SVGGElement>, action: () => void) {
 
 function routeLabel(route: RouteCandidate, result: RouteResponse) {
   if (route.id === result.fastest_id && route.id === result.safest_id)
-    return "最短時間・事故履歴を考慮（同一経路）";
-  if (route.id === result.fastest_id) return "最短時間";
-  if (route.id === result.safest_id) return "事故履歴を考慮";
+    return `${FASTEST_LABEL}・${SAFE_LABEL}（同一経路）`;
+  if (route.id === result.fastest_id) return FASTEST_LABEL;
+  if (route.id === result.safest_id) return SAFE_LABEL;
   return `候補 ${route.id.replace("route-", "")}`;
 }
 
@@ -201,7 +203,13 @@ function LiveMap(props: LiveMapProps) {
           if (!disposed && map) restoreMapLayers(map);
         });
         listen("click", (event) => {
-          if (!map || !["accident-hit", "section-hit", "route-hit"].every((id) => map!.getLayer(id))) return;
+          if (
+            !map ||
+            !["accident-hit", "section-hit", "route-hit"].every((id) =>
+              map!.getLayer(id),
+            )
+          )
+            return;
           const features = map.queryRenderedFeatures(event.point, {
             layers: ["accident-hit", "section-hit", "route-hit"],
           });
@@ -225,7 +233,12 @@ function LiveMap(props: LiveMapProps) {
           if (route) current.current.onSelectRoute(String(route.id));
         });
         listen("error", (event) => {
-          if (!disposed && map && isFatalMapError(event, map.getStyle() != null)) current.current.onUnavailable();
+          if (
+            !disposed &&
+            map &&
+            isFatalMapError(event, map.getStyle() != null)
+          )
+            current.current.onUnavailable();
         });
         listen("webglcontextlost", () => {
           if (!disposed) current.current.onUnavailable();
@@ -330,6 +343,7 @@ export function RouteMap(props: RouteMapProps) {
   const [liveFailed, setLiveFailed] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [hoveredRouteId, setHoveredRouteId] = useState<string | null>(null);
+  const [navNotice, setNavNotice] = useState(false);
   const [livePositions, setLivePositions] = useState<Record<string, MapPoint>>(
     {},
   );
@@ -408,6 +422,7 @@ export function RouteMap(props: RouteMapProps) {
     setZoom(1);
     setLiveFailed(false);
     setHoveredRouteId(null);
+    setNavNotice(false);
   }, [result]);
 
   // Identical geometries represent one visible line even if the API supplies duplicate candidates.
@@ -625,8 +640,15 @@ export function RouteMap(props: RouteMapProps) {
           hoveredRouteId={hoveredRouteId}
           onSelectRoute={onSelectRoute}
           onHoverRoute={setHoveredRouteId}
+          onNavigate={() => setNavNotice(true)}
           detached={disabled}
         />
+      )}
+      {/* Navigation (Issue #7 step 10) is not implemented yet; the button says so. */}
+      {navNotice && (
+        <p className="map-nav-notice" role="status">
+          ナビの開始は準備中です。
+        </p>
       )}
       {!disabled && !styleUrl && (
         <div className="map-preview-label">地図プレビュー</div>
@@ -668,11 +690,11 @@ export function RouteMap(props: RouteMapProps) {
         <div className="map-legend" aria-label="地図の凡例">
           <span>
             <i className="legend-considered" />
-            事故履歴を考慮
+            {SAFE_LABEL}
           </span>
           <span>
             <i className="legend-fastest" />
-            最短時間
+            {FASTEST_LABEL}
           </span>
           <span>
             <i className="legend-section" />

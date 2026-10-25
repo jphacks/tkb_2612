@@ -39,7 +39,6 @@ type Props = {
   busy: boolean;
   warning: string;
   info?: ConditionsResponse | null;
-  demo?: boolean;
   compact?: boolean;
 };
 const periods: { value: Period; hours: string; Icon: LucideIcon }[] = [
@@ -66,15 +65,11 @@ const modes = [
 const shortTime = (iso: string) =>
   `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))} ${iso.slice(11, 16)}`;
 
-/** frontend-spec 4: show why each automatic value was chosen. */
-function autoNotes(info: ConditionsResponse, auto: AutoFields, demo: boolean) {
+/** frontend-spec 4: show why the automatic day type was chosen. */
+function autoNotes(info: ConditionsResponse, auto: AutoFields) {
   const notes: Partial<Record<keyof AutoFields, string>> = {};
   if (auto.day_type)
     notes.day_type = `自動：${info.day_type}（${info.day_type_reason}）`;
-  if (auto.weather && info.weather && info.weather_source) {
-    const source = info.weather_source;
-    notes.weather = `自動：${info.weather}（${source.provider}、${shortTime(source.target_time)}の${source.kind === "current" ? "現況" : "予報"}${demo ? "・デモの固定値" : ""}）`;
-  }
   return notes;
 }
 
@@ -120,10 +115,9 @@ export default function ConditionFields({
   busy,
   warning,
   info = null,
-  demo = false,
   compact = false,
 }: Props) {
-  const notes = info ? autoNotes(info, auto, demo) : {};
+  const notes = info ? autoNotes(info, auto) : {};
   const note = (key: keyof AutoFields) =>
     notes[key] && <p className="field-help">{notes[key]}</p>;
   const heading = (label: string, key: keyof AutoFields) => (
@@ -202,12 +196,6 @@ export default function ConditionFields({
       <fieldset>
         <legend className="sr-only">天気</legend>
         {heading("天気", "weather")}
-        {note("weather")}
-        {notes.weather && (
-          <p className="field-help">
-            事故記録の天候は発生時の現場での判定で、自動取得の天候は気象モデルの推定値です。
-          </p>
-        )}
         <div className="choices" role="radiogroup" aria-label="天気">
           {weathers.map(({ value, Icon }) => (
             <Choice
