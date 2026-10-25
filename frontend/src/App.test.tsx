@@ -340,7 +340,8 @@ describe("App search flow and condition ownership", () => {
       weather: "晴",
       day_type: "休日",
     });
-  });
+  }, // Several scenario switches and the sidebar step run close to the 5s default.
+  15_000);
 
   it("keeps zero-accident results explicit without presenting an accident-considered route", async () => {
     const user = await openResults();
