@@ -317,7 +317,7 @@
 }
 .route-fastest {
   --route-color: #2563eb;
-  --route-hover: #0891b2;
+  --route-hover: #38bdf8;
 }
 .route-alternative {
   --route-color: #94a3b8;
@@ -339,28 +339,76 @@
 }
 .map-route-card {
   position: absolute;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 14px;
-  border: 2px solid #202020;
+  border: 2px solid #e2e8f0;
   border-radius: 8px;
-  background: #090909;
-  color: #fff;
-  text-align: left;
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 12%);
   pointer-events: auto;
   overflow: hidden;
   transition: border-color 0.15s;
 }
 .map-route-card.is-selected {
-  border-color: #525252;
+  border-color: #94a3b8;
 }
+/* The route colour frame appears only while the card is hovered or focused. */
 .map-route-card:hover,
-.map-route-card:focus-visible,
+.map-route-card:focus-within,
 .map-route-card.is-hovered {
   border-color: var(--route-hover);
   outline: 2px solid var(--route-hover);
   outline-offset: 0;
+}
+.map-card-select {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
+  padding: 14px 14px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.map-card-select:focus-visible,
+.map-card-navigate:focus-visible {
+  outline: none;
+}
+.map-card-navigate {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--route-color);
+  color: #fff;
+  cursor: pointer;
+}
+.map-card-navigate:hover {
+  filter: brightness(1.1);
+}
+.map-card-navigate:focus-visible {
+  box-shadow: 0 0 0 3px var(--route-hover);
+}
+.map-nav-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #fff;
+  font-size: 12px;
+  pointer-events: none;
 }
 .map-card-title {
   display: flex;
@@ -390,13 +438,15 @@
 .map-card-metrics {
   display: flex;
   gap: 12px;
-  color: #e5e5e5;
+  color: #475569;
   font-size: 12px;
 }
 .map-card-accidents {
   display: flex;
   align-items: center;
   gap: 4px;
+  /* Room for the navigation button in the bottom-right corner. */
+  padding-right: 44px;
   font-size: 11px;
 }
 .map-card-accidents b {
@@ -425,8 +475,18 @@
   padding-top: 80px;
 }
 @media (max-width: 479px) {
-  .map-route-card {
+  .map-card-select {
     padding: 12px;
+  }
+  /* Phones: keep the card small; distance and extra time stay in the sidebar table. */
+  .map-card-metrics {
+    display: none;
+  }
+  .map-card-navigate {
+    width: 36px;
+    height: 36px;
+    right: 8px;
+    bottom: 8px;
   }
   .map-card-title {
     font-size: 11px;

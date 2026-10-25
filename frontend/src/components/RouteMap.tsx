@@ -18,7 +18,9 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import "./map.css";
 import {
+  FASTEST_LABEL,
   RouteCallouts,
+  SAFE_LABEL,
   featuredRoutes,
   routeAnchor,
   routeColors,
@@ -77,9 +79,9 @@ function keyActivate(event: KeyboardEvent<SVGGElement>, action: () => void) {
 
 function routeLabel(route: RouteCandidate, result: RouteResponse) {
   if (route.id === result.fastest_id && route.id === result.safest_id)
-    return "最短時間・事故履歴を考慮（同一経路）";
-  if (route.id === result.fastest_id) return "最短時間";
-  if (route.id === result.safest_id) return "事故履歴を考慮";
+    return `${FASTEST_LABEL}・${SAFE_LABEL}（同一経路）`;
+  if (route.id === result.fastest_id) return FASTEST_LABEL;
+  if (route.id === result.safest_id) return SAFE_LABEL;
   return `候補 ${route.id.replace("route-", "")}`;
 }
 
@@ -732,11 +734,11 @@ export function RouteMap(props: RouteMapProps) {
         <div className="map-legend" aria-label="地図の凡例">
           <span>
             <i className="legend-considered" />
-            事故履歴を考慮
+            {SAFE_LABEL}
           </span>
           <span>
             <i className="legend-fastest" />
-            最短時間
+            {FASTEST_LABEL}
           </span>
           <span>
             <i className="legend-section" />

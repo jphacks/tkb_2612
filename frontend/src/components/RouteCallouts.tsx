@@ -1,10 +1,14 @@
-import { Check } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, Send } from "lucide-react";
 import type { RouteCandidate, RouteResponse } from "../lib/types";
 import {
   formatExtraMinutes,
   formatKilometres,
   formatMinutes,
 } from "../lib/format";
+
+export const SAFE_LABEL = "安全ルート";
+export const FASTEST_LABEL = "最短ルート";
 
 export type MapPoint = { x: number; y: number };
 export type MapSize = { width: number; height: number };
@@ -78,11 +82,15 @@ export function RouteCallouts({
   detached = false,
 }: Props) {
   const routes = featuredRoutes(result);
+  // Navigation (Issue #7 step 10) is not implemented yet; the button says so.
+  const [navNotice, setNavNotice] = useState(false);
+  useEffect(() => setNavNotice(false), [result]);
   const cardWidth =
     size.width < 480 && routes.length > 1
       ? Math.max(136, (size.width - 36) / 2)
       : Math.min(208, size.width - 24);
-  const cardHeight = size.height < 480 ? 140 : 160;
+  // Narrow screens drop the distance/extra-time row, so the card is shorter.
+  const cardHeight = size.width < 480 ? 112 : size.height < 480 ? 140 : 160;
   const topInset = size.height < 480 ? 56 : 72;
   const cards = routes.map((route) => {
     const tone = routeTone(route.id, result);
@@ -155,45 +163,64 @@ export function RouteCallouts({
         const same =
           route.id === result.fastest_id && route.id === result.safest_id;
         const title = same
-          ? "事故履歴を考慮・最短時間"
+          ? `${SAFE_LABEL}・${FASTEST_LABEL}`
           : tone === "considered"
-            ? "事故履歴を考慮"
-            : "最短時間";
+            ? SAFE_LABEL
+            : FASTEST_LABEL;
         return (
-          <button
+          <div
             key={route.id}
-            type="button"
             className={`map-route-card route-${tone}${selectedRouteId === route.id ? " is-selected" : ""}${hoveredRouteId === route.id ? " is-hovered" : ""}`}
             style={{ left: x, top: y, width: cardWidth, height: cardHeight }}
-            aria-pressed={selectedRouteId === route.id}
-            onClick={() => onSelectRoute(route.id)}
             onPointerEnter={() => onHoverRoute(route.id)}
             onPointerLeave={() => onHoverRoute(null)}
-            onFocus={() => onHoverRoute(route.id)}
-            onBlur={() => onHoverRoute(null)}
           >
-            <span className="map-card-title">
-              <i aria-hidden="true" />
-              <span>{title}</span>
-              {selectedRouteId === route.id && (
-                <Check size={15} aria-hidden="true" />
-              )}
-            </span>
-            <strong className="map-card-duration">
-              {formatMinutes(route.duration)}
-            </strong>
-            <span className="map-card-metrics">
-              <span>{formatKilometres(route.distance)}</span>
-              {/* Same units as the comparison panel (frontend-spec 5). */}
-              <span>{formatExtraMinutes(route.extra_minutes)}</span>
-            </span>
-            <span className="map-card-accidents">
-              過去事故 <b>{route.accident_count}</b> 件
-              {same && <span className="map-card-same">同一経路</span>}
-            </span>
-          </button>
+            <button
+              type="button"
+              className="map-card-select"
+              aria-pressed={selectedRouteId === route.id}
+              onClick={() => onSelectRoute(route.id)}
+              onFocus={() => onHoverRoute(route.id)}
+              onBlur={() => onHoverRoute(null)}
+            >
+              <span className="map-card-title">
+                <i aria-hidden="true" />
+                <span>{title}</span>
+                {selectedRouteId === route.id && (
+                  <Check size={15} aria-hidden="true" />
+                )}
+              </span>
+              <strong className="map-card-duration">
+                {formatMinutes(route.duration)}
+              </strong>
+              <span className="map-card-metrics">
+                <span>{formatKilometres(route.distance)}</span>
+                {/* Same units as the comparison panel (frontend-spec 5). */}
+                <span>{formatExtraMinutes(route.extra_minutes)}</span>
+              </span>
+              <span className="map-card-accidents">
+                過去事故 <b>{route.accident_count}</b> 件
+                {same && <span className="map-card-same">同一経路</span>}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="map-card-navigate"
+              aria-label={`${title}でナビを開始`}
+              onClick={() => setNavNotice(true)}
+              onFocus={() => onHoverRoute(route.id)}
+              onBlur={() => onHoverRoute(null)}
+            >
+              <Send size={18} aria-hidden="true" />
+            </button>
+          </div>
         );
       })}
+      {navNotice && (
+        <p className="map-nav-notice" role="status">
+          ナビの開始は準備中です。
+        </p>
+      )}
     </div>
   );
 }
