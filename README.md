@@ -160,5 +160,3 @@ APIサーバ・フロントエンド・事故データを1つのイメージに�
    事故データの読み込み中は `/api/health` が503を返します。`"status":"ok"` になったら、ブラウザで `http://localhost:8080/` を開きます。
 
 5. 止めるときは `docker rm -f acciless-navi` を実行します。
-
-経路検索には、FOSSGISが公開しているOSRM（routing.openstreetmap.de）を使います。動作確認の範囲で利用し、大量の検索は行わないでください。本番環境への配備は [`deploy/README.md`](deploy/README.md)、フロントエンドだけを開発サーバーで動かす方法は [`frontend/README.md`](frontend/README.md) を参照してください。
