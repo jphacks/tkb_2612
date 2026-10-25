@@ -399,8 +399,10 @@
 }
 .map-nav-notice {
   position: absolute;
+  /* Above the controls and legend (z-index 3) so the message is never hidden. */
+  z-index: 6;
   left: 50%;
-  bottom: 56px;
+  top: 72px;
   transform: translateX(-50%);
   margin: 0;
   padding: 8px 12px;
@@ -474,29 +476,25 @@
   justify-content: flex-start;
   padding-top: 80px;
 }
-@media (max-width: 479px) {
-  .map-card-select {
-    padding: 12px;
-  }
-  /* Phones: keep the card small; distance and extra time stay in the sidebar table. */
-  .map-card-metrics {
-    display: none;
-  }
-  .map-card-navigate {
-    width: 36px;
-    height: 36px;
-    right: 8px;
-    bottom: 8px;
-  }
-  .map-card-title {
-    font-size: 11px;
-    gap: 5px;
-  }
-  .map-card-duration {
-    font-size: 26px;
-  }
-  .map-card-metrics {
-    font-size: 11px;
-    gap: 8px;
-  }
+/* Compact cards follow the map width (also when the sidebar narrows the map),
+   so height, padding and hidden rows always change together. */
+.map-route-callouts.is-compact .map-card-select {
+  padding: 12px;
+}
+/* Distance and extra time stay in the sidebar table. */
+.map-route-callouts.is-compact .map-card-metrics {
+  display: none;
+}
+.map-route-callouts.is-compact .map-card-navigate {
+  width: 36px;
+  height: 36px;
+  right: 8px;
+  bottom: 8px;
+}
+.map-route-callouts.is-compact .map-card-title {
+  font-size: 11px;
+  gap: 5px;
+}
+.map-route-callouts.is-compact .map-card-duration {
+  font-size: 26px;
 }

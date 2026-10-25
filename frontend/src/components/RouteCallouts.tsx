@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Check, Send } from "lucide-react";
 import type { RouteCandidate, RouteResponse } from "../lib/types";
 import {
@@ -65,6 +64,7 @@ type Props = {
   hoveredRouteId: string | null;
   onSelectRoute: (id: string) => void;
   onHoverRoute: (id: string | null) => void;
+  onNavigate: (id: string) => void;
   detached?: boolean;
 };
 
@@ -79,18 +79,17 @@ export function RouteCallouts({
   hoveredRouteId,
   onSelectRoute,
   onHoverRoute,
+  onNavigate,
   detached = false,
 }: Props) {
   const routes = featuredRoutes(result);
-  // Navigation (Issue #7 step 10) is not implemented yet; the button says so.
-  const [navNotice, setNavNotice] = useState(false);
-  useEffect(() => setNavNotice(false), [result]);
   const cardWidth =
     size.width < 480 && routes.length > 1
       ? Math.max(136, (size.width - 36) / 2)
       : Math.min(208, size.width - 24);
-  // Narrow screens drop the distance/extra-time row, so the card is shorter.
-  const cardHeight = size.width < 480 ? 112 : size.height < 480 ? 140 : 160;
+  // A narrow map drops the distance/extra-time row (.is-compact), so the card is shorter.
+  const compact = size.width < 480;
+  const cardHeight = compact ? 112 : size.height < 480 ? 140 : 160;
   const topInset = size.height < 480 ? 56 : 72;
   const cards = routes.map((route) => {
     const tone = routeTone(route.id, result);
@@ -131,7 +130,11 @@ export function RouteCallouts({
   }
 
   return (
-    <div className="map-route-callouts" role="group" aria-label="表示する経路">
+    <div
+      className={`map-route-callouts${compact ? " is-compact" : ""}`}
+      role="group"
+      aria-label="表示する経路"
+    >
       {!detached && (
         <svg
           className="map-callout-connectors"
@@ -207,7 +210,7 @@ export function RouteCallouts({
               type="button"
               className="map-card-navigate"
               aria-label={`${title}でナビを開始`}
-              onClick={() => setNavNotice(true)}
+              onClick={() => onNavigate(route.id)}
               onFocus={() => onHoverRoute(route.id)}
               onBlur={() => onHoverRoute(null)}
             >
@@ -216,11 +219,6 @@ export function RouteCallouts({
           </div>
         );
       })}
-      {navNotice && (
-        <p className="map-nav-notice" role="status">
-          ナビの開始は準備中です。
-        </p>
-      )}
     </div>
   );
 }

@@ -396,6 +396,7 @@ export function RouteMap(props: RouteMapProps) {
   const [liveFailed, setLiveFailed] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [hoveredRouteId, setHoveredRouteId] = useState<string | null>(null);
+  const [navNotice, setNavNotice] = useState(false);
   const [livePositions, setLivePositions] = useState<Record<string, MapPoint>>(
     {},
   );
@@ -474,6 +475,7 @@ export function RouteMap(props: RouteMapProps) {
     setZoom(1);
     setLiveFailed(false);
     setHoveredRouteId(null);
+    setNavNotice(false);
   }, [result]);
 
   // Identical geometries represent one visible line even if the API supplies duplicate candidates.
@@ -691,8 +693,15 @@ export function RouteMap(props: RouteMapProps) {
           hoveredRouteId={hoveredRouteId}
           onSelectRoute={onSelectRoute}
           onHoverRoute={setHoveredRouteId}
+          onNavigate={() => setNavNotice(true)}
           detached={disabled}
         />
+      )}
+      {/* Navigation (Issue #7 step 10) is not implemented yet; the button says so. */}
+      {navNotice && (
+        <p className="map-nav-notice" role="status">
+          ナビの開始は準備中です。
+        </p>
       )}
       {!disabled && !styleUrl && (
         <div className="map-preview-label">地図プレビュー</div>
