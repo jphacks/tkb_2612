@@ -136,3 +136,64 @@ describe("NavigationSession: 接近通知と音声の結線（手順10）", () =
     session.stop();
   });
 });
+
+describe("NavigationSession: 模擬走行の停止期限と明示再開（7.7）", () => {
+  function simulate(inject?: NonNullable<ConstructorParameters<typeof NavigationSession>[0]["inject"]>) {
+    const route = testRoute([0, 600], 100);
+    const session = new NavigationSession({
+      route,
+      selection: "fastest",
+      mode: "walk",
+      kind: "simulation",
+      simulation: { seed: 1, multiplier: 1, jitter: true },
+      startMessage: "模擬走行を開始します。実際の現在地ではありません",
+      deps: { speech: null, wakeLock: undefined },
+      inject,
+      onChange: () => {},
+    });
+    return session;
+  }
+  const run = (seconds: number) => {
+    for (let i = 0; i < seconds * 4; i++) vi.advanceTimersByTime(250);
+  };
+
+  it("精度不足が続くと基準位置が終点に着いて15仮想秒で理由付きに停止し、到着にはせず、明示再開で再び進む", () => {
+    const session = simulate((fix, seconds) => (seconds >= 10 ? { ...fix, accuracy: 50 } : fix));
+    session.begin();
+    run(9);
+    expect(session.getSnapshot().phase).toBe("tracking");
+    run(110);
+    const stopped = session.getSnapshot();
+    expect(stopped.phase).toBe("paused");
+    expect(stopped.pauseReason).toBe("sim-limit");
+    expect(stopped.simStopReason).toBe("精度不足");
+    expect(stopped.match.status).not.toBe("arrived");
+    const frozen = stopped.lastFix;
+    run(30);
+    expect(session.getSnapshot().lastFix).toEqual(frozen);
+    session.resume();
+    expect(session.getSnapshot().phase).toBe("waiting");
+    run(3);
+    expect(session.getSnapshot().pauseReason).toBeNull();
+    session.stop();
+  });
+
+  it("倍率変更・揺らぎ変更・一時停止・再開を受け付け、一時停止中は仮想時刻を進めない", () => {
+    const session = simulate();
+    session.begin();
+    run(10);
+    session.setMultiplier(4);
+    session.setJitter(false);
+    expect(session.getSnapshot().simulation).toMatchObject({ multiplier: 4, jitter: false, seed: 1 });
+    run(3);
+    session.pause();
+    const paused = session.getSnapshot();
+    expect(paused.phase).toBe("paused");
+    expect(paused.pauseReason).toBe("user");
+    run(60);
+    expect(session.getSnapshot().lastFix).toEqual(paused.lastFix);
+    session.resume();
+    expect(session.getSnapshot().simulation?.running).toBe(true);
+    session.stop();
+  });
+});

@@ -4,11 +4,44 @@ import {
   formatRemainingDistance,
 } from "../lib/format";
 import type { NavigationSnapshot, NavPhase } from "../navigation/session";
+import type { SimulationMultiplier } from "../navigation/simulator";
 import { SELECTION_LABEL } from "./NavigationStart";
+import { SimulationControls } from "./SimulationControls";
 
 export interface NavigationPanelProps {
   snapshot: NavigationSnapshot;
   onStop: () => void;
+  onPause: () => void;
+  onResume: () => void;
+  onMultiplier: (value: SimulationMultiplier) => void;
+  onJitter: (value: boolean) => void;
+  onTryDeviation: () => void;
+}
+
+export const SIMULATION_NOTICE = "模擬走行中（実際の現在地ではありません）";
+
+/** 模擬走行の状態。倍率と、進行/一時停止/停止/到着を常に示す。 */
+export function simulationState(snapshot: NavigationSnapshot): string {
+  if (!snapshot.simulation) return "";
+  const state =
+    snapshot.phase === "arrived"
+      ? "到着"
+      : snapshot.pauseReason === "sim-limit"
+        ? "停止"
+        : snapshot.phase === "paused"
+          ? "一時停止"
+          : "進行中";
+  return `倍率 ${snapshot.simulation.multiplier}倍・${state}`;
+}
+
+export function SimulationBanner({ snapshot }: { snapshot: NavigationSnapshot }) {
+  if (!snapshot.simulation) return null;
+  return (
+    <div className="nav-sim-banner">
+      <strong>{SIMULATION_NOTICE}</strong>
+      <span>{simulationState(snapshot)}</span>
+    </div>
+  );
 }
 
 export const PHASE_LABEL: Record<NavPhase, string> = {
@@ -73,12 +106,21 @@ const TONE: Partial<Record<NavPhase, string>> = {
 };
 
 /** ナビ中にサイドバーの結果・条件エディタを置き換える。 */
-export function NavigationPanel({ snapshot, onStop }: NavigationPanelProps) {
+export function NavigationPanel({
+  snapshot,
+  onStop,
+  onPause,
+  onResume,
+  onMultiplier,
+  onJitter,
+  onTryDeviation,
+}: NavigationPanelProps) {
   const { phase, remaining, lastFix, kind } = snapshot;
   const cause = phaseCause(snapshot);
   const showFix = phase !== "tracking" && lastFix !== null;
   return (
     <div className="result-content nav-panel">
+      <SimulationBanner snapshot={snapshot} />
       <section className={`nav-status ${TONE[phase] ?? ""}`} aria-label="ナビの状態">
         <p className="nav-phase" role="status">
           {phase === "arrived" && <Flag size={18} aria-hidden="true" />}
@@ -140,8 +182,19 @@ export function NavigationPanel({ snapshot, onStop }: NavigationPanelProps) {
         <p>過去事故の参考情報です。現在の危険や安全を保証するものではありません</p>
         <p>条件と事故データは検索時点のものです</p>
       </div>
+      {snapshot.simulation && (
+        <SimulationControls
+          settings={snapshot.simulation}
+          arrived={phase === "arrived"}
+          onMultiplier={onMultiplier}
+          onJitter={onJitter}
+          onPause={onPause}
+          onResume={onResume}
+          onTryDeviation={onTryDeviation}
+        />
+      )}
       <button type="button" className="secondary full" onClick={onStop}>
-        ナビを停止
+        {phase === "paused" || phase === "arrived" ? "ナビを終了" : "ナビを停止"}
       </button>
     </div>
   );

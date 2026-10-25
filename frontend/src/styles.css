@@ -1056,3 +1056,33 @@ svg {
 .nav-panel > .notice {
   margin-top: 0;
 }
+.nav-sim-banner {
+  display: grid;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.nav-sim-banner strong {
+  font-size: 13px;
+}
+.map-stage > .nav-sim-banner {
+  position: absolute;
+  top: 16px;
+  left: 76px;
+  right: 76px;
+  z-index: 6;
+  text-align: center;
+}
+.nav-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.nav-actions .secondary {
+  padding: 8px 6px;
+  font-size: 12px;
+}

@@ -8,6 +8,7 @@ import { calculateRemaining, type Remaining } from "./remaining";
 import {
   NavigationSimulator,
   type SimulationMultiplier,
+  type SimulatorOptions,
   type SimulationStopReason,
 } from "./simulator";
 import type { PositionFix, PositionSource } from "./source";
@@ -85,6 +86,8 @@ export interface NavigationSessionOptions {
   simulation?: SimulationSettings;
   startMessage: string;
   deps?: NavigationDeps;
+  /** 試験用。模擬の位置源へaccuracyの悪化や欠測を注入する。画面からは設定できない。 */
+  inject?: SimulatorOptions["inject"];
   onChange(snapshot: NavigationSnapshot): void;
 }
 
@@ -159,7 +162,7 @@ export class NavigationSession {
     );
     this.simulationSettings = options.kind === "simulation" ? { ...options.simulation! } : null;
     if (options.kind === "simulation") {
-      this.simulator = new NavigationSimulator(route, this.simulationSettings!);
+      this.simulator = new NavigationSimulator(route, { ...this.simulationSettings!, inject: options.inject });
       this.source = this.simulator;
     } else {
       this.simulator = null;

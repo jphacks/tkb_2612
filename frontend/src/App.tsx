@@ -21,7 +21,7 @@ import LocationInput, {
 import ConditionFields from "./components/ConditionFields";
 import { DataAttribution } from "./components/DataAttribution";
 import { LogoIntro } from "./components/LogoIntro";
-import { NavigationPanel } from "./components/NavigationPanel";
+import { NavigationPanel, SimulationBanner } from "./components/NavigationPanel";
 import { NavigationStart } from "./components/NavigationStart";
 import { ResultsPanel } from "./components/ResultsPanel";
 import { RouteMap } from "./components/RouteMap";
@@ -365,6 +365,10 @@ export default function App() {
                     : undefined
                 }
               />
+              {/* サイドバーを閉じても、模擬走行であることは地図の上に常時出す。 */}
+              {navigation.snapshot?.simulation && !sidebarOpen && (
+                <SimulationBanner snapshot={navigation.snapshot} />
+              )}
               {searching ? (
                 <div className="map-search-status result-empty" role="status">
                   <Navigation className="spin" size={28} />
@@ -415,6 +419,11 @@ export default function App() {
                 <NavigationPanel
                   snapshot={navigation.snapshot}
                   onStop={navigation.stop}
+                  onPause={navigation.pause}
+                  onResume={navigation.resume}
+                  onMultiplier={navigation.setMultiplier}
+                  onJitter={navigation.setJitter}
+                  onTryDeviation={navigation.tryDeviation}
                 />
               ) : (
                 <>

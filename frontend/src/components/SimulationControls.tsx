@@ -96,16 +96,23 @@ export function SimulationSettingsFields(props: SimulationSettingsProps) {
 
 export interface SimulationControlsProps {
   settings: SimulationSettings & { running: boolean };
+  /** 到着後は一時停止・再開・逸脱操作を出さない。 */
+  arrived: boolean;
   onMultiplier: (value: SimulationMultiplier) => void;
   onJitter: (value: boolean) => void;
+  onPause: () => void;
+  onResume: () => void;
   onTryDeviation: () => void;
 }
 
 /** 走行中の操作。倍率と揺らぎは走行中も変更でき、逸脱を試せる（seedは開始時のまま）。 */
 export function SimulationControls({
   settings,
+  arrived,
   onMultiplier,
   onJitter,
+  onPause,
+  onResume,
   onTryDeviation,
 }: SimulationControlsProps) {
   return (
@@ -118,14 +125,25 @@ export function SimulationControls({
           <dd>{settings.seed}</dd>
         </div>
       </dl>
-      <button
-        type="button"
-        className="secondary full"
-        disabled={!settings.running}
-        onClick={onTryDeviation}
-      >
-        逸脱を試す
-      </button>
+      {!arrived && (
+        <div className="nav-actions">
+          <button
+            type="button"
+            className="secondary"
+            onClick={settings.running ? onPause : onResume}
+          >
+            {settings.running ? "一時停止" : "再開"}
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={!settings.running}
+            onClick={onTryDeviation}
+          >
+            逸脱を試す
+          </button>
+        </div>
+      )}
     </section>
   );
 }
