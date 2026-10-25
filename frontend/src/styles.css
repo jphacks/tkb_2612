@@ -1167,22 +1167,17 @@ svg {
   z-index: 6;
 }
 
-/* 地図上の受動通知。上端の操作・模擬表示と下端の凡例・帰属を避ける。
-   現在地が下半分なら上側、上半分なら下側へ置き、マーカーを覆わない。 */
+/* 地図上の受動通知。下端の凡例・帰属の上に固定する。追従中の現在地は中央にあるので覆わず、
+   現在地の位置で上下を切り替えると追従の移動中に表示が往復する。 */
 .nav-approach-region {
   position: absolute;
   left: 16px;
   right: 16px;
+  bottom: 100px;
   z-index: 6;
   max-width: 360px;
   margin-inline: auto;
   pointer-events: none;
-}
-.nav-approach-region.is-top {
-  top: 210px;
-}
-.nav-approach-region.is-bottom {
-  bottom: 100px;
 }
 .nav-alert > svg {
   flex-shrink: 0;
