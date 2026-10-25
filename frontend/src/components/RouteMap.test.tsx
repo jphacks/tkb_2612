@@ -426,12 +426,41 @@ describe("RouteMapの実地図内部契約", () => {
     'layers[0].type: expected one of [fill, line], invalid found',
   ])("ルートstyleの取得・JSON解析・検証失敗で既存の利用不可表示にする: %s", async (message) => {
     const { map } = await renderLive();
-    // 初回取得失敗とstyle再読込失敗は、いずれも定義が未取得になる。
+    // 初回・完全再生成時のstyle取得・検証失敗では、定義が未取得になる。
     map.styleAvailable = false;
     map.loaded = false;
     act(() => map.emit("error", { error: new Error(message), style: {} }));
     expect(screen.getByText("地図を利用できません")).toBeVisible();
     expect(map.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["取得", { error: new Error("Failed to fetch") }],
+    ["検証", { error: new Error('version: expected one of [8], 7 found'), style: {} }],
+  ])("旧定義が残るstyle差分更新の%s失敗でも経路描画と選択を続ける", async (_name, event) => {
+    const { map, props, rerender } = await renderLive();
+    // 取得失敗のerrorはMapから、検証失敗は旧Styleから伝播しstyleが付く。
+    // いずれも完全再生成は行われず、既存のsourceとlayerが残る。
+    const source = map.getSource("route-fastest")!;
+    const previous = structuredClone(source.data);
+    const layer = map.getLayer("route-fastest-line");
+    act(() => map.emit("error", event));
+    expect(screen.queryByText("地図を利用できません")).not.toBeInTheDocument();
+    expect(map.remove).not.toHaveBeenCalled();
+    expect(map.getSource("route-fastest")).toBe(source);
+    expect(source.data).toEqual(previous);
+    expect(map.getLayer("route-fastest-line")).toBe(layer);
+    expect(screen.getByRole("group", { name: "表示する経路" })).toBeVisible();
+
+    // 旧スタイル上で選択変更後のデータも描画できる。
+    rerender(<RouteMap {...props} selectedRouteId={props.result!.fastest_id} />);
+    expect(source.data.features.find((feature) => feature.id === props.result!.fastest_id)?.properties?.selected).toBe(true);
+    const selected = props.result!.candidates.find((route) => route.id === props.result!.fastest_id)!;
+    expect(map.getSource("route-accidents")!.data.features).toEqual(selected.accident_points.features);
+    map.queryRenderedFeatures.mockReturnValue([{ id: selected.id, layer: { id: "route-hit" } }]);
+    act(() => map.emit("click", { point: { x: 0, y: 0 } }));
+    expect(props.onSelectRoute).toHaveBeenCalledWith(selected.id);
+    expect(map.remove).not.toHaveBeenCalled();
   });
 
   it("初回style取得失敗でも既存の利用不可表示と比較を残す", async () => {

@@ -36,6 +36,64 @@ vi.mock("./components/LogoIntro", () => ({
     <button onClick={onComplete}>動画をスキップして開始</button>
   ),
 }));
+// styleの読込完了だけを手動にし、Appから実レイヤー処理までを通す。
+type LiveSource = {
+  data: import("geojson").FeatureCollection;
+  setData: (data: import("geojson").FeatureCollection) => void;
+};
+type LiveMap = {
+  sources: Map<string, LiveSource>;
+  emit: (name: string) => void;
+  remove: ReturnType<typeof vi.fn>;
+};
+const live = vi.hoisted(() => ({ maps: [] as LiveMap[] }));
+vi.mock("maplibre-gl", () => ({
+  setWorkerUrl: vi.fn(),
+  NavigationControl: class {},
+  AttributionControl: class {},
+  Map: class {
+    sources = new Map<string, LiveSource>();
+    layers = new Map<string, import("maplibre-gl").LayerSpecification>();
+    listeners = new Map<string, Set<() => void>>();
+    loaded = false;
+    constructor() { live.maps.push(this); }
+    emit(name: string) {
+      if (name === "load") this.loaded = true;
+      this.listeners.get(name)?.forEach((listener) => listener());
+    }
+    on(name: string, listener: () => void) {
+      if (!this.listeners.has(name)) this.listeners.set(name, new Set());
+      this.listeners.get(name)!.add(listener);
+    }
+    off(name: string, listener: () => void) {
+      this.listeners.get(name)?.delete(listener);
+    }
+    isStyleLoaded = () => this.loaded;
+    getStyle = () => this.loaded ? { version: 8, sources: {}, layers: [] } : undefined;
+    getSource = (id: string) => this.sources.get(id);
+    getLayer = (id: string) => this.layers.get(id);
+    addSource(id: string, spec: { data: import("geojson").FeatureCollection }) {
+      const source: LiveSource = {
+        data: structuredClone(spec.data),
+        setData: (data) => {
+          source.data = structuredClone(data);
+          this.emit("styledata");
+        },
+      };
+      this.sources.set(id, source);
+      this.emit("styledata");
+    }
+    addLayer(layer: import("maplibre-gl").LayerSpecification) {
+      this.layers.set(layer.id, layer);
+      this.emit("styledata");
+    }
+    addControl = vi.fn();
+    remove = vi.fn();
+    fitBounds = vi.fn();
+    easeTo = vi.fn();
+    project = () => ({ x: 100, y: 100 });
+  },
+}));
 import App from "./App";
 
 const read = (path: string) =>
@@ -78,6 +136,8 @@ let routeHandler: (() => Promise<Response>) | undefined;
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-24T01:10:00+09:00"));
+  live.maps.length = 0;
+  vi.stubEnv("VITE_MAP_STYLE_URL", undefined);
   automatic = structuredClone(forecast);
   conditionsHandler = undefined;
   geocodeHandler = undefined;
@@ -599,4 +659,73 @@ describe("live App wiring (frontend-spec 3, 4, 5, 11)", () => {
     await screen.findByRole("group", { name: "表示する経路" });
     expect(counter.count("/api/route")).toBe(1);
   });
+});
+
+describe("live Appの地図初期化との競合", () => {
+  beforeEach(() => {
+    vi.stubEnv("VITE_MAP_STYLE_URL", "https://example.invalid/style.json");
+  });
+
+  it.each(["応答完了", "再検索", "条件変更"] as const)(
+    "%sの後にloadしても最新の結果を各sourceへ反映する",
+    async (operation) => {
+      const user = await openConditions();
+      const pending = deferred<Response>();
+      routeHandler = () => pending.promise;
+      await user.click(screen.getByRole("button", { name: "ルートを比較する" }));
+      await waitFor(() => expect(live.maps).toHaveLength(1));
+      const map = live.maps[0];
+      expect(map.sources.size).toBe(0);
+      await act(async () => pending.resolve(json(routeExample)));
+      await screen.findByRole("group", { name: "表示する経路" });
+      let latest: RouteResponse | null = routeExample;
+
+      if (operation === "再検索") {
+        // 前の応答とgeometry・区間・事故点が異なる契約例を返す。
+        latest = structuredClone(openapi.paths["/api/route"].post.responses["200"].content[
+          "application/json"
+        ].examples.singleRoute.value) as RouteResponse;
+        latest.effective_conditions = { ...routeExample.effective_conditions };
+        const next = deferred<Response>();
+        routeHandler = () => next.promise;
+        await user.click(screen.getByRole("button", { name: "再検索" }));
+        await act(async () => next.resolve(json(latest)));
+        await screen.findByRole("group", { name: "表示する経路" });
+      } else if (operation === "条件変更") {
+        await user.click(screen.getByRole("radio", { name: "雪" }));
+        expect(screen.queryByRole("group", { name: "表示する経路" })).toBeNull();
+        latest = null;
+      }
+
+      expect(counter.count("/api/route")).toBe(operation === "再検索" ? 2 : 1);
+      expect(live.maps).toHaveLength(1);
+      expect(map.sources.size).toBe(0);
+      act(() => map.emit("load"));
+      expect([...map.sources.keys()].sort()).toEqual([
+        "route-fastest", "route-safest", "route-high-risk", "route-accidents",
+        "current-location", "current-accuracy", "navigation-route", "navigation-alert",
+      ].sort());
+      const selected = latest?.candidates[0];
+      expect(map.sources.get("route-fastest")!.data).toEqual({
+        type: "FeatureCollection",
+        features: selected ? [{
+          type: "Feature", id: selected.id, geometry: selected.geometry,
+          properties: { selected: true, color: "#16a34a" },
+        }] : [],
+      });
+      expect(map.sources.get("route-high-risk")!.data).toEqual({
+        type: "FeatureCollection",
+        features: selected?.high_risk_sections.features.map((section) => ({
+          ...section, properties: { ...section.properties, selected: false },
+        })) ?? [],
+      });
+      expect(map.sources.get("route-accidents")!.data).toEqual({
+        type: "FeatureCollection", features: selected?.accident_points.features ?? [],
+      });
+      for (const id of ["route-safest", "current-location", "current-accuracy", "navigation-route", "navigation-alert"])
+        expect(map.sources.get(id)!.data).toEqual({ type: "FeatureCollection", features: [] });
+      expect(map.remove).not.toHaveBeenCalled();
+      expect(screen.queryByText("地図を利用できません")).toBeNull();
+    },
+  );
 });
