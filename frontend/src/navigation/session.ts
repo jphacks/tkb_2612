@@ -67,6 +67,8 @@ export interface NavigationSnapshot {
   /** 通知済みで通過前の区間ID。 */
   alertIds: string[];
   alertMessage: AlertMessage | null;
+  /** 逸脱中、または照合保留が続いている間。現在地からの再検索を案内できる。 */
+  reSearchAvailable: boolean;
   speechNotice: string | null;
   simulation: (SimulationSettings & { running: boolean }) | null;
 }
@@ -92,6 +94,8 @@ export interface NavigationSessionOptions {
 }
 
 const TICK_MS = 250;
+/** 照合保留が続いたとみなす実時間。開始直後の位置確認（約5秒）では案内しない。 */
+const HOLD_RE_SEARCH_MS = 15_000;
 const EMPTY_RESULT: MatchResult = {
   status: "waiting", p: null, lastConfirmedP: null, lastConfirmedTimestamp: null,
   lastAccepted: null, distanceToRouteM: null, accuracy: null, timestamp: null,
@@ -133,6 +137,8 @@ export class NavigationSession {
   private alertMessage: AlertMessage | null = null;
   private speechNotice: string | null = null;
   private phaseBefore: NavPhase = "waiting";
+  private holdSince: number | null = null;
+  private holdLong = false;
   private cached: NavigationSnapshot | null = null;
   private lastRawFix: PositionFix | null = null;
 
@@ -213,6 +219,8 @@ export class NavigationSession {
     this.match = this.matcher.pause();
     this.deviation.suspend();
     this.alerts.suspend();
+    this.holdSince = null;
+    this.holdLong = false;
     this.speech.cancel(speechReason);
     this.wake.release();
     this.wakeState = "unknown";
@@ -287,6 +295,13 @@ export class NavigationSession {
       if (this.simulator.state === "stopped") return this.pause("sim-limit");
     }
     this.apply(this.matcher.poll(), true);
+    if (
+      this.lifecycle === "running" && !this.holdLong && this.holdSince !== null &&
+      this.clock.monotonicNow() - this.holdSince >= HOLD_RE_SEARCH_MS
+    ) {
+      this.holdLong = true;
+      this.publish();
+    }
   }
 
   private handleFix(fix: PositionFix): void {
@@ -371,6 +386,8 @@ export class NavigationSession {
     const phase = this.phase(status);
     if (phase === this.phaseBefore) return;
     this.phaseBefore = phase;
+    this.holdSince = phase === "matching-hold" ? this.clock.monotonicNow() : null;
+    this.holdLong = false;
     if (phase === "poor-accuracy") this.speech.cancel("accuracy");
     else if (phase === "matching-hold" || phase === "waiting") this.speech.cancel("pending");
     else if (phase === "deviated") this.speech.cancel("deviation");
@@ -459,6 +476,7 @@ export class NavigationSession {
       wakeLock: this.wakeState,
       alertIds: active,
       alertMessage: this.alertMessage,
+      reSearchAvailable: this.deviated || this.holdLong,
       speechNotice: this.speechNotice,
       simulation: this.simulationSettings
         ? { ...this.simulationSettings, running: this.lifecycle === "running" }

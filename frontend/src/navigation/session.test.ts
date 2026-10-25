@@ -197,3 +197,31 @@ describe("NavigationSession: 模擬走行の停止期限と明示再開（7.7）
     session.stop();
   });
 });
+
+describe("NavigationSession: 現在地からの再検索の案内（7.5）", () => {
+  it("開始直後の位置確認では案内せず、照合保留が15秒続いたときと逸脱中に案内する", () => {
+    const { session, feed, last } = setup();
+    session.begin();
+    for (let i = 0; i < 4; i++) feed(100 + i);
+    expect(last().phase).toBe("matching-hold");
+    expect(last().reSearchAvailable).toBe(false);
+    for (let i = 0; i < 8; i++) feed(110 + i);
+    expect(last().phase).toBe("tracking");
+    expect(last().reSearchAvailable).toBe(false);
+    // 経路から25m離れると、位置を一意に確認できず保留になる。
+    for (let i = 0; i < 12; i++) feed(120, 10, 25);
+    expect(last().phase).toBe("matching-hold");
+    expect(last().reSearchAvailable).toBe(false);
+    for (let i = 0; i < 5; i++) feed(120, 10, 25);
+    expect(last().reSearchAvailable).toBe(true);
+    // 経路へ戻って進行中になれば案内は消える。
+    for (let i = 0; i < 9; i++) feed(125 + i);
+    expect(last().phase).toBe("tracking");
+    expect(last().reSearchAvailable).toBe(false);
+    // 逸脱は10秒・3測位で確定し、その間は案内する。
+    for (let i = 0; i < 13; i++) feed(135, 10, 120);
+    expect(last().phase).toBe("deviated");
+    expect(last().reSearchAvailable).toBe(true);
+    session.stop();
+  });
+});

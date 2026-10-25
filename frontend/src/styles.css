@@ -943,6 +943,7 @@ svg {
 }
 /* ナビ（既存のサイドバー・.result-content・.segmented・.result-metrics を再利用） */
 .nav-start {
+  padding-top: 16px;
   padding-bottom: 16px;
 }
 .nav-start-row {
@@ -1073,9 +1074,11 @@ svg {
 .map-stage > .nav-sim-banner {
   position: absolute;
   top: 16px;
-  left: 76px;
-  right: 76px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 6;
+  width: max-content;
+  max-width: calc(100% - 152px);
   text-align: center;
 }
 .nav-actions {

@@ -141,9 +141,14 @@ export default function App() {
       )
     : "";
 
+  const panel = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!intro) heading.current?.focus();
-  }, [page, intro]);
+  }, [page, intro, navigationBusy]);
+  // ナビ表示と通常表示の切替では、前の内容のスクロール位置を引き継がない。
+  useEffect(() => {
+    panel.current?.scrollTo?.(0, 0);
+  }, [navigationBusy, reSearch.state.status]);
 
   function changePlace(which: "origin" | "dest", next: LocationValue) {
     edit();
@@ -442,6 +447,7 @@ export default function App() {
             </div>
             <aside
               id="search-conditions"
+              ref={panel}
               className="route-panel"
               aria-label={navigationBusy ? "ナビ" : "検索結果と条件"}
               hidden={!sidebarOpen}

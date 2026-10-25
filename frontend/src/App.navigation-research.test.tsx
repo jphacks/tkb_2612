@@ -56,6 +56,15 @@ function setVisibility(state: "hidden" | "visible") {
 }
 
 describe("現在地からの明示的再検索の画面（手順12・7.6・7.7）", () => {
+  it("開始直後の位置確認中には再検索を案内しない", async () => {
+    await openResults();
+    vi.useFakeTimers();
+    beginNavigation("最短時間", "模擬走行で開始");
+    advance(3_000);
+    expect(phase()).toHaveTextContent("照合保留");
+    expect(screen.queryByRole("button", { name: RESEARCH })).not.toBeInTheDocument();
+  });
+
   it("逸脱表示から押すと、模擬位置から条件と経路を1回ずつ取得し、同じ種別・倍率・seedで新経路のナビを継続する", async () => {
     await deviate();
     const firstRequest: RouteRequest = api.searchRoutes.mock.calls[0][0];

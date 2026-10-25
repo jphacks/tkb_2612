@@ -103,4 +103,38 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("模擬走行");
     expect(screen.getByRole("complementary", { name: "検索結果と条件" })).toBeVisible();
   });
+
+  it("開始・終了でサイドバーの見出しへフォーカスを移し、前の内容のスクロール位置を引き継がない", async () => {
+    await openResults();
+    const panel = screen.getByRole("complementary", { name: "検索結果と条件" });
+    const scrollTo = vi.fn();
+    panel.scrollTo = scrollTo as unknown as typeof panel.scrollTo;
+    vi.useFakeTimers();
+    beginNavigation("最短時間", "模擬走行で開始");
+    expect(screen.getByRole("heading", { name: "ナビ", level: 1 })).toHaveFocus();
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+    fireEvent.click(screen.getByRole("button", { name: "ナビを停止" }));
+    expect(screen.getByRole("heading", { name: "検索結果と条件", level: 1 })).toHaveFocus();
+  });
+
+  it("位置・進捗・通知済みIDをストレージ・URL・履歴・コンソールへ出さない", async () => {
+    await openResults();
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    const pushState = vi.spyOn(window.history, "pushState");
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    const log = vi.spyOn(console, "log");
+    const warn = vi.spyOn(console, "warn");
+    const error = vi.spyOn(console, "error");
+    const href = window.location.href;
+    vi.useFakeTimers();
+    beginNavigation("最短時間", "模擬走行で開始");
+    advance(120_000);
+    expect(setItem).not.toHaveBeenCalled();
+    expect(pushState).not.toHaveBeenCalled();
+    expect(replaceState).not.toHaveBeenCalled();
+    expect(window.location.href).toBe(href);
+    expect(window.history.state ?? null).toBeNull();
+    for (const spy of [log, warn, error]) expect(spy).not.toHaveBeenCalled();
+    expect(sessionStorage.length + localStorage.length).toBe(0);
+  });
 });

@@ -72,4 +72,16 @@ describe("接近通知の画面表示（手順10・7.5・7.9）", () => {
     for (let i = 0; i < 3; i++) feed(section.start_m - 60);
     expect(screen.queryByLabelText("接近通知")).not.toBeInTheDocument();
   });
+
+  it("位置の更新が止まっている間は接近表示を出さず、進行中に戻ると再通知せずに再表示する", async () => {
+    const { section, feed } = await startDevice();
+    for (let progress = 0; progress + 40 < section.start_m - 90; progress += 40) feed(progress + 40);
+    feed(section.start_m - 75);
+    feed(section.start_m - 71);
+    expect(screen.getByLabelText("接近通知")).toHaveTextContent(AHEAD);
+    advance(7000);
+    expect(screen.queryByLabelText("接近通知")).not.toBeInTheDocument();
+    for (let i = 0; i < 8; i++) feed(section.start_m - 70 + i);
+    expect(screen.getByLabelText("接近通知")).toHaveTextContent(AHEAD);
+  });
 });

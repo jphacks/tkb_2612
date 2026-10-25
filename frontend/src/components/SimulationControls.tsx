@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 import type { SimulationSettings } from "../navigation/session";
 import type { SimulationMultiplier } from "../navigation/simulator";
 
@@ -103,6 +103,8 @@ export interface SimulationControlsProps {
   onPause: () => void;
   onResume: () => void;
   onTryDeviation: () => void;
+  /** 一時停止・逸脱の操作の直後に置く内容（ナビの停止ボタン）。 */
+  afterActions?: ReactNode;
 }
 
 /** 走行中の操作。倍率と揺らぎは走行中も変更でき、逸脱を試せる（seedは開始時のまま）。 */
@@ -114,17 +116,10 @@ export function SimulationControls({
   onPause,
   onResume,
   onTryDeviation,
+  afterActions,
 }: SimulationControlsProps) {
   return (
     <section className="sim-controls" aria-label="模擬走行の操作">
-      <MultiplierField value={settings.multiplier} onChange={onMultiplier} />
-      <JitterField value={settings.jitter} onChange={onJitter} />
-      <dl className="result-metrics">
-        <div>
-          <dt>seed</dt>
-          <dd>{settings.seed}</dd>
-        </div>
-      </dl>
       {!arrived && (
         <div className="nav-actions">
           <button
@@ -144,6 +139,15 @@ export function SimulationControls({
           </button>
         </div>
       )}
+      {afterActions}
+      <MultiplierField value={settings.multiplier} onChange={onMultiplier} />
+      <JitterField value={settings.jitter} onChange={onJitter} />
+      <dl className="result-metrics">
+        <div>
+          <dt>seed</dt>
+          <dd>{settings.seed}</dd>
+        </div>
+      </dl>
     </section>
   );
 }

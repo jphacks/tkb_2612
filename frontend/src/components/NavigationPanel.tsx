@@ -125,6 +125,11 @@ export function NavigationPanel({
   const { phase, remaining, lastFix, kind } = snapshot;
   const cause = phaseCause(snapshot);
   const showFix = phase !== "tracking" && lastFix !== null;
+  const stopButton = (
+    <button type="button" className="secondary full" onClick={onStop}>
+      {phase === "paused" || phase === "arrived" ? "ナビを終了" : "ナビを停止"}
+    </button>
+  );
   return (
     <div className="result-content nav-panel">
       <SimulationBanner snapshot={snapshot} />
@@ -147,6 +152,14 @@ export function NavigationPanel({
           </dl>
         )}
       </section>
+      {snapshot.reSearchAvailable && phase !== "paused" && phase !== "arrived" && (
+        <div className="nav-research">
+          <button type="button" className="primary full" onClick={onReSearch}>
+            安全な場所で停止してから現在地から再検索
+          </button>
+          {snapshot.simulation && <p className="result-muted">{SIMULATION_RESEARCH_NOTE}</p>}
+        </div>
+      )}
       <dl className="result-metrics">
         <div>
           <dt>残り距離（概算）</dt>
@@ -169,7 +182,8 @@ export function NavigationPanel({
           <dd>{SELECTION_LABEL[snapshot.selection]}</dd>
         </div>
       </dl>
-      {snapshot.alertMessage && (
+      {/* 進捗が止まっている間は、古い位置に基づく接近表示を出さない（通知済みの区間は保持）。 */}
+      {snapshot.alertMessage && phase === "tracking" && (
         <section className="nav-alert" aria-label="接近通知">
           <Info size={16} aria-hidden="true" />
           <div>
@@ -180,26 +194,10 @@ export function NavigationPanel({
           </div>
         </section>
       )}
-      {snapshot.speechNotice && (
-        <p className="notice warning" role="status">
-          {snapshot.speechNotice}
-        </p>
-      )}
       <div className="result-risk-note">
         <p>過去事故の参考情報です。現在の危険や安全を保証するものではありません</p>
         <p>条件と事故データは検索時点のものです</p>
       </div>
-      {(phase === "deviated" || phase === "matching-hold") && (
-        <div className="nav-research">
-          <button type="button" className="primary full" onClick={onReSearch}>
-            安全な場所で停止してから現在地から再検索
-          </button>
-          {snapshot.simulation && <p className="result-muted">{SIMULATION_RESEARCH_NOTE}</p>}
-        </div>
-      )}
-      {snapshot.wakeLock === "unavailable" && phase !== "arrived" && (
-        <p className="result-muted">画面が消えるとナビは一時停止します</p>
-      )}
       {!snapshot.simulation && phase !== "arrived" && (
         <button
           type="button"
@@ -218,11 +216,18 @@ export function NavigationPanel({
           onPause={onPause}
           onResume={onResume}
           onTryDeviation={onTryDeviation}
+          afterActions={stopButton}
         />
       )}
-      <button type="button" className="secondary full" onClick={onStop}>
-        {phase === "paused" || phase === "arrived" ? "ナビを終了" : "ナビを停止"}
-      </button>
+      {!snapshot.simulation && stopButton}
+      {snapshot.speechNotice && (
+        <p className="notice warning" role="status">
+          {snapshot.speechNotice}
+        </p>
+      )}
+      {snapshot.wakeLock === "unavailable" && phase !== "arrived" && (
+        <p className="result-muted">画面が消えるとナビは一時停止します</p>
+      )}
     </div>
   );
 }
