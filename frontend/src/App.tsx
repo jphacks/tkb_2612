@@ -21,7 +21,6 @@ import LocationInput, {
 import ConditionFields from "./components/ConditionFields";
 import { DataAttribution } from "./components/DataAttribution";
 import { LogoIntro } from "./components/LogoIntro";
-import { ResultsPanel } from "./components/ResultsPanel";
 import { RouteMap } from "./components/RouteMap";
 import { useConditions } from "./state/useConditions";
 import { useCurrentLocation } from "./state/useCurrentLocation";
@@ -373,22 +372,14 @@ export default function App() {
             <aside
               id="search-conditions"
               className="route-panel"
-              aria-label="検索結果と条件"
+              aria-label="検索条件"
               hidden={!sidebarOpen}
             >
               <div className="panel-title">
                 <h1 ref={heading} tabIndex={-1}>
-                  検索結果と条件
+                  検索条件
                 </h1>
               </div>
-              {result && route.selectedRoute && (
-                <ResultsPanel
-                  result={result}
-                  selectedRouteId={route.selectedRoute}
-                  onSelectRoute={selectRoute}
-                />
-              )}
-              <h2 className="panel-subtitle">検索条件</h2>
               {/* frontend-spec 3: inputs stay locked while searching; there is no cancel. */}
               <fieldset className="panel-editor" disabled={searching}>
                 {healthNotice}
@@ -413,8 +404,6 @@ export default function App() {
                 </button>
               </fieldset>
             </aside>
-            {/* Outside the collapsible sidebar: attribution stays visible with the map. */}
-            {attribution}
           </main>
         )}
         {isDemo && (

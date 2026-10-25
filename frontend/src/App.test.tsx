@@ -160,7 +160,7 @@ describe("App search flow and condition ownership", () => {
   it("keeps conditions visible and preserves them when the sidebar is hidden and reopened", async () => {
     const user = await openResults();
     const sidebar = screen.getByRole("complementary", {
-      name: "検索結果と条件",
+      name: "検索条件",
     });
     expect(
       within(sidebar).getByRole("combobox", { name: "目的地" }),
@@ -517,34 +517,6 @@ describe("App search flow and condition ownership", () => {
 });
 
 describe("App result comparison and failures (frontend-spec 5, 10)", () => {
-  it("shows the aggregation settings and all candidates in the sidebar and syncs the selection with the map", async () => {
-    const user = await openResults();
-    const sidebar = screen.getByRole("complementary", {
-      name: "検索結果と条件",
-    });
-    const response: RouteResponse =
-      await api.searchRoutes.mock.results.at(-1)?.value;
-    await user.click(within(sidebar).getByText("集計条件と全候補"));
-    expect(
-      within(sidebar).getByText(`${response.data_years.join("・")}年`),
-    ).toBeVisible();
-    const fastestIndex = response.candidates.findIndex(
-      (route) => route.id === response.fastest_id,
-    );
-    await user.click(
-      within(sidebar).getByRole("button", { name: `候補${fastestIndex + 1}` }),
-    );
-    expect(
-      screen.getByRole("button", { name: "最短ルートを選択" }),
-    ).toHaveAttribute("aria-pressed", "true");
-
-    // Editing a condition clears the table together with the result.
-    await user.click(within(sidebar).getByRole("radio", { name: "雨" }));
-    expect(
-      within(sidebar).queryByText("集計条件と全候補"),
-    ).not.toBeInTheDocument();
-  });
-
   it.each([
     ["no_route", 502, /道路に近い地点/],
     ["route_too_long", 422, /80km.*近づけて/],
@@ -615,23 +587,11 @@ describe("App result comparison and failures (frontend-spec 5, 10)", () => {
     );
   });
 
-  it("keeps live attribution visible on the result page when the sidebar is closed", async () => {
-    const user = await openResults();
-    // The helper uses the demo origin; the next render reads live mode.
-    mode.demo = false;
-    await user.click(
-      screen.getByRole("button", { name: "条件サイドバーを閉じる" }),
-    );
-    const footer = screen.getByRole("contentinfo", { name: "データの出典" });
-    expect(footer).toBeVisible();
+  it("shows no data attribution footer on the result page", async () => {
+    await openResults();
     expect(
-      within(footer).getByText(/過去の事故記録に基づく参考指標/),
-    ).toBeVisible();
-    expect(
-      within(footer).getByRole("link", {
-        name: "Weather data by Open-Meteo.com",
-      }),
-    ).toBeVisible();
+      screen.queryByRole("contentinfo", { name: "データの出典" }),
+    ).not.toBeInTheDocument();
   });
 
   it("explains a health network failure with the possible expired login", async () => {

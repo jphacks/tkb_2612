@@ -1,4 +1,4 @@
-import { Check, Send } from "lucide-react";
+import { Send } from "lucide-react";
 import type { RouteCandidate, RouteResponse } from "../lib/types";
 import {
   formatExtraMinutes,
@@ -189,9 +189,6 @@ export function RouteCallouts({
               <span className="map-card-title">
                 <i aria-hidden="true" />
                 <span>{title}</span>
-                {selectedRouteId === route.id && (
-                  <Check size={15} aria-hidden="true" />
-                )}
               </span>
               <strong className="map-card-duration">
                 {formatMinutes(route.duration)}
