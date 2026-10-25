@@ -56,6 +56,9 @@ function setup(options: { sections?: { start_m: number; end_m: number }[]; voice
     spoken,
     snapshots,
     last: () => session.getSnapshot(),
+    fail(code: 2 | 3) {
+      watch?.failure({ code, PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 } as GeolocationPositionError);
+    },
     feed(progress: number, accuracy = 10, lateral = 0) {
       vi.advanceTimersByTime(1000);
       watch?.success({
@@ -130,6 +133,40 @@ describe("NavigationSession: 接近通知と音声の結線（手順10）", () =
     expect(last().phase).toBe("poor-accuracy");
     expect(speech.cancel).toHaveBeenCalled();
     expect(last().alertMessage).not.toBeNull();
+    session.stop();
+  });
+
+  it.each([2, 3] as const)("tracking中のGPSエラー%dで直ちに保留・発話取消し、watchを保ち良好測位の再確認後に復帰する", (code) => {
+    const { session, feed, fail, speech, last, geolocation } = setup({
+      sections: [{ start_m: 100, end_m: 400 }, { start_m: 550, end_m: 600 }], hangAfterStart: true,
+    });
+    session.begin();
+    vi.advanceTimersByTime(11_000);
+    for (let i = 0; i < 9; i++) feed(150 + i * 3);
+    expect(last().phase).toBe("tracking");
+    expect(speech.speak).toHaveBeenCalledTimes(2);
+    vi.mocked(speech.cancel).mockClear();
+    const before = last();
+    fail(code);
+    expect(last().phase).toBe("poor-accuracy");
+    expect(last().remainingStale).toBe(true);
+    expect(last().remaining).toEqual(before.remaining);
+    expect(last().lastFix).toEqual(before.lastFix);
+    expect(speech.cancel).toHaveBeenCalled();
+    expect(last().alertIds).toEqual(before.alertIds);
+    expect(geolocation.watchPosition).toHaveBeenCalledTimes(1);
+    expect(geolocation.clearWatch).not.toHaveBeenCalled();
+    // 短い欠測でも連続判定は引き継がず、最初の良好測位から5秒間確認する。
+    for (let i = 0; i < 5; i++) {
+      feed(180 + i * 3);
+      expect(last().phase).not.toBe("tracking");
+      expect(last().phase).not.toBe("arrived");
+      expect(last().remaining).toEqual(before.remaining);
+      expect(last().alertIds).toEqual(before.alertIds);
+    }
+    feed(195);
+    expect(last().phase).toBe("tracking");
+    expect(last().sourceError).toBeNull();
     session.stop();
   });
 

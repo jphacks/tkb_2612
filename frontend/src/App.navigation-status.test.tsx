@@ -1,6 +1,6 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resetApi } from "./test/apiMock";
+import { api, resetApi } from "./test/apiMock";
 import {
   advance,
   startGroup,
@@ -59,6 +59,29 @@ describe("ナビの状態表示（手順10・5章）", () => {
     expect(metrics()).toHaveTextContent(/km|m/);
     expect(screen.getByText("最短ルート", { selector: "dd" })).toBeVisible();
     expect(screen.getByText("条件と事故データは検索時点のものです")).toBeVisible();
+  });
+
+  it.each([2, 3] as const)("GPSエラー%dで即時に判定停止を表示し、通信せず、良好測位を再確認して復帰する", async (code) => {
+    const { gps, feed } = await startDevice();
+    for (let i = 0; i < 7; i++) feed(100 + i * 1.4);
+    expect(phase()).toHaveTextContent("進行中");
+    const before = metrics().textContent;
+    const calls = [api.getConditions.mock.calls.length, api.searchRoutes.mock.calls.length];
+    gps.fail(code);
+    expect(phase()).toHaveTextContent("精度不足");
+    expect(screen.getByText("位置を取得できないため判定を停止中")).toBeVisible();
+    expect(screen.getByText("更新停止")).toBeVisible();
+    expect(metrics().textContent).toBe(before);
+    for (let i = 0; i < 5; i++) {
+      feed(110 + i * 1.4);
+      expect(phase()).toHaveTextContent("照合保留");
+      expect(metrics().textContent).toBe(before);
+    }
+    feed(117);
+    expect(phase()).toHaveTextContent("進行中");
+    expect(gps.watchPosition).toHaveBeenCalledTimes(1);
+    expect(gps.clearWatch).not.toHaveBeenCalled();
+    expect([api.getConditions.mock.calls.length, api.searchRoutes.mock.calls.length]).toEqual(calls);
   });
 
   it("精度不足では原因・精度・最後の位置時点を示し、進捗の更新を止める", async () => {

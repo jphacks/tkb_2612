@@ -323,7 +323,8 @@ export class NavigationSession {
       return;
     }
     this.sourceError = error;
-    this.publish();
+    // 欠測を判定器の無効入力の入口へ渡す。watchと最後の実測位置は保持する。
+    this.apply(this.matcher.update({ lon: NaN, lat: NaN, accuracy: NaN, timestamp: NaN }), false);
   }
 
   private async acquireWakeLock(): Promise<void> {
