@@ -26,6 +26,7 @@ import {
   setRouteLayers,
   type NavigationLayers,
 } from "../map/layers";
+import { NavigationAlertPopup, type NavigationAlert } from "./NavigationAlertPopup";
 import { isFatalMapError } from "../map/errors";
 import {
   FASTEST_LABEL,
@@ -41,6 +42,7 @@ import {
 /** ナビ中だけ渡す。比較用の経路カードを隠し、ナビ用レイヤーを重ねる。 */
 export type NavigationMapProps = {
   layers: NavigationLayers;
+  alert?: NavigationAlert;
   follow: boolean;
   onFollowChange: (follow: boolean) => void;
 };
@@ -146,6 +148,7 @@ type LiveMapProps = RouteMapProps & {
   onAccident: (id: number) => void;
   onUnavailable: () => void;
   onPositions: (positions: Record<string, MapPoint>) => void;
+  onNavigationPosition: (position: MapPoint | null) => void;
 };
 
 function LiveMap(props: LiveMapProps) {
@@ -302,6 +305,22 @@ function LiveMap(props: LiveMapProps) {
   ]);
 
   const navigationLayers = props.navigation?.layers;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    const report = () => {
+      const coordinates = navigationLayers?.location.features[0]?.geometry.coordinates;
+      const point = coordinates ? map.project([coordinates[0], coordinates[1]]) : null;
+      props.onNavigationPosition(point ? { x: point.x, y: point.y } : null);
+    };
+    report();
+    map.on("move", report);
+    map.on("resize", report);
+    return () => {
+      map.off("move", report);
+      map.off("resize", report);
+    };
+  }, [ready, navigationLayers, props.onNavigationPosition]);
   const navigationApplied = useRef(false);
   useEffect(() => {
     const map = mapRef.current;
@@ -391,6 +410,7 @@ export function RouteMap(props: RouteMapProps) {
   const [livePositions, setLivePositions] = useState<Record<string, MapPoint>>(
     {},
   );
+  const [navigationPoint, setNavigationPoint] = useState<MapPoint | null>(null);
   const shell = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<MapSize>({ width: WIDTH, height: HEIGHT });
   useLayoutEffect(() => {
@@ -445,6 +465,12 @@ export function RouteMap(props: RouteMapProps) {
     size.width / (WIDTH / actualZoom),
     size.height / (HEIGHT / actualZoom),
   );
+  const locationCoordinates = navigation?.layers.location.features[0]?.geometry.coordinates;
+  const schematicLocation = locationCoordinates ? project(locationCoordinates) : null;
+  const locationY = styleUrl
+    ? navigationPoint?.y
+    : schematicLocation ? size.height / 2 + (schematicLocation[1] - center[1]) * scale : undefined;
+  const belowLocation = locationY === undefined || locationY <= size.height / 2;
   const positions = result
     ? Object.fromEntries(
         featuredRoutes(result).map((route) => {
@@ -512,6 +538,7 @@ export function RouteMap(props: RouteMapProps) {
           onAccident={setAccidentId}
           onUnavailable={() => setLiveFailed(true)}
           onPositions={setLivePositions}
+          onNavigationPosition={setNavigationPoint}
         />
       ) : (
         <div className="route-schematic-canvas">
@@ -723,6 +750,9 @@ export function RouteMap(props: RouteMapProps) {
             )}
           </svg>
         </div>
+      )}
+      {!disabled && navigation?.alert && (
+        <NavigationAlertPopup alert={navigation.alert} belowLocation={belowLocation} />
       )}
       {result && !navigating && (
         <RouteCallouts

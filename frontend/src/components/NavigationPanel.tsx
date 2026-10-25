@@ -1,4 +1,4 @@
-import { Flag, Info } from "lucide-react";
+import { Flag } from "lucide-react";
 import {
   formatPositionTime,
   formatRemainingDistance,
@@ -155,18 +155,6 @@ export function NavigationPanel({
           <dd>{SELECTION_LABEL[snapshot.selection]}</dd>
         </div>
       </dl>
-      {/* 進捗が止まっている間は、古い位置に基づく接近表示を出さない（通知済みの区間は保持）。 */}
-      {snapshot.alertMessage && phase === "tracking" && (
-        <section className="nav-alert" aria-label="接近通知">
-          <Info size={16} aria-hidden="true" />
-          <div>
-            <p role="status">{snapshot.alertMessage}</p>
-            {snapshot.alertIds.length > 1 && (
-              <p className="nav-alert-count">参考区間 {snapshot.alertIds.length}件</p>
-            )}
-          </div>
-        </section>
-      )}
       <div className="nav-reference-note">
         <p>過去事故の参考情報です。現在の危険や安全を保証するものではありません</p>
         <p>条件と事故データは検索時点のものです</p>

@@ -423,7 +423,7 @@ export default function App() {
                 onUnavailableChange={setMapUnavailable}
                 navigation={
                   navigating
-                    ? { layers: navigationLayers, follow, onFollowChange: setFollow }
+                    ? { layers: navigationLayers, follow, onFollowChange: setFollow, alert: navigation.snapshot! }
                     : undefined
                 }
               />

@@ -1166,3 +1166,24 @@ svg {
   bottom: 64px;
   z-index: 6;
 }
+
+/* 地図上の受動通知。上端の操作・模擬表示と下端の凡例・帰属を避ける。
+   現在地が下半分なら上側、上半分なら下側へ置き、マーカーを覆わない。 */
+.nav-approach-region {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  z-index: 6;
+  max-width: 360px;
+  margin-inline: auto;
+  pointer-events: none;
+}
+.nav-approach-region.is-top {
+  top: 210px;
+}
+.nav-approach-region.is-bottom {
+  bottom: 100px;
+}
+.nav-alert > svg {
+  flex-shrink: 0;
+}
