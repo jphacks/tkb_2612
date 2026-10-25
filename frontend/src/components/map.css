@@ -442,6 +442,13 @@
 }
 
 /* ナビ中だけ出る要素。色は styles.css の :root のトークンを使う。 */
+.map-nav-route {
+  fill: none;
+  stroke: var(--blue);
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .map-nav-accuracy {
   fill: var(--blue);
   fill-opacity: 0.15;

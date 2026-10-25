@@ -138,6 +138,32 @@ describe("RouteMap", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("模式図でもナビ中は、ナビ経路・現在地（模擬は輪）・通知中区間を重ね、比較カードを隠す", () => {
+    const props = mapProps(createDemoRouteResponse(request));
+    const route = props.result!.candidates[0];
+    const layers = emptyNavigationLayers();
+    layers.route.features.push({ type: "Feature", geometry: route.geometry, properties: {} });
+    layers.location.features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: route.geometry.coordinates[1] },
+      properties: { kind: "simulation", onRoute: true },
+    });
+    layers.alert.features.push({
+      type: "Feature",
+      id: "a",
+      geometry: { type: "LineString", coordinates: route.geometry.coordinates.slice(1, 3) },
+      properties: {},
+    });
+    const { container } = render(
+      <RouteMap {...props} navigation={{ layers, follow: true, onFollowChange: vi.fn() }} />,
+    );
+    expect(container.querySelectorAll(".map-nav-route")).toHaveLength(1);
+    expect(container.querySelector(".map-nav-location")).toHaveClass("is-simulation");
+    expect(container.querySelectorAll(".map-nav-alert")).toHaveLength(1);
+    expect(screen.queryByRole("group", { name: "表示する経路" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "現在地に追従" })).not.toBeInTheDocument();
+  });
+
   it("labels coincident recommendations as one route and preserves comparison when the map is unavailable", () => {
     const props = mapProps(createDemoRouteResponse(request, "same"));
     const { rerender } = render(<RouteMap {...props} />);

@@ -661,6 +661,14 @@ export function RouteMap(props: RouteMapProps) {
               })}
             {navigation && (
               <g className="map-navigation" aria-hidden="true">
+                {navigation.layers.route.features.map((feature, index) => (
+                  <polyline
+                    key={index}
+                    className="map-nav-route"
+                    points={path(feature.geometry.coordinates)}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
                 {navigation.layers.accuracy.features.map((feature, index) => (
                   <polygon
                     key={index}
