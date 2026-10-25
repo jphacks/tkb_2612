@@ -843,9 +843,6 @@ svg {
 .all-option {
   min-height: 44px;
 }
-.result-content {
-  padding: 0 16px;
-}
 .map-legend {
   bottom: 76px;
 }
@@ -879,4 +876,12 @@ svg {
 .form-page .data-attribution {
   margin-top: 40px;
   padding: 0;
+}
+/* Short screens (e.g. a landscape phone): the 400px minimums would push the
+   sidebar bottom below the fold of the 100dvh, overflow-hidden result page. */
+@media (max-height: 480px) {
+  .result-page,
+  .map-stage .route-map-shell {
+    min-height: 0;
+  }
 }

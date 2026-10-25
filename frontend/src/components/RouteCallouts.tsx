@@ -195,7 +195,7 @@ export function RouteCallouts({
               </strong>
               <span className="map-card-metrics">
                 <span>{formatKilometres(route.distance)}</span>
-                {/* Same units as the comparison panel (frontend-spec 5). */}
+                {/* frontend-spec 5 units: km with two decimals, minutes with one. */}
                 <span>{formatExtraMinutes(route.extra_minutes)}</span>
               </span>
               <span className="map-card-accidents">

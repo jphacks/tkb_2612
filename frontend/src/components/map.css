@@ -481,7 +481,7 @@
 .map-route-callouts.is-compact .map-card-select {
   padding: 12px;
 }
-/* Distance and extra time stay in the sidebar table. */
+/* Narrow maps show only the duration and accident count. */
 .map-route-callouts.is-compact .map-card-metrics {
   display: none;
 }
