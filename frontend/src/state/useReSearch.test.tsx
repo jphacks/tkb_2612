@@ -1,3 +1,4 @@
+import { useLayoutEffect } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDemoRouteResponse, DEMO_PLACES } from "../api/demo";
@@ -52,7 +53,7 @@ function geolocation() {
   };
 }
 
-function setup(source: Partial<ReSearchSource> = {}) {
+function setup(source: Partial<ReSearchSource> = {}, beforeResume?: () => void) {
   const taken: ReSearchSource = {
     kind: "device",
     selection: "safest",
@@ -80,6 +81,9 @@ function setup(source: Partial<ReSearchSource> = {}) {
       onAdoptOrigin,
       onRouteSuccess,
     });
+    useLayoutEffect(() => {
+      if (route.result) beforeResume?.();
+    }, [route.result]);
     return { route, reSearch };
   });
   return { ...view, navigation, refresh, onAdoptOrigin, onRouteSuccess, taken };
@@ -272,6 +276,24 @@ describe("useReSearch: 現在地からの明示的再検索（7.6）", () => {
 });
 
 describe("useReSearch: hidden/pagehide と unmount", () => {
+  it.each(["hidden", "pagehide"] as const)("成功後の再開前に%sになると一度だけ中断し、復帰でも自動開始・追加送信しない", async (event) => {
+    const view = setup({}, () => {
+      if (event === "hidden") setVisibility("hidden");
+      else window.dispatchEvent(new Event("pagehide"));
+    });
+    await act(async () => view.result.current.reSearch.start());
+    expect(state(view)).toEqual({ status: "interrupted", kind: "device" });
+    expect(view.navigation.start).not.toHaveBeenCalled();
+    expect(view.result.current.route.result).toBeNull();
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    act(() => setVisibility("visible"));
+    act(() => window.dispatchEvent(new Event("pageshow")));
+    expect(state(view).status).toBe("interrupted");
+    expect(view.navigation.start).not.toHaveBeenCalled();
+    expect(view.refresh).toHaveBeenCalledTimes(1);
+    expect(client.searchRoutes).toHaveBeenCalledTimes(1);
+  });
+
   it("位置取得中のhiddenで中断へ一度だけ遷移し、遅い成功を捨て、visibleの復帰だけでは送信しない", async () => {
     const geo = geolocation();
     const view = setup({ fixFresh: false });

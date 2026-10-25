@@ -115,6 +115,7 @@ export function useReSearch(params: Params) {
   const [state, setState] = useState<ReSearchState>({ status: "idle" });
   const [notice, setNotice] = useState("");
   const [resume, setResume] = useState<{
+    generation: number;
     forResult: RouteResponse;
     selection: NavigationSelection;
     kind: NavigationKind;
@@ -202,14 +203,15 @@ export function useReSearch(params: Params) {
         });
         return;
       }
-      // 成功：snapshotを破棄し、同じ種別で新世代のナビを継続する。
-      snapshot.current = null;
-      finish({ status: "idle" });
+      // 再開effectが完了するまでは、snapshotと中断対象の世代を保持する。
       if (snap.selection === "safest" && outcome.response.safest_id === null) {
+        snapshot.current = null;
+        finish({ status: "idle" });
         setNotice(NO_SAFEST);
         return;
       }
       setResume({
+        generation: mine,
         forResult: outcome.response,
         selection: snap.selection,
         kind: snap.kind,
@@ -265,6 +267,7 @@ export function useReSearch(params: Params) {
       generation.current++;
       controller.current?.abort();
       searching.current = null;
+      setResume(null);
       deps.current.route.invalidate();
       setState({ status: "interrupted", kind });
     };
@@ -284,7 +287,20 @@ export function useReSearch(params: Params) {
 
   useEffect(() => {
     if (!resume || params.route.result !== resume.forResult) return;
+    if (resume.generation !== generation.current) return;
+    if (document.visibilityState === "hidden") {
+      generation.current++;
+      controller.current?.abort();
+      searching.current = null;
+      setResume(null);
+      deps.current.route.invalidate();
+      setState({ status: "interrupted", kind: resume.kind });
+      return;
+    }
     setResume(null);
+    searching.current = null;
+    snapshot.current = null;
+    setState({ status: "idle" });
     deps.current.navigation.start({
       forResult: resume.forResult,
       selection: resume.selection,
