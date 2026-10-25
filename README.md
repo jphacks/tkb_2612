@@ -59,6 +59,9 @@
   <strong>安全なルート</strong><br>
 </p>
 
+#### デモ動画（柏駅から運河駅まで）
+
+https://github.com/user-attachments/assets/02e9b3f5-f077-42d3-8b86-923ba4aee2c4
 
 
 ### 特長
