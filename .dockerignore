@@ -13,5 +13,6 @@
 !frontend/public/
 !frontend/src/
 !frontend/scripts/
+!docs/api/fixtures/
 **/.env*
 **/*.key
