@@ -131,7 +131,7 @@ export function NavigationPanel({
     </button>
   );
   return (
-    <div className="result-content nav-panel">
+    <div className="nav-panel">
       <SimulationBanner snapshot={snapshot} />
       <section className={`nav-status ${TONE[phase] ?? ""}`} aria-label="ナビの状態">
         <p className="nav-phase" role="status">
@@ -157,10 +157,10 @@ export function NavigationPanel({
           <button type="button" className="primary full" onClick={onReSearch}>
             安全な場所で停止してから現在地から再検索
           </button>
-          {snapshot.simulation && <p className="result-muted">{SIMULATION_RESEARCH_NOTE}</p>}
+          {snapshot.simulation && <p className="field-help">{SIMULATION_RESEARCH_NOTE}</p>}
         </div>
       )}
-      <dl className="result-metrics">
+      <dl className="nav-metrics">
         <div>
           <dt>残り距離（概算）</dt>
           <dd>
@@ -194,7 +194,7 @@ export function NavigationPanel({
           </div>
         </section>
       )}
-      <div className="result-risk-note">
+      <div className="nav-reference-note">
         <p>過去事故の参考情報です。現在の危険や安全を保証するものではありません</p>
         <p>条件と事故データは検索時点のものです</p>
       </div>
@@ -226,7 +226,7 @@ export function NavigationPanel({
         </p>
       )}
       {snapshot.wakeLock === "unavailable" && phase !== "arrived" && (
-        <p className="result-muted">画面が消えるとナビは一時停止します</p>
+        <p className="field-help">画面が消えるとナビは一時停止します</p>
       )}
     </div>
   );
@@ -241,7 +241,7 @@ export function ReSearchPanel({
   kind: NavigationKind;
 }) {
   return (
-    <div className="result-content nav-panel">
+    <div className="nav-panel">
       <section className="nav-status is-caution" aria-label="再検索の状態">
         <p className="nav-phase" role="status">
           再検索中
@@ -264,15 +264,15 @@ export function ReSearchNotice({
   onRetry: () => void;
 }) {
   return (
-    <section className="result-content nav-research-notice" aria-label="再検索の結果">
+    <section className="nav-research-notice" aria-label="再検索の結果">
       <p className="notice warning" role="alert">
         {message}
       </p>
-      {kind === "simulation" && <p className="result-muted">{SIMULATION_RESEARCH_NOTE}</p>}
+      {kind === "simulation" && <p className="field-help">{SIMULATION_RESEARCH_NOTE}</p>}
       <button type="button" className="primary full" onClick={onRetry}>
         再試行
       </button>
-      <p className="result-muted">入力を編集すると、通常の検索に戻ります</p>
+      <p className="field-help">入力を編集すると、通常の検索に戻ります</p>
     </section>
   );
 }

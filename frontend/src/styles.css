@@ -895,10 +895,9 @@ svg {
     min-height: 0;
   }
 }
-/* ナビ（既存のサイドバー・.result-content・.segmented・.result-metrics を再利用） */
+/* ナビ：既存のサイドバー・フォーム部品と共通トークンを使う。 */
 .nav-start {
-  padding-top: 16px;
-  padding-bottom: 16px;
+  color: var(--ink);
 }
 .nav-start-row {
   display: grid;
@@ -924,10 +923,11 @@ svg {
   font-size: 12px;
 }
 .nav-panel {
+  padding: 16px;
+  color: var(--ink);
+  font-size: 13px;
   display: grid;
   gap: 16px;
-  padding-top: 16px;
-  padding-bottom: 16px;
 }
 .sim-settings,
 .sim-controls {
@@ -1110,4 +1110,51 @@ svg {
 }
 .panel-notice {
   margin: 16px;
+}
+
+.nav-dialog-backdrop[hidden] {
+  display: none;
+}
+.nav-settings {
+  margin: 12px 0 16px;
+  border-top: 1px solid var(--border);
+}
+.nav-settings summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 48px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.nav-settings[open] summary svg {
+  transform: rotate(180deg);
+}
+.nav-settings-body {
+  padding-bottom: 16px;
+}
+.nav-metrics {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+}
+.nav-metrics > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.nav-metrics dt {
+  color: var(--muted);
+}
+.nav-metrics dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.nav-reference-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
 }

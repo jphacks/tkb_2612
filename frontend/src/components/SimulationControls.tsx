@@ -142,7 +142,7 @@ export function SimulationControls({
       {afterActions}
       <MultiplierField value={settings.multiplier} onChange={onMultiplier} />
       <JitterField value={settings.jitter} onChange={onJitter} />
-      <dl className="result-metrics">
+      <dl className="nav-metrics">
         <div>
           <dt>seed</dt>
           <dd>{settings.seed}</dd>
