@@ -12,7 +12,8 @@ import type { PositionFix } from "../navigation/source";
 
 export const START_MESSAGE = {
   device: "ナビを開始します",
-  simulation: "模擬走行を開始します。実際の現在地ではありません",
+  simulation: import.meta.env.VITE_ENABLE_SIMULATION === "true"
+    ? "模擬走行を開始します。実際の現在地ではありません" : "",
 } as const;
 
 export interface StartRequest {
@@ -80,6 +81,7 @@ export function useNavigation({ result, mapAvailable }: Options): NavigationCont
 
   const start = useCallback(
     ({ forResult, selection, kind, simulation }: StartRequest) => {
+      if (kind === "simulation" && import.meta.env.VITE_ENABLE_SIMULATION !== "true") return;
       const current = latest.current;
       setStartError("");
       if (!current || session.current) return;
@@ -105,11 +107,15 @@ export function useNavigation({ result, mapAvailable }: Options): NavigationCont
       }
       if (kind === "device") {
         if (typeof window !== "undefined" && window.isSecureContext === false) {
-          setStartError("HTTPSで開いたページでのみ実機GPSを利用できます。模擬走行を使えます。");
+          setStartError(import.meta.env.VITE_ENABLE_SIMULATION === "true"
+            ? "HTTPSで開いたページでのみ実機GPSを利用できます。模擬走行を使えます。"
+            : "HTTPSで開いたページでのみ実機GPSを利用できます。");
           return;
         }
         if (typeof navigator === "undefined" || !navigator.geolocation) {
-          setStartError("このブラウザーでは位置情報を利用できません。模擬走行を使えます。");
+          setStartError(import.meta.env.VITE_ENABLE_SIMULATION === "true"
+            ? "このブラウザーでは位置情報を利用できません。模擬走行を使えます。"
+            : "このブラウザーでは位置情報を利用できません。");
           return;
         }
       }

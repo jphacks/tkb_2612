@@ -42,10 +42,12 @@ const startDevice = (control: ReturnType<typeof setup>["result"]) =>
   act(() => control.current.start({ forResult: result, selection: "fastest", kind: "device" }));
 
 beforeEach(() => {
+  vi.stubEnv("VITE_ENABLE_SIMULATION", "true");
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-25T03:00:00Z"));
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.useRealTimers();
   Reflect.deleteProperty(navigator, "geolocation");
   Reflect.deleteProperty(navigator, "wakeLock");

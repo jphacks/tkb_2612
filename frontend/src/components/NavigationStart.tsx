@@ -7,7 +7,7 @@ import {
 } from "../navigation/preflight";
 import type { NavigationKind, SimulationSettings } from "../navigation/session";
 import type { SimulationMultiplier } from "../navigation/simulator";
-import { FASTEST_LABEL, SAFE_LABEL } from "./RouteCallouts";
+import { SELECTION_LABEL } from "./navigationLabels";
 import { SimulationSettingsFields, parseSeed } from "./SimulationControls";
 
 export interface NavigationStartProps {
@@ -24,11 +24,6 @@ export interface NavigationStartProps {
     simulation?: SimulationSettings;
   }) => void;
 }
-
-export const SELECTION_LABEL: Record<NavigationSelection, string> = {
-  fastest: FASTEST_LABEL,
-  safest: SAFE_LABEL,
-};
 
 /** 選定2経路（fastest_idとnullでないsafest_id）だけに開始操作を置く。 */
 export function NavigationStart({

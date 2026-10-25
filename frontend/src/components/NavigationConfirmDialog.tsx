@@ -66,7 +66,7 @@ export function NavigationConfirmDialog({
           <p>{WALKING_NOTICE}</p>
         </div>
         <p className="nav-dialog-target">
-          {selectionLabel}を{kind === "simulation" ? "模擬走行" : "実機GPS"}で開始します
+          {selectionLabel}を{import.meta.env.VITE_ENABLE_SIMULATION === "true" && kind === "simulation" ? "模擬走行" : "実機GPS"}で開始します
         </p>
         <div className="nav-dialog-actions">
           <button type="button" className="secondary" onClick={onCancel}>

@@ -5,12 +5,14 @@ import {
 } from "../lib/format";
 import type { NavigationKind, NavigationSnapshot, NavPhase } from "../navigation/session";
 import type { SimulationMultiplier } from "../navigation/simulator";
-import { SELECTION_LABEL } from "./NavigationStart";
+import { SELECTION_LABEL } from "./navigationLabels";
 import {
   SIMULATION_RESEARCH_NOTE,
   STAGE_TEXT,
   type ReSearchStage,
 } from "../state/useReSearch";
+import { SIM_STOP_CAUSE } from "./SimulationBanner";
+import { SimulationBanner } from "./SimulationBanner";
 import { SimulationControls } from "./SimulationControls";
 
 export interface NavigationPanelProps {
@@ -24,32 +26,6 @@ export interface NavigationPanelProps {
   onReSearch: () => void;
 }
 
-export const SIMULATION_NOTICE = "模擬走行中（実際の現在地ではありません）";
-
-/** 模擬走行の状態。倍率と、進行/一時停止/停止/到着を常に示す。 */
-export function simulationState(snapshot: NavigationSnapshot): string {
-  if (!snapshot.simulation) return "";
-  const state =
-    snapshot.phase === "arrived"
-      ? "到着"
-      : snapshot.pauseReason === "sim-limit"
-        ? "停止"
-        : snapshot.phase === "paused"
-          ? "一時停止"
-          : "進行中";
-  return `倍率 ${snapshot.simulation.multiplier}倍・${state}`;
-}
-
-export function SimulationBanner({ snapshot }: { snapshot: NavigationSnapshot }) {
-  if (!snapshot.simulation) return null;
-  return (
-    <div className="nav-sim-banner">
-      <strong>{SIMULATION_NOTICE}</strong>
-      <span>{simulationState(snapshot)}</span>
-    </div>
-  );
-}
-
 export const PHASE_LABEL: Record<NavPhase, string> = {
   waiting: "測位待ち",
   tracking: "進行中",
@@ -59,12 +35,6 @@ export const PHASE_LABEL: Record<NavPhase, string> = {
   paused: "一時停止",
   arrived: "到着",
 };
-
-const SIM_STOP_CAUSE = {
-  照合保留: "重複経路等で位置を確定できないため模擬走行を停止しました",
-  精度不足: "位置精度が低いため模擬走行を停止しました",
-  逸脱: "経路から外れたため模擬走行を停止しました",
-} as const;
 
 /** 状態の原因。進行中は不要なので空。 */
 export function phaseCause(snapshot: NavigationSnapshot): string {
@@ -88,9 +58,12 @@ export function phaseCause(snapshot: NavigationSnapshot): string {
         case "timer-gap":
           return "処理の遅延が大きいため一時停止しました。再開すると全経路で位置を確認し直します";
         case "sim-limit":
-          return SIM_STOP_CAUSE[snapshot.simStopReason ?? "照合保留"];
+          return import.meta.env.VITE_ENABLE_SIMULATION === "true"
+            ? SIM_STOP_CAUSE[snapshot.simStopReason ?? "照合保留"] : "";
         case "permission-denied":
-          return "位置情報の利用が許可されていません。設定を変更して再開するか、模擬走行を使ってください";
+          return import.meta.env.VITE_ENABLE_SIMULATION === "true"
+            ? "位置情報の利用が許可されていません。設定を変更して再開するか、模擬走行を使ってください"
+            : "位置情報の利用が許可されていません。設定を変更して再開してください";
         case "map-unavailable":
           return "地図を描画できないため一時停止しました。回復後に再開できます";
         default:
@@ -132,7 +105,7 @@ export function NavigationPanel({
   );
   return (
     <div className="nav-panel">
-      <SimulationBanner snapshot={snapshot} />
+      {import.meta.env.VITE_ENABLE_SIMULATION === "true" && <SimulationBanner snapshot={snapshot} />}
       <section className={`nav-status ${TONE[phase] ?? ""}`} aria-label="ナビの状態">
         <p className="nav-phase" role="status">
           {phase === "arrived" && <Flag size={18} aria-hidden="true" />}
@@ -157,7 +130,7 @@ export function NavigationPanel({
           <button type="button" className="primary full" onClick={onReSearch}>
             安全な場所で停止してから現在地から再検索
           </button>
-          {snapshot.simulation && <p className="field-help">{SIMULATION_RESEARCH_NOTE}</p>}
+          {import.meta.env.VITE_ENABLE_SIMULATION === "true" && snapshot.simulation && <p className="field-help">{SIMULATION_RESEARCH_NOTE}</p>}
         </div>
       )}
       <dl className="nav-metrics">
@@ -207,7 +180,7 @@ export function NavigationPanel({
           {phase === "paused" ? "再開" : "一時停止"}
         </button>
       )}
-      {snapshot.simulation && (
+      {import.meta.env.VITE_ENABLE_SIMULATION === "true" && snapshot.simulation && (
         <SimulationControls
           settings={snapshot.simulation}
           arrived={phase === "arrived"}
@@ -247,7 +220,7 @@ export function ReSearchPanel({
           再検索中
         </p>
         <p className="nav-cause">{STAGE_TEXT[stage]}</p>
-        {kind === "simulation" && <p className="nav-cause">{SIMULATION_RESEARCH_NOTE}</p>}
+        {import.meta.env.VITE_ENABLE_SIMULATION === "true" && kind === "simulation" && <p className="nav-cause">{SIMULATION_RESEARCH_NOTE}</p>}
       </section>
     </div>
   );
@@ -268,7 +241,7 @@ export function ReSearchNotice({
       <p className="notice warning" role="alert">
         {message}
       </p>
-      {kind === "simulation" && <p className="field-help">{SIMULATION_RESEARCH_NOTE}</p>}
+      {import.meta.env.VITE_ENABLE_SIMULATION === "true" && kind === "simulation" && <p className="field-help">{SIMULATION_RESEARCH_NOTE}</p>}
       <button type="button" className="primary full" onClick={onRetry}>
         再試行
       </button>

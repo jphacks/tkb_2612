@@ -4,7 +4,7 @@ import { createDemoRouteResponse } from "./api/demo";
 import type { RouteRequest } from "./lib/types";
 import { createFetchCounter } from "./test/fetchCounter";
 import { api, resetApi } from "./test/apiMock";
-import { advance, beginNavigation, openResults, startGroup } from "./test/navigationApp";
+import { advance, beginNavigation, installGeolocation, openResults, startGroup } from "./test/navigationApp";
 
 vi.mock("./api/client", async () => (await import("./test/apiMock")).clientMock());
 vi.mock("./components/LogoIntro", () => ({
@@ -13,9 +13,13 @@ vi.mock("./components/LogoIntro", () => ({
   ),
 }));
 
-beforeEach(resetApi);
+beforeEach(() => {
+  resetApi();
+  vi.stubEnv("VITE_ENABLE_SIMULATION", "true");
+});
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -181,5 +185,42 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
     expect(window.history.state ?? null).toBeNull();
     for (const spy of [log, warn, error]) expect(spy).not.toHaveBeenCalled();
     expect(sessionStorage.length + localStorage.length).toBe(0);
+  });
+});
+
+
+describe("模擬走行を含めないビルド", () => {
+  it.each([undefined, "false", "1", "TRUE"])("フラグ %s では紙飛行機から注意確認へ直接進み、確認後だけGPSを開始する", async (flag) => {
+    vi.stubEnv("VITE_ENABLE_SIMULATION", flag);
+    const gps = installGeolocation();
+    await openResults();
+    const button = screen.getByRole("button", { name: "最短ルートでナビを開始" });
+    button.focus();
+    fireEvent.click(button);
+    expect(screen.getByRole("dialog", { name: "ナビを開始する前に" })).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "ナビ開始" })).not.toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("模擬");
+    expect(gps.watchPosition).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(button).toHaveFocus();
+    expect(gps.watchPosition).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    fireEvent.click(screen.getByRole("button", { name: "確認して開始" }));
+    expect(gps.watchPosition).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("測位待ち")).toBeVisible();
+    expect(document.body).not.toHaveTextContent("模擬");
+    expect(screen.queryByRole("button", { name: "逸脱を試す" })).not.toBeInTheDocument();
+    gps.fail(1);
+    expect(screen.getByText("位置情報の利用が許可されていません。設定を変更して再開してください")).toBeVisible();
+    expect(document.body).not.toHaveTextContent("模擬");
+  });
+
+  it("非対応環境の開始拒否も模擬走行を案内しない", async () => {
+    vi.stubEnv("VITE_ENABLE_SIMULATION", "false");
+    await openResults();
+    fireEvent.click(screen.getByRole("button", { name: "最短ルートでナビを開始" }));
+    fireEvent.click(screen.getByRole("button", { name: "確認して開始" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("このブラウザーでは位置情報を利用できません。");
+    expect(document.body).not.toHaveTextContent("模擬");
   });
 });

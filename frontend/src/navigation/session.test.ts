@@ -71,10 +71,14 @@ function coordsOf(progress: number, lateral: number) {
 }
 
 beforeEach(() => {
+  vi.stubEnv("VITE_ENABLE_SIMULATION", "true");
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-25T03:00:00Z"));
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
+});
 
 describe("NavigationSession: 接近通知と音声の結線（手順10）", () => {
   it("開始ボタンの操作内で音声を有効化し、開始の定型文を1回だけ発話する", () => {

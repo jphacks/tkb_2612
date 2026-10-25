@@ -17,8 +17,12 @@ vi.mock("./components/LogoIntro", () => ({
   ),
 }));
 
-beforeEach(resetApi);
+beforeEach(() => {
+  resetApi();
+  vi.stubEnv("VITE_ENABLE_SIMULATION", "true");
+});
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();

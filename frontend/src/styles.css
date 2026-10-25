@@ -1158,3 +1158,11 @@ svg {
   font-size: 11px;
   line-height: 1.7;
 }
+
+.map-stage > .nav-start-error {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 64px;
+  z-index: 6;
+}

@@ -167,7 +167,7 @@ export class NavigationSession {
       },
     );
     this.simulationSettings = options.kind === "simulation" ? { ...options.simulation! } : null;
-    if (options.kind === "simulation") {
+    if (import.meta.env.VITE_ENABLE_SIMULATION === "true" && options.kind === "simulation") {
       this.simulator = new NavigationSimulator(route, { ...this.simulationSettings!, inject: options.inject });
       this.source = this.simulator;
     } else {

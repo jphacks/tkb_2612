@@ -150,7 +150,7 @@ export function useReSearch(params: Params) {
         fix = existing.fix;
       } else if (snap.lastFix && (snap.lastFix.fresh || snap.kind === "simulation")) {
         fix = snap.lastFix.fix;
-      } else if (snap.kind === "simulation") {
+      } else if (import.meta.env.VITE_ENABLE_SIMULATION === "true" && snap.kind === "simulation") {
         throw new Failure("模擬位置を取得できませんでした");
       } else {
         fix = await measure();
@@ -159,7 +159,7 @@ export function useReSearch(params: Params) {
       snap.lastFix = null;
       validated(fix);
       const place: Place = {
-        label: snap.kind === "simulation" ? "模擬位置" : "現在地",
+        label: import.meta.env.VITE_ENABLE_SIMULATION === "true" && snap.kind === "simulation" ? "模擬位置" : "現在地",
         lat: fix.lat,
         lon: fix.lon,
       };

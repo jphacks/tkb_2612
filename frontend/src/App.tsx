@@ -26,9 +26,10 @@ import {
   NavigationPanel,
   ReSearchNotice,
   ReSearchPanel,
-  SimulationBanner,
 } from "./components/NavigationPanel";
-import { NavigationStart, SELECTION_LABEL } from "./components/NavigationStart";
+import { NavigationStart } from "./components/NavigationStart";
+import { SELECTION_LABEL } from "./components/navigationLabels";
+import { SimulationBanner } from "./components/SimulationBanner";
 import { RouteMap } from "./components/RouteMap";
 import { buildNavigationLayers } from "./map/navigationData";
 import { useConditions } from "./state/useConditions";
@@ -405,7 +406,17 @@ export default function App() {
                 selectedSectionId={route.selectedSection}
                 onSelectRoute={navigating ? noop : selectRoute}
                 onSelectSection={route.setSelectedSection}
-                onNavigate={setStartRouteId}
+                onNavigate={(routeId) => {
+                  if (import.meta.env.VITE_ENABLE_SIMULATION === "true") {
+                    setStartRouteId(routeId);
+                  } else if (result) {
+                    setPendingStart({
+                      forResult: result,
+                      selection: routeId === result.fastest_id ? "fastest" : "safest",
+                      kind: "device",
+                    });
+                  }
+                }}
                 showAccidents={showAccidents}
                 onShowAccidents={setShowAccidents}
                 unavailable={scenario === "map-error"}
@@ -417,8 +428,11 @@ export default function App() {
                 }
               />
               {/* サイドバーを閉じても、模擬走行であることは地図の上に常時出す。 */}
-              {navigation.snapshot?.simulation && !sidebarOpen && (
+              {import.meta.env.VITE_ENABLE_SIMULATION === "true" && navigation.snapshot?.simulation && !sidebarOpen && (
                 <SimulationBanner snapshot={navigation.snapshot} />
+              )}
+              {import.meta.env.VITE_ENABLE_SIMULATION !== "true" && navigation.startError && (
+                <p className="nav-start-error notice warning" role="alert">{navigation.startError}</p>
               )}
               {searching ? (
                 <div className="map-search-status result-empty" role="status">
@@ -536,7 +550,7 @@ export default function App() {
           </main>
         )}
         <UpdateNotice />
-        {result && startRouteId && !navigating && (
+        {import.meta.env.VITE_ENABLE_SIMULATION === "true" && result && startRouteId && !navigating && (
           <NavigationStart
             key={startRouteId}
             result={result}

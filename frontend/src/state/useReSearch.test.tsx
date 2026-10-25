@@ -91,11 +91,13 @@ function setVisibility(state: "hidden" | "visible") {
 }
 
 beforeEach(() => {
+  vi.stubEnv("VITE_ENABLE_SIMULATION", "true");
   client.searchRoutes.mockReset().mockImplementation((req: typeof request) =>
     Promise.resolve(createDemoRouteResponse(req)),
   );
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   Reflect.deleteProperty(navigator, "geolocation");
   Reflect.deleteProperty(document, "visibilityState");
   vi.restoreAllMocks();
