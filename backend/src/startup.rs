@@ -96,7 +96,9 @@ impl Loaders {
 /// 起動の失敗。メッセージに秘密・URLを含めない。
 #[derive(Debug)]
 pub enum StartupError {
-    /// releaseの解決・祝日表・事故データの読込の失敗。
+    /// `ACCIDENT_DATA_DIR` のディレクトリを解決できなかった。
+    DataDir(std::io::Error),
+    /// 祝日表・事故データの読込の失敗。
     Data(LoadError),
     /// 上流HTTPクライアントを作れなかった。
     Client,
@@ -108,6 +110,7 @@ pub enum StartupError {
 impl std::fmt::Display for StartupError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            StartupError::DataDir(e) => write!(f, "ACCIDENT_DATA_DIR のreleaseを開けません: {e}"),
             StartupError::Data(e) => write!(f, "{e}"),
             StartupError::Client => f.write_str("上流HTTPクライアントを作れません"),
             StartupError::GateProject => {
@@ -133,13 +136,14 @@ pub async fn prepare(config: &Config, loaders: Loaders) -> Result<Server, Startu
     let data_dir = config.accident_data_dir.clone();
     let calendar_loader = loaders.calendar;
     let (release_dir, calendar) = tokio::task::spawn_blocking(move || {
-        let release_dir = std::fs::canonicalize(&data_dir).map_err(LoadError::Io)?;
-        let calendar = calendar_loader(&release_dir)?;
-        Ok::<_, LoadError>((release_dir, calendar))
+        let release_dir = std::fs::canonicalize(&data_dir).map_err(StartupError::DataDir)?;
+        let calendar = calendar_loader(&release_dir).map_err(StartupError::Data)?;
+        Ok::<_, StartupError>((release_dir, calendar))
     })
     .await
-    .map_err(|_| StartupError::Data(LoadError::Invalid("祝日表の読込が異常終了しました".into())))?
-    .map_err(StartupError::Data)?;
+    .map_err(|_| {
+        StartupError::Data(LoadError::Invalid("祝日表の読込が異常終了しました".into()))
+    })??;
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
     let store = gate_store(config).await?;

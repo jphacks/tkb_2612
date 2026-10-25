@@ -214,7 +214,7 @@ UPDATE_API_FIXTURES=1 cargo test --manifest-path backend/Cargo.toml --test api_c
    cargo run --manifest-path backend/Cargo.toml --example make_test_release -- /tmp/c4-release twoSelected
    ```
 
-2. 端末A：`cargo run --manifest-path backend/Cargo.toml --example dev_stack -- --example twoSelected`。`export NAME='value'` の行（同じ内容の `env.sh` のパスも表示）が出る。Ctrl-Cで停止。`--example` で偽OSRMが返す例を選ぶ（fixtureの例は出発地・目的地が同じなので、座標では区別できない）。出力には `BACKEND_BIND='127.0.0.1:8000'` が含まれるが、`ACCIDENT_DATA_DIR` は含まれない。
+2. 端末A：`cargo run --manifest-path backend/Cargo.toml --example dev_stack -- --example twoSelected`。`export NAME='value'` の行（同じ内容の `env.sh` のパスも表示）が出る。Ctrl-Cで停止。`--example` で偽OSRMが返す例を選ぶ（fixtureの例は出発地・目的地が同じなので、座標では区別できない）。出力には `BACKEND_BIND`・`ACCIDENT_DATA_DIR` は含まれない（backendの既定の待受けは `127.0.0.1:8000`）。
 3. 端末B：出力された環境変数を設定し（`source <表示されたenv.sh>`）、**`ACCIDENT_DATA_DIR` に手順1の `release_dir` を明示して**、実エンジンのbackendを起動する（`cargo run` の既定バイナリがbackend。`--simple` は付けない）。
 
    ```sh
@@ -222,9 +222,9 @@ UPDATE_API_FIXTURES=1 cargo test --manifest-path backend/Cargo.toml --test api_c
    ACCIDENT_DATA_DIR=/tmp/c4-release cargo run --manifest-path backend/Cargo.toml
    ```
 
-   - `ACCIDENT_DATA_DIR` の既定は `backend/data/current` だが、前処理・`make_test_release` は `current` を作らない（`current` の実体と置き場所は未決）。C4ではこの既定に頼らず必ず明示する。未指定だと `releaseを読み込めません` で終了コード1になる。相対パスはrepo rootが基準。
+   - `ACCIDENT_DATA_DIR` の既定は `backend/data/current` だが、前処理・`make_test_release` は `current` を作らない（`current` の実体と置き場所は未決）。C4ではこの既定に頼らず必ず明示する。未指定だと `ACCIDENT_DATA_DIR のreleaseを開けません` で終了コード1になる。相対パスはrepo rootが基準。
    - `curl -s http://127.0.0.1:8000/api/health` が `"status":"ok"` と、手順1の出力と一致する `release_id`・`dataset_id`、`data_years:[2025]` を返せば準備完了（それまで `/api/health`・`/api/route` は503）。
-   - **Viteのプロキシ先は `http://127.0.0.1:8000` に固定**（`frontend/vite.config.ts`。環境変数では変えられない）。8000番が他のプロセスに使われている環境では、`BACKEND_BIND=127.0.0.1:18000` などで別ポートに起動してもフロントからは届かない。8000番を空けるか、vite.config.ts のプロキシ先を変える必要がある（frontendの変更は①の担当）。別ポートで起動するときは、`source` の**後で** `BACKEND_BIND` を指定する（env.sh が `BACKEND_BIND` を8000番で上書きするため）。この場合はフロントを使わず、下の `curl` で確かめる。
+   - **Viteのプロキシ先は `http://127.0.0.1:8000` に固定**（`frontend/vite.config.ts`。環境変数では変えられない）。8000番が他のプロセスに使われている環境では、`BACKEND_BIND=127.0.0.1:18000` などで別ポートに起動してもフロントからは届かない。8000番を空けるか、vite.config.ts のプロキシ先を変える必要がある（frontendの変更は①の担当）。別ポートで起動するときは `BACKEND_BIND` を指定する。この場合はフロントを使わず、下の `curl` で確かめる。
 4. 端末C：`(cd frontend && VITE_API_MODE=live npm run dev)`。`VITE_API_MODE=live` が無いとデモ応答になる。`/api` は `http://127.0.0.1:8000` へ転送される。
 5. ブラウザで `http://127.0.0.1:5173` を開き、実際に検索する。
 
