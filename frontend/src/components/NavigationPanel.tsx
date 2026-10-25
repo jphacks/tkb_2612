@@ -3,9 +3,14 @@ import {
   formatPositionTime,
   formatRemainingDistance,
 } from "../lib/format";
-import type { NavigationSnapshot, NavPhase } from "../navigation/session";
+import type { NavigationKind, NavigationSnapshot, NavPhase } from "../navigation/session";
 import type { SimulationMultiplier } from "../navigation/simulator";
 import { SELECTION_LABEL } from "./NavigationStart";
+import {
+  SIMULATION_RESEARCH_NOTE,
+  STAGE_TEXT,
+  type ReSearchStage,
+} from "../state/useReSearch";
 import { SimulationControls } from "./SimulationControls";
 
 export interface NavigationPanelProps {
@@ -16,6 +21,7 @@ export interface NavigationPanelProps {
   onMultiplier: (value: SimulationMultiplier) => void;
   onJitter: (value: boolean) => void;
   onTryDeviation: () => void;
+  onReSearch: () => void;
 }
 
 export const SIMULATION_NOTICE = "模擬走行中（実際の現在地ではありません）";
@@ -114,6 +120,7 @@ export function NavigationPanel({
   onMultiplier,
   onJitter,
   onTryDeviation,
+  onReSearch,
 }: NavigationPanelProps) {
   const { phase, remaining, lastFix, kind } = snapshot;
   const cause = phaseCause(snapshot);
@@ -182,6 +189,26 @@ export function NavigationPanel({
         <p>過去事故の参考情報です。現在の危険や安全を保証するものではありません</p>
         <p>条件と事故データは検索時点のものです</p>
       </div>
+      {(phase === "deviated" || phase === "matching-hold") && (
+        <div className="nav-research">
+          <button type="button" className="primary full" onClick={onReSearch}>
+            安全な場所で停止してから現在地から再検索
+          </button>
+          {snapshot.simulation && <p className="result-muted">{SIMULATION_RESEARCH_NOTE}</p>}
+        </div>
+      )}
+      {snapshot.wakeLock === "unavailable" && phase !== "arrived" && (
+        <p className="result-muted">画面が消えるとナビは一時停止します</p>
+      )}
+      {!snapshot.simulation && phase !== "arrived" && (
+        <button
+          type="button"
+          className="secondary full"
+          onClick={phase === "paused" ? onResume : onPause}
+        >
+          {phase === "paused" ? "再開" : "一時停止"}
+        </button>
+      )}
       {snapshot.simulation && (
         <SimulationControls
           settings={snapshot.simulation}
@@ -197,5 +224,50 @@ export function NavigationPanel({
         {phase === "paused" || phase === "arrived" ? "ナビを終了" : "ナビを停止"}
       </button>
     </div>
+  );
+}
+
+/** 再検索中。再検索中は停止・一時停止・終了を含む中止操作を設けない。 */
+export function ReSearchPanel({
+  stage,
+  kind,
+}: {
+  stage: ReSearchStage;
+  kind: NavigationKind;
+}) {
+  return (
+    <div className="result-content nav-panel">
+      <section className="nav-status is-caution" aria-label="再検索の状態">
+        <p className="nav-phase" role="status">
+          再検索中
+        </p>
+        <p className="nav-cause">{STAGE_TEXT[stage]}</p>
+        {kind === "simulation" && <p className="nav-cause">{SIMULATION_RESEARCH_NOTE}</p>}
+      </section>
+    </div>
+  );
+}
+
+/** 再検索の中断・失敗。手動の再試行だけを出し、入力を編集すると通常の入力へ戻る。 */
+export function ReSearchNotice({
+  message,
+  kind,
+  onRetry,
+}: {
+  message: string;
+  kind: NavigationKind;
+  onRetry: () => void;
+}) {
+  return (
+    <section className="result-content nav-research-notice" aria-label="再検索の結果">
+      <p className="notice warning" role="alert">
+        {message}
+      </p>
+      {kind === "simulation" && <p className="result-muted">{SIMULATION_RESEARCH_NOTE}</p>}
+      <button type="button" className="primary full" onClick={onRetry}>
+        再試行
+      </button>
+      <p className="result-muted">入力を編集すると、通常の検索に戻ります</p>
+    </section>
   );
 }

@@ -27,8 +27,8 @@ describe("route response generations (frontend-spec 3, 11)", () => {
       const current = deferred<RouteResponse>();
       const onSuccess = vi.fn();
       let oldSignal!: AbortSignal;
-      let oldRun!: Promise<void>;
-      let currentRun!: Promise<void>;
+      let oldRun!: Promise<unknown>;
+      let currentRun!: Promise<unknown>;
       act(() => {
         oldRun = result.current.run((signal) => {
           oldSignal = signal;

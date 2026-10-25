@@ -22,7 +22,12 @@ import ConditionFields from "./components/ConditionFields";
 import { DataAttribution } from "./components/DataAttribution";
 import { LogoIntro } from "./components/LogoIntro";
 import { NavigationConfirmDialog } from "./components/NavigationConfirmDialog";
-import { NavigationPanel, SimulationBanner } from "./components/NavigationPanel";
+import {
+  NavigationPanel,
+  ReSearchNotice,
+  ReSearchPanel,
+  SimulationBanner,
+} from "./components/NavigationPanel";
 import { NavigationStart, SELECTION_LABEL } from "./components/NavigationStart";
 import { ResultsPanel } from "./components/ResultsPanel";
 import { RouteMap } from "./components/RouteMap";
@@ -31,6 +36,9 @@ import { useConditions } from "./state/useConditions";
 import { useCurrentLocation } from "./state/useCurrentLocation";
 import { useHealth } from "./state/useHealth";
 import { useNavigation, type StartRequest } from "./state/useNavigation";
+import { useReSearch } from "./state/useReSearch";
+import { UpdateNotice } from "./components/UpdateNotice";
+import { setUpdateBlocked } from "./pwa/register";
 import { useRouteSearch } from "./state/useRouteSearch";
 import type { RouteResponse } from "./lib/types";
 
@@ -65,11 +73,17 @@ export default function App() {
   const health = useHealth();
   const route = useRouteSearch();
   const { invalidate, searching, result } = route;
+  // 入力の編集は、結果の解除に加えて再検索の再試行snapshotも破棄する（3章）。
+  const discardReSearch = useRef(() => {});
+  function edit() {
+    discardReSearch.current();
+    invalidate();
+  }
   const conditions = useConditions({
     origin: origin.place,
     dest: dest.place,
     scenario,
-    onEdit: invalidate,
+    onEdit: edit,
   });
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const navigation = useNavigation({ result, mapAvailable: !mapUnavailable });
@@ -98,6 +112,24 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result, navigationRouteId, navigationSelection]);
+  const reSearch = useReSearch({
+    navigation,
+    route,
+    conditions,
+    dest: dest.place,
+    scenario,
+    onAdoptOrigin: (place) => setOrigin({ text: place.label, place }),
+    onRouteSuccess: (response) => health.noteRouteDataset(response.dataset_id),
+  });
+  discardReSearch.current = reSearch.discard;
+  const reSearching = reSearch.state.status === "searching";
+  const navigationBusy = navigating || reSearching;
+  useEffect(() => {
+    setUpdateBlocked("navigation", navigationBusy);
+  }, [navigationBusy]);
+  useEffect(() => {
+    setUpdateBlocked("search", searching);
+  }, [searching]);
   const location = useCurrentLocation((place) =>
     changePlace("origin", { text: place.label, place }),
   );
@@ -114,7 +146,7 @@ export default function App() {
   }, [page, intro]);
 
   function changePlace(which: "origin" | "dest", next: LocationValue) {
-    invalidate();
+    edit();
     if (which === "origin") {
       location.cancel();
       setOrigin(next);
@@ -150,6 +182,7 @@ export default function App() {
         return;
       }
     }
+    reSearch.discard();
     // Inputs are locked while searching, so a pending GPS request must not
     // overwrite the origin and abort this search when it completes later.
     const wasLocating = location.locating;
@@ -270,10 +303,10 @@ export default function App() {
           <button
             className="wordmark"
             type="button"
-            disabled={searching || navigating}
+            disabled={searching || navigationBusy}
             onClick={() => {
               if (page !== "places") {
-                invalidate();
+                edit();
                 setPage("places");
               }
             }}
@@ -378,7 +411,7 @@ export default function App() {
                   <h2>ルートを検索しています</h2>
                   <p>応答があるまでお待ちください。</p>
                 </div>
-              ) : error ? (
+              ) : reSearch.state.status !== "idle" ? null : error ? (
                 <div className="map-search-status result-empty" role="alert">
                   <h2>検索できませんでした</h2>
                   <p>{error}</p>
@@ -410,12 +443,12 @@ export default function App() {
             <aside
               id="search-conditions"
               className="route-panel"
-              aria-label={navigating ? "ナビ" : "検索結果と条件"}
+              aria-label={navigationBusy ? "ナビ" : "検索結果と条件"}
               hidden={!sidebarOpen}
             >
               <div className="panel-title">
                 <h1 ref={heading} tabIndex={-1}>
-                  {navigating ? "ナビ" : "検索結果と条件"}
+                  {navigationBusy ? "ナビ" : "検索結果と条件"}
                 </h1>
               </div>
               {navigation.snapshot ? (
@@ -427,9 +460,34 @@ export default function App() {
                   onMultiplier={navigation.setMultiplier}
                   onJitter={navigation.setJitter}
                   onTryDeviation={navigation.tryDeviation}
+                  onReSearch={reSearch.start}
+                />
+              ) : reSearch.state.status === "searching" ? (
+                <ReSearchPanel
+                  stage={reSearch.state.stage}
+                  kind={reSearch.state.kind}
                 />
               ) : (
                 <>
+                  {reSearch.state.status === "failed" && (
+                    <ReSearchNotice
+                      message={reSearch.state.message}
+                      kind={reSearch.state.kind}
+                      onRetry={reSearch.retry}
+                    />
+                  )}
+                  {reSearch.state.status === "interrupted" && (
+                    <ReSearchNotice
+                      message="再検索を中断しました。安全な場所で再試行してください"
+                      kind={reSearch.state.kind}
+                      onRetry={reSearch.retry}
+                    />
+                  )}
+                  {reSearch.notice && (
+                    <p className="notice warning panel-notice" role="status">
+                      {reSearch.notice}
+                    </p>
+                  )}
                   {result && route.selectedRoute && (
                     <>
                       <NavigationStart
@@ -481,6 +539,7 @@ export default function App() {
             {attribution}
           </main>
         )}
+        <UpdateNotice />
         {pendingStart && (
           <NavigationConfirmDialog
             selectionLabel={SELECTION_LABEL[pendingStart.selection]}
@@ -505,20 +564,20 @@ export default function App() {
                   key={item.id}
                   type="button"
                   aria-pressed={scenario === item.id}
-                  disabled={navigating}
+                  disabled={navigationBusy}
                   onClick={() => {
                     setScenario(item.id);
                     if (demoMenu.current) demoMenu.current.open = false;
                     if (item.id === "empty") {
-                      invalidate();
+                      edit();
                       setPage("places");
                     } else if (
                       item.id === "conditions-error" ||
                       scenario === "conditions-error"
                     )
-                      invalidate();
+                      edit();
                     else if (page === "results" && confirmed) {
-                      invalidate();
+                      edit();
                       void runSearch(item.id, true);
                     }
                   }}

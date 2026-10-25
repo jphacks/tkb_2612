@@ -8,6 +8,7 @@ import {
   type SimulationSettings,
 } from "../navigation/session";
 import type { SimulationMultiplier } from "../navigation/simulator";
+import type { PositionFix } from "../navigation/source";
 
 export const START_MESSAGE = {
   device: "ナビを開始します",
@@ -22,6 +23,16 @@ export interface StartRequest {
   simulation?: SimulationSettings;
 }
 
+/** 7.6: 再検索のために停止したナビから引き継ぐ内容。位置は補正前の最後の測位。 */
+export interface ReSearchSource {
+  kind: NavigationKind;
+  selection: NavigationSelection;
+  simulation: SimulationSettings | null;
+  fix: PositionFix | null;
+  /** 精度30m以下かつ5秒以内（実機は端末時計、模擬は仮想時計）。 */
+  fixFresh: boolean;
+}
+
 export interface NavigationControl {
   snapshot: NavigationSnapshot | null;
   /** 選定経路。ナビ中だけ非null。 */
@@ -34,6 +45,8 @@ export interface NavigationControl {
   setMultiplier(value: SimulationMultiplier): void;
   setJitter(value: boolean): void;
   tryDeviation(): void;
+  /** 再検索の開始。位置源・音声を止め、最後の未補正測位と選定種別を返す。 */
+  takeForReSearch(): ReSearchSource | null;
 }
 
 interface Options {
@@ -154,6 +167,27 @@ export function useNavigation({ result, mapAvailable }: Options): NavigationCont
     session.current = null;
   }, []);
 
+  const takeForReSearch = useCallback((): ReSearchSource | null => {
+    const active = session.current;
+    if (!active) return null;
+    const fix = active.lastUncorrectedFix();
+    const snap = active.getSnapshot();
+    const age = fix
+      ? (active.kind === "device" ? Date.now() : active.sourceNow()) - fix.timestamp
+      : Infinity;
+    const taken: ReSearchSource = {
+      kind: active.kind,
+      selection: active.selection,
+      simulation: snap.simulation
+        ? { seed: snap.simulation.seed, multiplier: snap.simulation.multiplier, jitter: snap.simulation.jitter }
+        : null,
+      fix,
+      fixFresh: !!fix && fix.accuracy <= 30 && age >= 0 && age <= 5000,
+    };
+    end();
+    return taken;
+  }, [end]);
+
   return {
     snapshot,
     route,
@@ -167,5 +201,6 @@ export function useNavigation({ result, mapAvailable }: Options): NavigationCont
     setMultiplier: (value) => session.current?.setMultiplier(value),
     setJitter: (value) => session.current?.setJitter(value),
     tryDeviation: () => session.current?.tryDeviation(),
+    takeForReSearch,
   };
 }

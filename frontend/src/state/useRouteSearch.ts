@@ -5,6 +5,11 @@ import type { RouteResponse } from "../lib/types";
  * frontend-spec 3: a route result belongs to the generation that requested it.
  * Late responses (success or failure) of older generations are dropped.
  */
+export type RunOutcome =
+  | { status: "success"; response: RouteResponse }
+  | { status: "failed"; error: unknown }
+  | { status: "stale" };
+
 export function useRouteSearch() {
   const [result, setResult] = useState<RouteResponse | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
@@ -33,7 +38,7 @@ export function useRouteSearch() {
   async function run(
     execute: (signal: AbortSignal) => Promise<RouteResponse>,
     onSuccess: (response: RouteResponse) => void,
-  ) {
+  ): Promise<RunOutcome> {
     request.current?.abort();
     const abort = new AbortController();
     request.current = abort;
@@ -44,13 +49,15 @@ export function useRouteSearch() {
     setError(null);
     try {
       const response = await execute(abort.signal);
-      if (current !== version.current || abort.signal.aborted) return;
+      if (current !== version.current || abort.signal.aborted) return { status: "stale" };
       setResult(response);
       setSelectedRoute(response.safest_id ?? response.fastest_id);
       onSuccess(response);
+      return { status: "success", response };
     } catch (failure) {
-      if (abort.signal.aborted || current !== version.current) return;
+      if (abort.signal.aborted || current !== version.current) return { status: "stale" };
       setError(failure ?? new Error());
+      return { status: "failed", error: failure ?? new Error() };
     } finally {
       if (current === version.current) setSearching(false);
     }
