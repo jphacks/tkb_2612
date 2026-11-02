@@ -1,7 +1,4 @@
 //! 位相情報（形式書10章）：吸着先にしてよい辺、交差点クラスタ、上下線の双子、歩道と親の車道。
-// 骨組み：実装時に外す
-#![allow(unused_variables)]
-
 use serde_json::Value;
 
 use crate::contract::Mode;
@@ -95,8 +92,169 @@ impl std::error::Error for TopologyError {}
 impl Topology {
     /// 読込時の検査（形式書10章）：ビット列の長さ、`NODECLS` の値がC未満か `NONE`、
     /// `CLSNODE` とクラスタの対応が `NODECLS` と一致、`TWIN`・`SWPARENT` の辺番号がE未満で並び順どおり。
+    ///
+    /// 次も確かめる。ビット列のEビット目以降（最後のワードの余り）は0。`CLUSTER` の `pad` は0で、
+    /// `flags` は定義済みのビットだけ。クラスタのノードは狭義昇順でN未満。`CLSNODE` に余りがない。
+    /// `TWIN` は `a` が狭義昇順（1つの辺に双子は1つ）で `a ≠ b`、`(a,b)` があれば `(b,a)` もある。
+    /// `SWPARENT` は `sidewalk` が狭義昇順で `sidewalk ≠ parent`。
     pub fn validate(&self, graph: &Graph) -> Result<(), TopologyError> {
-        todo!("形式書10章の読込時の検査")
+        let n = graph.node_count();
+        let e = graph.edge_count();
+        self.validate_snap_bits(e)?;
+        self.validate_clusters(n)?;
+        self.validate_twins_and_parents(e)
+    }
+
+    fn validate_snap_bits(&self, edge_count: usize) -> Result<(), TopologyError> {
+        let words = edge_count.div_ceil(64);
+        let tail_bits = edge_count % 64;
+        for (name, bits) in [
+            ("SNAPCAR", &self.snap_car),
+            ("SNAPBIK", &self.snap_bike),
+            ("SNAPFOT", &self.snap_walk),
+        ] {
+            if bits.len() != words {
+                return Err(TopologyError(format!(
+                    "{name}の長さが{}ワードです（E={edge_count}なら{words}ワードのはず）",
+                    bits.len()
+                )));
+            }
+            if tail_bits != 0 && bits.last().is_some_and(|&w| w >> tail_bits != 0) {
+                return Err(TopologyError(format!(
+                    "{name}の最後のワードで、E={edge_count}以降のビットが立っています"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_clusters(&self, node_count: usize) -> Result<(), TopologyError> {
+        if self.node_cluster.len() != node_count {
+            return Err(TopologyError(format!(
+                "NODECLSの件数が{}です（N={node_count}のはず）",
+                self.node_cluster.len()
+            )));
+        }
+        let cluster_count = self.clusters.len();
+        if cluster_count >= NONE as usize {
+            return Err(TopologyError(format!(
+                "クラスタ数{cluster_count}が上限を超えています"
+            )));
+        }
+        if let Some(v) = self
+            .node_cluster
+            .iter()
+            .position(|&c| c != NONE && c as usize >= cluster_count)
+        {
+            return Err(TopologyError(format!(
+                "NODECLS[{v}]={}がクラスタ数C={cluster_count}以上で、NONEでもありません",
+                self.node_cluster[v]
+            )));
+        }
+        let mut listed = 0_usize;
+        for (i, record) in self.clusters.iter().enumerate() {
+            if record.pad != [0; 3] {
+                return Err(TopologyError(format!("クラスタ{i}のpadが0ではありません")));
+            }
+            if record.flags & !(cluster_flags::SIGNAL | cluster_flags::ROUNDABOUT) != 0 {
+                return Err(TopologyError(format!(
+                    "クラスタ{i}のflags {:#04x}に未定義のビットがあります",
+                    record.flags
+                )));
+            }
+            let start = record.node_start as usize;
+            let end = start + usize::from(record.node_count);
+            let Some(nodes) = self.cluster_nodes.get(start..end) else {
+                return Err(TopologyError(format!(
+                    "クラスタ{i}のCLSNODEの範囲{start}..{end}がCLSNODEの件数{}を超えています",
+                    self.cluster_nodes.len()
+                )));
+            };
+            if nodes.windows(2).any(|w| w[0] >= w[1]) {
+                return Err(TopologyError(format!(
+                    "クラスタ{i}のノードが狭義昇順ではありません"
+                )));
+            }
+            for &v in nodes {
+                if v as usize >= node_count {
+                    return Err(TopologyError(format!(
+                        "クラスタ{i}のノード{v}がN={node_count}以上です"
+                    )));
+                }
+                if self.node_cluster[v as usize] != i as u32 {
+                    return Err(TopologyError(format!(
+                        "クラスタ{i}のノード{v}のNODECLSが{}です（{i}のはず）",
+                        self.node_cluster[v as usize]
+                    )));
+                }
+            }
+            listed += nodes.len();
+        }
+        let clustered = self.node_cluster.iter().filter(|&&c| c != NONE).count();
+        if listed != clustered || self.cluster_nodes.len() != clustered {
+            return Err(TopologyError(format!(
+                "CLSNODEとNODECLSが対応しません（NODECLSでクラスタに属するノード{clustered}、\
+                 クラスタの範囲の合計{listed}、CLSNODEの件数{}）",
+                self.cluster_nodes.len()
+            )));
+        }
+        Ok(())
+    }
+
+    fn validate_twins_and_parents(&self, edge_count: usize) -> Result<(), TopologyError> {
+        for (i, t) in self.twins.iter().enumerate() {
+            if t.a as usize >= edge_count || t.b as usize >= edge_count {
+                return Err(TopologyError(format!(
+                    "TWIN[{i}]の辺番号（a={}、b={}）がE={edge_count}以上です",
+                    t.a, t.b
+                )));
+            }
+            if t.a == t.b {
+                return Err(TopologyError(format!(
+                    "TWIN[{i}]が同じ辺の組です（{}）",
+                    t.a
+                )));
+            }
+        }
+        if let Some(i) = self.twins.windows(2).position(|w| w[0].a >= w[1].a) {
+            return Err(TopologyError(format!(
+                "TWINのaが狭義昇順ではありません（TWIN[{}]）",
+                i + 1
+            )));
+        }
+        for (i, t) in self.twins.iter().enumerate() {
+            if self.twin_of(t.b) != Some(t.a) {
+                return Err(TopologyError(format!(
+                    "TWIN[{i}]=({},{})の逆向き({},{})がありません",
+                    t.a, t.b, t.b, t.a
+                )));
+            }
+        }
+        for (i, s) in self.sidewalk_parents.iter().enumerate() {
+            if s.sidewalk as usize >= edge_count || s.parent as usize >= edge_count {
+                return Err(TopologyError(format!(
+                    "SWPARENT[{i}]の辺番号（sidewalk={}、parent={}）がE={edge_count}以上です",
+                    s.sidewalk, s.parent
+                )));
+            }
+            if s.sidewalk == s.parent {
+                return Err(TopologyError(format!(
+                    "SWPARENT[{i}]の歩道と親が同じ辺です（{}）",
+                    s.sidewalk
+                )));
+            }
+        }
+        if let Some(i) = self
+            .sidewalk_parents
+            .windows(2)
+            .position(|w| w[0].sidewalk >= w[1].sidewalk)
+        {
+            return Err(TopologyError(format!(
+                "SWPARENTのsidewalkが狭義昇順ではありません（SWPARENT[{}]）",
+                i + 1
+            )));
+        }
+        Ok(())
     }
 
     fn snap_bits(&self, mode: Mode) -> &[u64] {
