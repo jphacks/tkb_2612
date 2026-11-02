@@ -572,8 +572,8 @@ fn find_twins(view: &GraphView<'_>, attrs: &GraphAttrs, cfg: &TopologyConfig) ->
             let mut near = Vec::new();
             let mut found: Vec<EdgeId> = Vec::new();
             let mut seen = Vec::new();
-            for coord in &polyline {
-                grid.near(*coord, &mut near);
+            for (point, _) in &samples_a {
+                grid.near(frame.coord(*point), &mut near);
                 for &b in &near {
                     if b != a && !seen.contains(&b) {
                         seen.push(b);
@@ -669,9 +669,7 @@ fn find_sidewalk_parents(view: &GraphView<'_>, cfg: &TopologyConfig) -> Sidewalk
             let mut votes: HashMap<EdgeId, (u32, f64)> = HashMap::new();
             let mut near = Vec::new();
             for (point, dir) in &samples {
-                // 局所平面の点を座標に戻す代わりに、折れ線の最寄りの頂点でセルを引く
-                let coord = nearest_vertex(&polyline, &frame, *point);
-                grid.near(coord, &mut near);
+                grid.near(frame.coord(*point), &mut near);
                 let mut best: Option<(EdgeId, f64)> = None;
                 for &p in &near {
                     if p == s {
@@ -732,30 +730,6 @@ fn find_sidewalk_parents(view: &GraphView<'_>, cfg: &TopologyConfig) -> Sidewalk
         "parent_candidate_edges": grid.entries(),
     });
     Sidewalks { parents, audit }
-}
-
-/// 局所平面の点に最も近い折れ線の頂点の座標。格子のセルを引くための近似で、点は折れ線上にあるので
-/// 頂点との差は線分の半分以下（数m〜数十m）。セルの大きさが約50mなので、周囲8セルの検索で足りる。
-fn nearest_vertex(
-    polyline: &[crate::domain::routing::graph::Coord],
-    frame: &LocalFrame,
-    point: (f64, f64),
-) -> crate::domain::routing::graph::Coord {
-    polyline
-        .iter()
-        .copied()
-        .min_by(|a, b| {
-            let da = {
-                let (x, y) = frame.xy(*a);
-                (x - point.0).hypot(y - point.1)
-            };
-            let db = {
-                let (x, y) = frame.xy(*b);
-                (x - point.0).hypot(y - point.1)
-            };
-            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .expect("折れ線は空でない")
 }
 
 // ---------------------------------------------------------------------------
@@ -1097,6 +1071,39 @@ mod tests {
                 TwinPair { a: long, b: half_a },
                 TwinPair { a: half_a, b: long }
             ]
+        );
+    }
+
+    #[test]
+    fn a_short_partner_in_the_middle_of_a_long_edge_is_found() {
+        let mut b = GraphBuilder::new();
+        let long = lane(&mut b, 0.0, 0.0, 1000.0, true);
+        let short = lane(&mut b, 25.0, 650.0, 350.0, true);
+        let g = b.build();
+        let a = attrs(&g, &[(long, 1), (short, 1)]);
+        let t = find_twins(&GraphView::new(g.parts()), &a, &TopologyConfig::default());
+        assert_eq!(
+            t.pairs,
+            vec![
+                TwinPair { a: long, b: short },
+                TwinPair { a: short, b: long }
+            ]
+        );
+    }
+
+    #[test]
+    fn a_long_sidewalk_finds_its_parent_in_the_middle() {
+        let mut b = GraphBuilder::new();
+        let main = lane(&mut b, 0.0, 0.0, 600.0, false);
+        let s = sidewalk(&mut b, 5.0, 0.0, 600.0);
+        let g = b.build();
+        let t = find_sidewalk_parents(&GraphView::new(g.parts()), &TopologyConfig::default());
+        assert_eq!(
+            t.parents,
+            vec![SidewalkParent {
+                sidewalk: s,
+                parent: main
+            }]
         );
     }
 

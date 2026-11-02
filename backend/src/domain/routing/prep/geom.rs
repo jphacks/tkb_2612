@@ -23,6 +23,16 @@ impl LocalFrame {
         }
     }
 
+    /// 局所平面のメートルを座標に戻す（`xy` の逆。1e-7度に四捨五入する）。
+    pub fn coord(&self, p: (f64, f64)) -> Coord {
+        let dlon = p.0 / (1e-7 * METERS_PER_DEGREE * self.cos_lat);
+        let dlat = p.1 / (1e-7 * METERS_PER_DEGREE);
+        Coord::new(
+            (f64::from(self.origin.lat_e7) + dlat).round() as i32,
+            (f64::from(self.origin.lon_e7) + dlon).round() as i32,
+        )
+    }
+
     /// 座標を局所平面のメートルにする。
     pub fn xy(&self, c: Coord) -> (f64, f64) {
         let dlat = f64::from(c.lat_e7) - f64::from(self.origin.lat_e7);
@@ -153,6 +163,9 @@ mod tests {
         assert!((y - 111.19).abs() < 0.1, "{y}");
         assert!((x - 91.08).abs() < 0.2, "{x}");
         assert_eq!(frame.xy(origin), (0.0, 0.0));
+        // 逆変換
+        let c = Coord::new(350_010_000, 1_390_010_000);
+        assert_eq!(frame.coord(frame.xy(c)), c);
     }
 
     #[test]
