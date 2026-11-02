@@ -25,7 +25,7 @@
 //! |---|---|
 //! | `osm-graph` | `--pbf <PBF> --output-dir <DIR> [--threads N]`：`graph.bin`・`graph_attrs.bin`・`graph.audit.json` |
 //! | `restrictions` | `--pbf <PBF> --graph <graph.bin> --attrs <graph_attrs.bin> --output <restrictions.bin>`：監査は `<output>` の拡張子を `audit.json` にしたもの |
-//! | `topology` | `--graph <graph.bin> --attrs <graph_attrs.bin> --output <topology.bin> [--threads N]` |
+//! | `topology` | `--graph <graph.bin> --attrs <graph_attrs.bin> --output <topology.bin> [--scc-min-nodes N] [--threads N]`（`--scc-min-nodes` の既定は200。小さなグラフのテスト用） |
 //! | `od-index` | `--graph <graph.bin> --output <odindex.bin> [--threads N]` |
 
 use std::collections::BTreeMap;
@@ -264,7 +264,13 @@ fn topology(options: &Options) -> Result<(), String> {
         parts.node_ll.len(),
         parts.edges.len()
     ));
-    let topology = build_topology(&parts, &attrs, &TopologyConfig::default())?;
+    let mut config = TopologyConfig::default();
+    if let Some(v) = options.0.get("scc-min-nodes") {
+        config.scc_min_nodes = v
+            .parse::<u32>()
+            .map_err(|_| "--scc-min-nodes は整数".to_owned())?;
+    }
+    let topology = build_topology(&parts, &attrs, &config)?;
     let bytes = encode_topology(&topology, &deps_of(&graph_bytes));
     write_file(&output, &bytes)?;
     let audit = json!({

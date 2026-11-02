@@ -627,7 +627,9 @@ mod tests {
         (attrs.way_id[d.edge() as usize], d.is_reverse())
     }
 
-    fn seqs(attrs: &GraphAttrs, r: &Resolved) -> Vec<(Vec<(i64, bool)>, u8, u8)> {
+    type Named = (Vec<(i64, bool)>, u8, u8);
+
+    fn seqs(attrs: &GraphAttrs, r: &Resolved) -> Vec<Named> {
         r.restrictions
             .items
             .iter()
@@ -1001,19 +1003,19 @@ mod tests {
         let relation = rel(1, &[("restriction", "no_left_turn")], &members);
         // 両方向に通れる F は、2の両側の辺がfromの候補になるので決められない
         let g = graph(&nodes, &[(10, TWO, &[1, 2, 3]), (11, TWO, &[2, 4])]);
-        let r = resolve(&g.parts, &g.attrs, &[relation.clone()]);
+        let r = resolve(&g.parts, &g.attrs, std::slice::from_ref(&relation));
         assert!(r.restrictions.items.is_empty());
         assert_eq!(r.audit["unresolved"]["from_ambiguous"], 1);
         // 一方通行（1→2→3）なら、2に入る有向辺は1つだけ
         let g = graph(&nodes, &[(10, ONE_WAY, &[1, 2, 3]), (11, TWO, &[2, 4])]);
-        let r = resolve(&g.parts, &g.attrs, &[relation.clone()]);
+        let r = resolve(&g.parts, &g.attrs, std::slice::from_ref(&relation));
         assert_eq!(
             seqs(&g.attrs, &r),
             vec![(vec![(10, false), (11, false)], CAR | BIKE, 0)]
         );
         // toが一方通行で、viaに向かう向き（4→2）だけなら、carもbikeも通れず捨てる
         let g = graph(&nodes, &[(10, TWO, &[1, 2]), (11, ONE_WAY, &[4, 2])]);
-        let r = resolve(&g.parts, &g.attrs, &[relation.clone()]);
+        let r = resolve(&g.parts, &g.attrs, std::slice::from_ref(&relation));
         assert!(r.restrictions.items.is_empty());
         assert_eq!(r.audit["unresolved"]["not_traversable"], 1);
         // bikeだけ通れないtoなら、carに絞る

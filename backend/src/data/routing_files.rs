@@ -758,6 +758,7 @@ pub fn decode_alt(bytes: &[u8]) -> Result<Decoded<Landmarks>, LoadError> {
 mod tests {
     use super::*;
     use crate::data::release::{ACCIDENTS_FILE, ROUTING_FILES};
+    const NONE_U32: u32 = u32::MAX;
 
     #[test]
     fn required_deps_follow_the_table() {
@@ -774,5 +775,373 @@ mod tests {
                 assert!(*dep == ACCIDENTS_FILE || ROUTING_FILES.contains(dep));
             }
         }
+    }
+
+    // --- encode → decode の往復と、壊れたファイルの拒否 ---
+
+    use crate::data::binfile::BinFile;
+    use crate::data::release::{GRAPH_FILE, sha256_hex};
+    use crate::domain::routing::graph::synthetic::{
+        EdgeSpec, GraphBuilder, RandomGraphConfig, random_graph,
+    };
+    use crate::domain::routing::prep::odindex::build_odindex;
+    use crate::domain::routing::prep::topo::{TopologyConfig, build_topology};
+    use serde_json::json;
+
+    fn deps_of(graph_bytes: &[u8]) -> Deps {
+        Deps::from([(GRAPH_FILE.to_owned(), sha256_hex(graph_bytes))])
+    }
+
+    fn sample() -> (Graph, Restrictions) {
+        random_graph(7, &RandomGraphConfig::rich(60)).build_all()
+    }
+
+    #[test]
+    fn graph_round_trips() {
+        let (graph, _) = sample();
+        assert!(graph.edge_count() > 30);
+        let bytes = encode_graph(&graph);
+        let decoded = decode_graph(&bytes).unwrap();
+        assert_eq!(decoded.value.parts(), graph.parts());
+        assert!(decoded.deps.is_empty());
+        // 同じ入力から同じバイト列
+        assert_eq!(bytes, encode_graph(&decoded.value));
+        // 節の件数がPARAMSと一致する
+        let file = BinFile::parse(&bytes).unwrap();
+        file.expect(*b"TKRGRAPH", 1).unwrap();
+        assert_eq!(file.section_counts()["EDGE"], graph.edge_count() as u64);
+        assert_eq!(file.section_counts()["NODELL"], graph.node_count() as u64);
+        assert_eq!(file.section_counts()["ADJ"], 2 * graph.edge_count() as u64);
+    }
+
+    #[test]
+    fn graph_decode_rejects_inconsistent_files() {
+        let (graph, _) = sample();
+        // マジックナンバーの違い
+        let mut bytes = encode_graph(&graph);
+        bytes[0] ^= 1;
+        assert!(decode_graph(&bytes).is_err());
+        // PARAMSの件数と節の件数の矛盾
+        let mut parts = graph.parts().clone();
+        parts.params["edges"] = json!(graph.edge_count() + 1);
+        assert!(decode_graph_parts(&encode_graph_parts(&parts)).is_err());
+        let mut parts = graph.parts().clone();
+        parts.params = json!({});
+        assert!(decode_graph_parts(&encode_graph_parts(&parts)).is_err());
+        // 検査（Graph::from_parts）に通らない中身
+        let mut parts = graph.parts().clone();
+        parts.edges[0].length_dm = 0;
+        assert!(decode_graph(&encode_graph_parts(&parts)).is_err());
+        // 切り詰め
+        let bytes = encode_graph(&graph);
+        assert!(decode_graph(&bytes[..bytes.len() - 8]).is_err());
+        assert!(decode_graph(&[]).is_err());
+    }
+
+    #[test]
+    fn restrictions_round_trip() {
+        let mut b = GraphBuilder::new();
+        let n: Vec<u32> = (0..5)
+            .map(|i| b.add_node_deg(35.0, 139.0 + f64::from(i) * 0.001))
+            .collect();
+        for w in n.windows(2) {
+            b.add_edge(EdgeSpec::new(w[0], w[1]));
+        }
+        b.forbid_nodes(&[n[0], n[1], n[2]], 4);
+        b.forbid_nodes(&[n[1], n[2], n[3], n[4]], 2);
+        b.forbid_nodes(&[n[0], n[1], n[2]], 2);
+        let (graph, restrictions) = b.build_all();
+        assert_eq!(restrictions.items.len(), 2);
+        let deps = deps_of(b"graph");
+        let bytes = encode_restrictions(&restrictions, &deps);
+        let decoded = decode_restrictions(&bytes).unwrap();
+        assert_eq!(decoded.value, restrictions);
+        assert_eq!(decoded.deps, deps);
+        decoded.value.validate(&graph).unwrap();
+        // 空でも往復できる
+        let empty = Restrictions::empty();
+        let decoded = decode_restrictions(&encode_restrictions(&empty, &deps)).unwrap();
+        assert!(decoded.value.items.is_empty());
+        // DEPSにgraph.binがなければ拒否する
+        assert!(decode_restrictions(&encode_restrictions(&restrictions, &Deps::new())).is_err());
+    }
+
+    #[test]
+    fn restrictions_decode_rejects_malformed_sections() {
+        let item = |seq: &[u32], modes: u8, kind: u8| Restriction {
+            seq: seq.iter().map(|&d| DirEdge(d)).collect(),
+            modes,
+            kind,
+        };
+        let deps = deps_of(b"graph");
+        for items in [
+            vec![item(&[0, 2], 0, 0)], // modes が0
+            vec![item(&[0, 2], 8, 0)], // modes に未知のビット
+            vec![item(&[0, 2], 4, 2)], // kind が不正
+        ] {
+            let r = Restrictions {
+                params: Value::Object(Map::new()),
+                items,
+            };
+            assert!(decode_restrictions(&encode_restrictions(&r, &deps)).is_err());
+        }
+        // PARAMSのitemsとRESTRの件数の矛盾
+        let r = Restrictions {
+            params: json!({"items": 5}),
+            items: vec![item(&[0, 2], 4, 0)],
+        };
+        assert!(decode_restrictions(&encode_restrictions(&r, &deps)).is_err());
+    }
+
+    #[test]
+    fn topology_round_trips_and_odindex_round_trips() {
+        let (graph, _) = sample();
+        let attrs = {
+            let e = graph.edge_count();
+            GraphAttrs {
+                params: json!({"nodes": graph.node_count(), "edges": e}),
+                way_id: (0..e as i64).collect(),
+                node_id: (0..graph.node_count() as i64).collect(),
+                ref_idx: vec![0; e],
+                name_idx: vec![0; e],
+                strtab: vec![0],
+                lanes: vec![0; e],
+                width_dm: vec![0; e],
+                layer: vec![0; e],
+            }
+        };
+        let graph_bytes = encode_graph(&graph);
+        let deps = deps_of(&graph_bytes);
+        let config = TopologyConfig {
+            scc_min_nodes: 2,
+            ..TopologyConfig::default()
+        };
+        let topology = build_topology(graph.parts(), &attrs, &config).unwrap();
+        topology.validate(&graph).unwrap();
+        let bytes = encode_topology(&topology, &deps);
+        let decoded = decode_topology(&bytes).unwrap();
+        assert_eq!(decoded.value, topology);
+        assert_eq!(decoded.deps, deps);
+        decoded.value.validate(&graph).unwrap();
+        assert!(topology.cluster_count() > 0);
+
+        let index = build_odindex(graph.parts());
+        let bytes = encode_odindex(&index, &deps);
+        let decoded = decode_odindex(&bytes).unwrap();
+        assert_eq!(decoded.value, index);
+        assert_eq!(decoded.deps, deps);
+        assert!(decoded.value.raw_params["edges"] == json!(graph.edge_count()));
+        // 型付きのparamsを変えると、書き出すPARAMSに反映される
+        let mut changed = index.clone();
+        changed.params.rows += 1;
+        let decoded = decode_odindex(&encode_odindex(&changed, &deps)).unwrap();
+        assert_eq!(decoded.value.params.rows, index.params.rows + 1);
+        assert_eq!(
+            decoded.value.raw_params["rows"],
+            json!(index.params.rows + 1)
+        );
+    }
+
+    #[test]
+    fn topology_and_odindex_decode_reject_inconsistent_sections() {
+        let deps = deps_of(b"graph");
+        let base = Topology {
+            params: json!({"nodes": 4, "edges": 70}),
+            snap_car: vec![0, 0],
+            snap_bike: vec![0, 0],
+            snap_walk: vec![0, 0],
+            node_cluster: vec![NONE_U32, 0, 0, NONE_U32],
+            clusters: vec![ClusterRecord {
+                lat_e7: 1,
+                lon_e7: 2,
+                node_start: 0,
+                node_count: 2,
+                top_class: 4,
+                branches: 3,
+                flags: 1,
+                pad: [0; 3],
+            }],
+            cluster_nodes: vec![1, 2],
+            twins: vec![TwinPair { a: 3, b: 5 }, TwinPair { a: 5, b: 3 }],
+            sidewalk_parents: vec![SidewalkParent {
+                sidewalk: 9,
+                parent: 4,
+            }],
+        };
+        assert_eq!(
+            decode_topology(&encode_topology(&base, &deps))
+                .unwrap()
+                .value,
+            base
+        );
+        let rejects: Vec<(&str, Topology)> = vec![
+            (
+                "SNAP*の長さがedgesと矛盾",
+                Topology {
+                    snap_car: vec![0],
+                    snap_bike: vec![0],
+                    snap_walk: vec![0],
+                    ..base.clone()
+                },
+            ),
+            (
+                "CLSNODEとNODECLSの不一致",
+                Topology {
+                    node_cluster: vec![NONE_U32, 0, NONE_U32, NONE_U32],
+                    ..base.clone()
+                },
+            ),
+            (
+                "NODECLSの値がクラスタ数以上",
+                Topology {
+                    node_cluster: vec![NONE_U32, 0, 1, NONE_U32],
+                    ..base.clone()
+                },
+            ),
+            (
+                "TWINに逆向きがない",
+                Topology {
+                    twins: vec![TwinPair { a: 3, b: 5 }],
+                    ..base.clone()
+                },
+            ),
+            (
+                "TWINが昇順でない",
+                Topology {
+                    twins: vec![TwinPair { a: 5, b: 3 }, TwinPair { a: 3, b: 5 }],
+                    ..base.clone()
+                },
+            ),
+            (
+                "TWINの辺番号が範囲外",
+                Topology {
+                    twins: vec![TwinPair { a: 70, b: 5 }, TwinPair { a: 5, b: 70 }],
+                    ..base.clone()
+                },
+            ),
+            (
+                "SWPARENTが昇順でない",
+                Topology {
+                    sidewalk_parents: vec![
+                        SidewalkParent {
+                            sidewalk: 9,
+                            parent: 4,
+                        },
+                        SidewalkParent {
+                            sidewalk: 2,
+                            parent: 1,
+                        },
+                    ],
+                    ..base.clone()
+                },
+            ),
+            (
+                "CLSNODEがクラスタ内で昇順でない",
+                Topology {
+                    cluster_nodes: vec![2, 1],
+                    ..base.clone()
+                },
+            ),
+        ];
+        for (what, topology) in rejects {
+            assert!(
+                decode_topology(&encode_topology(&topology, &deps)).is_err(),
+                "{what}"
+            );
+        }
+
+        let index = OdIndex {
+            params: OdIndexParams {
+                lat0_e7: 200_000_000,
+                lon0_e7: 1_220_000_000,
+                cell_lat_e7: 25_000,
+                cell_lon_e7: 25_000,
+                rows: 10,
+                cols: 10,
+            },
+            raw_params: Value::Null,
+            cell_keys: vec![0, 11],
+            cell_ofs: vec![0, 1, 3],
+            cell_edges: vec![4, 5, 9],
+        };
+        assert_eq!(
+            decode_odindex(&encode_odindex(&index, &deps))
+                .unwrap()
+                .value
+                .cell_edges,
+            index.cell_edges
+        );
+        let rejects: Vec<(&str, OdIndex)> = vec![
+            (
+                "CELLKEYが昇順でない",
+                OdIndex {
+                    cell_keys: vec![11, 0],
+                    ..index.clone()
+                },
+            ),
+            (
+                "CELLKEYが格子の外",
+                OdIndex {
+                    cell_keys: vec![0, 100],
+                    ..index.clone()
+                },
+            ),
+            (
+                "CELLOFSの末尾が件数と違う",
+                OdIndex {
+                    cell_ofs: vec![0, 1, 2],
+                    ..index.clone()
+                },
+            ),
+            (
+                "空のセル",
+                OdIndex {
+                    cell_ofs: vec![0, 0, 3],
+                    ..index.clone()
+                },
+            ),
+            (
+                "CELLEDGがセル内で昇順でない",
+                OdIndex {
+                    cell_edges: vec![4, 9, 5],
+                    ..index.clone()
+                },
+            ),
+        ];
+        for (what, bad) in rejects {
+            assert!(
+                decode_odindex(&encode_odindex(&bad, &deps)).is_err(),
+                "{what}"
+            );
+        }
+    }
+
+    #[test]
+    fn graph_attrs_round_trip() {
+        let attrs = GraphAttrs {
+            params: json!({"nodes": 2, "edges": 3}),
+            way_id: vec![10, 10, 20],
+            node_id: vec![5, 9],
+            ref_idx: vec![0, 1, 1],
+            name_idx: vec![0, 0, 4],
+            strtab: b"\0R1\0name\0".to_vec(),
+            lanes: vec![0, 2, 4],
+            width_dm: vec![0, 55, 0],
+            layer: vec![0, -1, 1],
+        };
+        let deps = deps_of(b"graph");
+        let bytes = encode_graph_attrs(&attrs, &deps);
+        let decoded = decode_graph_attrs(&bytes).unwrap();
+        assert_eq!(decoded.value, attrs);
+        assert_eq!(decoded.deps, deps);
+        assert_eq!(decoded.value.string(1), "R1");
+        assert_eq!(decoded.value.string(4), "name");
+        // 範囲外の文字列表の添字、昇順でないway ID
+        let mut bad = attrs.clone();
+        bad.ref_idx[1] = 99;
+        assert!(decode_graph_attrs(&encode_graph_attrs(&bad, &deps)).is_err());
+        let mut bad = attrs.clone();
+        bad.way_id = vec![20, 10, 10];
+        assert!(decode_graph_attrs(&encode_graph_attrs(&bad, &deps)).is_err());
     }
 }

@@ -32,7 +32,7 @@ use crate::domain::routing::graph::{
     EdgeId, GraphParts, HighwayClass, NodeId, access, edge_flags, node_flags,
 };
 use crate::domain::routing::prep::attrs::GraphAttrs;
-use crate::domain::routing::prep::geom::{LocalFrame, XyLine};
+use crate::domain::routing::prep::geom::{LocalFrame, Sample, XyLine};
 use crate::domain::routing::prep::grid::{EdgeGrid, GridParams};
 use crate::domain::routing::prep::view::GraphView;
 use crate::domain::routing::topology::{
@@ -207,7 +207,8 @@ fn snap_bits(view: &GraphView<'_>, mode: Mode, min_nodes: u32) -> SnapResult {
     let audit = json!({
         "edges_passable": passable,
         "edges_snappable": snappable,
-        "snappable_ratio": if passable == 0 { 0.0 } else { snappable as f64 / passable as f64 },
+        // 小数6桁に丸める（JSONの浮動小数の往復で最後の桁がずれないように）
+        "snappable_ratio": if passable == 0 { 0.0 } else { (snappable as f64 / passable as f64 * 1e6).round() / 1e6 },
         "nodes_in_large_components": nodes_in_large,
         "large_components": large_components.round() as u64,
         "small_components_size_2_or_more": small_components.round() as u64,
@@ -276,12 +277,9 @@ fn build_clusters(view: &GraphView<'_>, cfg: &TopologyConfig) -> Result<Clusters
     }
 
     // 横断歩道のノード：carの辺をたどって、最寄りの交差点ノードから上限以内にあれば、そのクラスタに入れる
-    let mut crossing = vec![false; n];
-    for v in 0..n {
-        if view.node_flags(v as u32) & node_flags::CROSSING != 0 {
-            crossing[v] = true;
-        }
-    }
+    let mut crossing: Vec<bool> = (0..n as u32)
+        .map(|v| view.node_flags(v) & node_flags::CROSSING != 0)
+        .collect();
     for e in 0..view.edge_count() as u32 {
         let r = view.edge(e);
         if r.flags & edge_flags::CROSSING != 0 {
@@ -518,12 +516,7 @@ fn same_road(attrs: &GraphAttrs, a: EdgeId, b: EdgeId) -> bool {
 }
 
 /// `a` の点のうち、`b` の折れ線から `gap` 以内で進行方向が逆向きのものの割合。
-fn opposite_fraction(
-    samples_a: &[((f64, f64), (f64, f64))],
-    line_b: &XyLine,
-    gap: f64,
-    cos_limit: f64,
-) -> f64 {
+fn opposite_fraction(samples_a: &[Sample], line_b: &XyLine, gap: f64, cos_limit: f64) -> f64 {
     if samples_a.is_empty() {
         return 0.0;
     }
@@ -806,4 +799,367 @@ pub fn build_topology(
         twins: twins.pairs,
         sidewalk_parents: sidewalks.parents,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::contract::geo::METERS_PER_DEGREE;
+    use crate::domain::routing::graph::Graph;
+    use crate::domain::routing::graph::synthetic::{EdgeSpec, GraphBuilder};
+    use serde_json::Value;
+
+    const LAT0: f64 = 35.0;
+    const LON0: f64 = 139.0;
+
+    fn node(b: &mut GraphBuilder, north_m: f64, east_m: f64) -> u32 {
+        let cos = LAT0.to_radians().cos();
+        b.add_node_deg(
+            LAT0 + north_m / METERS_PER_DEGREE,
+            LON0 + east_m / (METERS_PER_DEGREE * cos),
+        )
+    }
+
+    fn road(b: &mut GraphBuilder, a: u32, c: u32) -> u32 {
+        b.add_edge(
+            EdgeSpec::new(a, c)
+                .access(CAR_ANY)
+                .class(HighwayClass::Residential),
+        )
+    }
+
+    fn attrs(graph: &Graph, names: &[(u32, u32)]) -> GraphAttrs {
+        // 文字列表：オフセット1が"a"、3が"b"
+        let edges = graph.edge_count();
+        let mut name_idx = vec![0u32; edges];
+        let mut ref_idx = vec![0u32; edges];
+        for &(e, name) in names {
+            name_idx[e as usize] = name;
+        }
+        ref_idx.truncate(edges);
+        GraphAttrs {
+            params: Value::Null,
+            way_id: (0..edges as i64).collect(),
+            node_id: (0..graph.node_count() as i64).collect(),
+            ref_idx,
+            name_idx,
+            strtab: vec![0, b'a', 0, b'b', 0],
+            lanes: vec![0; edges],
+            width_dm: vec![0; edges],
+            layer: vec![0; edges],
+        }
+    }
+
+    fn config() -> TopologyConfig {
+        TopologyConfig {
+            scc_min_nodes: 3,
+            ..TopologyConfig::default()
+        }
+    }
+
+    fn bit(bits: &[u64], e: u32) -> bool {
+        bits[e as usize / 64] >> (e % 64) & 1 == 1
+    }
+
+    #[test]
+    fn snap_bits_use_strongly_connected_components() {
+        let mut b = GraphBuilder::new();
+        // 4ノードの環（両方向）：成分のノード数4
+        let ring: Vec<u32> = (0..4)
+            .map(|i| node(&mut b, 0.0, f64::from(i) * 30.0))
+            .collect();
+        let ring_edges: Vec<u32> = (0..4)
+            .map(|i| road(&mut b, ring[i], ring[(i + 1) % 4]))
+            .collect();
+        // 孤立した2ノードの小さな成分（しきい値3未満）
+        let (s0, s1) = (node(&mut b, 200.0, 0.0), node(&mut b, 200.0, 30.0));
+        let small = road(&mut b, s0, s1);
+        // 環から出るだけの一方通行の線 r0 → c0 → c1：弱連結だが強連結ではない
+        let (c0, c1) = (node(&mut b, -100.0, 0.0), node(&mut b, -100.0, 30.0));
+        let out0 = b.add_edge(EdgeSpec::new(ring[0], c0).access(access::CAR_FWD));
+        let out1 = b.add_edge(EdgeSpec::new(c0, c1).access(access::CAR_FWD));
+        // 歩行者だけが通れる辺は、carの対象にならない
+        let walk_only =
+            b.add_edge(EdgeSpec::new(ring[1], ring[2]).access(access::WALK_FWD | access::WALK_BWD));
+        let g = b.build();
+        let view = GraphView::new(g.parts());
+
+        let sizes = component_sizes(&view, Mode::Car);
+        assert_eq!(sizes[ring[0] as usize], 4);
+        assert_eq!(sizes[s0 as usize], 2);
+        assert_eq!(sizes[c0 as usize], 1);
+
+        let car = snap_bits(&view, Mode::Car, 3);
+        for &e in &ring_edges {
+            assert!(bit(&car.bits, e), "環の辺 {e}");
+        }
+        assert!(!bit(&car.bits, small));
+        assert!(!bit(&car.bits, out0)); // 終点が成分の外
+        assert!(!bit(&car.bits, out1));
+        assert!(!bit(&car.bits, walk_only));
+        assert_eq!(car.audit["edges_passable"], 7);
+        assert_eq!(car.audit["edges_snappable"], 4);
+        // しきい値を1にすれば、小さな成分や一方通行の線も吸着できる
+        let car1 = snap_bits(&view, Mode::Car, 1);
+        assert!(bit(&car1.bits, small) && bit(&car1.bits, out0) && bit(&car1.bits, out1));
+        assert!(!bit(&car1.bits, walk_only));
+        // walkは歩行者だけの辺（ring[1]-ring[2]）しか通れない。2ノードの成分なので、しきい値2なら吸着できる
+        let walk = snap_bits(&view, Mode::Walk, 2);
+        assert!(bit(&walk.bits, walk_only));
+    }
+
+    #[test]
+    fn surplus_bits_after_the_last_edge_stay_zero() {
+        let mut b = GraphBuilder::new();
+        let n: Vec<u32> = (0..3)
+            .map(|i| node(&mut b, 0.0, f64::from(i) * 30.0))
+            .collect();
+        road(&mut b, n[0], n[1]);
+        road(&mut b, n[1], n[2]);
+        road(&mut b, n[2], n[0]);
+        let g = b.build();
+        let t = build_topology(g.parts(), &attrs(&g, &[]), &config()).unwrap();
+        assert_eq!(t.snap_car, vec![0b111]);
+        t.validate(&g).unwrap();
+    }
+
+    #[test]
+    fn clusters_merge_close_intersections_and_pull_in_crossings() {
+        let mut b = GraphBuilder::new();
+        // 交差点A：A1とA2が15m離れていて、それぞれ3方向
+        let a1 = node(&mut b, 0.0, 0.0);
+        let a2 = node(&mut b, 0.0, 15.0);
+        let n1 = node(&mut b, 100.0, 0.0);
+        let w1 = node(&mut b, 0.0, -100.0);
+        let n2 = node(&mut b, 100.0, 15.0);
+        let e2 = node(&mut b, 0.0, 115.0);
+        // A1の西の枝の10m先に横断歩道のノード、A2の東の枝の30m先にも横断歩道のノード
+        let x_near = node(&mut b, 0.0, -10.0);
+        let x_far = node(&mut b, 0.0, 45.0);
+        b.add_node_flags(x_near, node_flags::CROSSING);
+        b.add_node_flags(x_far, node_flags::CROSSING);
+        b.add_node_flags(a1, node_flags::SIGNAL);
+        road(&mut b, a1, a2);
+        b.add_edge(
+            EdgeSpec::new(a1, n1)
+                .access(CAR_ANY)
+                .class(HighwayClass::Primary),
+        );
+        road(&mut b, a1, x_near);
+        road(&mut b, x_near, w1);
+        road(&mut b, a2, n2);
+        road(&mut b, a2, x_far);
+        road(&mut b, x_far, e2);
+        // 交差点B：B1とB2が25m離れている（別のクラスタ）
+        let b1 = node(&mut b, 500.0, 0.0);
+        let b2 = node(&mut b, 500.0, 25.0);
+        let leaves: Vec<u32> = [(600.0, 0.0), (500.0, -100.0), (600.0, 25.0), (500.0, 125.0)]
+            .iter()
+            .map(|&(n, e)| node(&mut b, n, e))
+            .collect();
+        road(&mut b, b1, b2);
+        road(&mut b, b1, leaves[0]);
+        road(&mut b, b1, leaves[1]);
+        road(&mut b, b2, leaves[2]);
+        road(&mut b, b2, leaves[3]);
+        let g = b.build();
+        let view = GraphView::new(g.parts());
+        let c = build_clusters(&view, &TopologyConfig::default()).unwrap();
+
+        let cluster = |n: u32| c.node_cluster[n as usize];
+        // クラスタ番号は最小のノード番号の昇順：A（a1=0）、B1、B2
+        assert_eq!(c.records.len(), 3);
+        assert_eq!((cluster(a1), cluster(a2), cluster(x_near)), (0, 0, 0));
+        assert_eq!(cluster(x_far), NONE);
+        assert_eq!(cluster(w1), NONE);
+        assert_ne!(cluster(b1), cluster(b2));
+        assert!(cluster(b1) != NONE && cluster(b2) != NONE);
+        assert_eq!(c.audit["crossing_nodes_added"], 1);
+
+        let a = &c.records[0];
+        assert_eq!(a.node_count, 3);
+        assert_eq!(&c.nodes[a.node_start as usize..][..3], &[a1, a2, x_near]);
+        // 外から接する枝：a1-n1、x_near-w1、a2-n2、a2-x_far
+        assert_eq!(a.branches, 4);
+        assert_eq!(a.top_class, HighwayClass::Primary.code());
+        assert_eq!(a.flags & cluster_flags::SIGNAL, cluster_flags::SIGNAL);
+        assert_eq!(a.flags & cluster_flags::ROUNDABOUT, 0);
+        // 中心は所属ノードの平均
+        let sum: i64 = [a1, a2, x_near]
+            .iter()
+            .map(|&n| i64::from(g.node_coord(n).lon_e7))
+            .sum();
+        let mean_lon = (sum as f64 / 3.0).round() as i32;
+        assert_eq!(a.lon_e7, mean_lon);
+        let bb = &c.records[cluster(b1) as usize];
+        assert_eq!((bb.node_count, bb.branches, bb.flags), (1, 3, 0));
+    }
+
+    #[test]
+    fn roundabout_edges_set_the_cluster_flag() {
+        let mut b = GraphBuilder::new();
+        let ring: Vec<u32> = (0..3)
+            .map(|i| {
+                let a = f64::from(i) * 2.0943951;
+                node(&mut b, 8.0 * a.cos(), 8.0 * a.sin())
+            })
+            .collect();
+        let arms: Vec<u32> = (0..3)
+            .map(|i| {
+                let a = f64::from(i) * 2.0943951;
+                node(&mut b, 80.0 * a.cos(), 80.0 * a.sin())
+            })
+            .collect();
+        for i in 0..3 {
+            b.add_edge(
+                EdgeSpec::new(ring[i], ring[(i + 1) % 3])
+                    .access(access::CAR_FWD)
+                    .flags(edge_flags::ROUNDABOUT),
+            );
+            road(&mut b, ring[i], arms[i]);
+        }
+        let g = b.build();
+        let c = build_clusters(&GraphView::new(g.parts()), &TopologyConfig::default()).unwrap();
+        assert_eq!(c.records.len(), 1);
+        assert_eq!(c.records[0].node_count, 3);
+        assert_eq!(c.records[0].branches, 3);
+        assert_eq!(
+            c.records[0].flags & cluster_flags::ROUNDABOUT,
+            cluster_flags::ROUNDABOUT
+        );
+    }
+
+    /// 東西に延びる道路。`east_to_west` なら進行方向が西向き。
+    fn lane(
+        b: &mut GraphBuilder,
+        north_m: f64,
+        from_east: f64,
+        to_east: f64,
+        forward_only: bool,
+    ) -> u32 {
+        let (p, q) = (node(b, north_m, from_east), node(b, north_m, to_east));
+        let spec = EdgeSpec::new(p, q)
+            .access(if forward_only {
+                access::CAR_FWD
+            } else {
+                CAR_ANY
+            })
+            .class(HighwayClass::Primary);
+        b.add_edge(spec)
+    }
+
+    #[test]
+    fn twins_need_opposite_parallel_close_one_ways_with_the_same_name() {
+        let mut b = GraphBuilder::new();
+        let eb = lane(&mut b, 0.0, 0.0, 200.0, true); // 東行き
+        let wb = lane(&mut b, 20.0, 200.0, 0.0, true); // 西行き、20m北：双子
+        let same_dir = lane(&mut b, 40.0, 0.0, 200.0, true); // 東行き：同じ向き
+        let other_name = lane(&mut b, -20.0, 200.0, 0.0, true); // 西行きだが別の名前
+        let far = lane(&mut b, 150.0, 200.0, 0.0, true); // 西行き、150m北：遠い
+        let two_way = lane(&mut b, -60.0, 0.0, 200.0, false); // 両方向：対象外
+        let g = b.build();
+        let a = attrs(
+            &g,
+            &[
+                (eb, 1),
+                (wb, 1),
+                (same_dir, 1),
+                (other_name, 3),
+                (far, 1),
+                (two_way, 1),
+            ],
+        );
+        let view = GraphView::new(g.parts());
+        let t = find_twins(&view, &a, &TopologyConfig::default());
+        // eb の最良は wb（20m）、wb の最良は eb。far・same_dir は条件外
+        assert_eq!(
+            t.pairs,
+            vec![TwinPair { a: eb, b: wb }, TwinPair { a: wb, b: eb }]
+        );
+        assert_eq!(t.audit["twin_pairs"], 1);
+    }
+
+    #[test]
+    fn twins_pair_the_best_overlap_only_and_cut_edges_still_match() {
+        let mut b = GraphBuilder::new();
+        // 東行きの長い辺1本に対して、西行きは前半・後半の2辺に分かれている
+        let long = lane(&mut b, 0.0, 0.0, 300.0, true);
+        let half_a = lane(&mut b, 20.0, 150.0, 0.0, true);
+        let half_b = lane(&mut b, 20.0, 300.0, 150.0, true);
+        let g = b.build();
+        let a = attrs(&g, &[(long, 1), (half_a, 1), (half_b, 1)]);
+        let t = find_twins(&GraphView::new(g.parts()), &a, &TopologyConfig::default());
+        // 重なりは短い方に対する割合なので、どちらの半分もlongと同じ重なり。長い辺は1本としか組めない：
+        // 同点なら辺番号の小さい方（half_a）
+        assert_eq!(
+            t.pairs,
+            vec![
+                TwinPair { a: long, b: half_a },
+                TwinPair { a: half_a, b: long }
+            ]
+        );
+    }
+
+    fn sidewalk(b: &mut GraphBuilder, north_m: f64, from_east: f64, to_east: f64) -> u32 {
+        let (p, q) = (node(b, north_m, from_east), node(b, north_m, to_east));
+        b.add_edge(
+            EdgeSpec::new(p, q)
+                .access(access::WALK_FWD | access::WALK_BWD)
+                .class(HighwayClass::Footway)
+                .flags(edge_flags::SIDEWALK),
+        )
+    }
+
+    #[test]
+    fn sidewalk_parent_is_the_close_parallel_carriageway() {
+        let mut b = GraphBuilder::new();
+        let main = lane(&mut b, 0.0, 0.0, 200.0, false);
+        let other = lane(&mut b, 12.0, 0.0, 200.0, false); // 平行だが歩道から遠い道路（8m先に歩道がある）
+        let s_main = sidewalk(&mut b, -4.0, 20.0, 180.0); // mainの4m南
+        let s_far = sidewalk(&mut b, 400.0, 20.0, 180.0); // 道路から遠い（親なし）
+        // 道路と斜めに交わる歩道（方位の差が大きい）
+        let diag = {
+            let (p, q) = (node(&mut b, -5.0, 20.0), node(&mut b, -14.0, 40.0));
+            b.add_edge(
+                EdgeSpec::new(p, q)
+                    .access(access::WALK_FWD | access::WALK_BWD)
+                    .class(HighwayClass::Footway)
+                    .flags(edge_flags::SIDEWALK),
+            )
+        };
+        // 歩道のフラグがない歩行者用の辺は対象外
+        let plain = {
+            let (p, q) = (node(&mut b, -3.0, 20.0), node(&mut b, -3.0, 180.0));
+            b.add_edge(
+                EdgeSpec::new(p, q)
+                    .access(access::WALK_FWD | access::WALK_BWD)
+                    .class(HighwayClass::Footway),
+            )
+        };
+        let g = b.build();
+        let s = find_sidewalk_parents(&GraphView::new(g.parts()), &TopologyConfig::default());
+        let parents: Vec<_> = s.parents.iter().map(|p| (p.sidewalk, p.parent)).collect();
+        // s_main は最寄りの main（4m）。other は12m先でさらに遠い
+        assert_eq!(parents, vec![(s_main, main)]);
+        assert_eq!(s.audit["sidewalk_edges"], 3);
+        assert_eq!(s.audit["sidewalk_edges_without_parent"], 2);
+        let _ = (other, s_far, diag, plain);
+    }
+
+    #[test]
+    fn full_topology_round_trips_and_validates() {
+        let mut b = GraphBuilder::new();
+        let eb = lane(&mut b, 0.0, 0.0, 200.0, true);
+        let wb = lane(&mut b, 20.0, 200.0, 0.0, true);
+        let s = sidewalk(&mut b, -4.0, 20.0, 180.0);
+        let g = b.build();
+        let a = attrs(&g, &[(eb, 1), (wb, 1)]);
+        let t = build_topology(g.parts(), &a, &config()).unwrap();
+        t.validate(&g).unwrap();
+        assert_eq!(t.twin_of(eb), Some(wb));
+        assert_eq!(t.twin_of(wb), Some(eb));
+        assert_eq!(t.sidewalk_parent(s), Some(eb));
+        assert_eq!(t.params["nodes"], g.node_count());
+        assert_eq!(t.params["edges"], g.edge_count());
+    }
 }

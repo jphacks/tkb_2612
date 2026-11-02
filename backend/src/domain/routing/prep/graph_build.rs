@@ -289,8 +289,8 @@ pub fn build_graph(
     let mut node_ll = Vec::with_capacity(node_total);
     let mut node_flag_bytes = Vec::with_capacity(node_total);
     let mut node_osm_id = Vec::with_capacity(node_total);
-    for n in 0..nodes.len() {
-        if node_no[n] == u32::MAX {
+    for (n, &number) in node_no.iter().enumerate() {
+        if number == u32::MAX {
             continue;
         }
         node_ll.push(nodes.coord(n as u32));
@@ -401,7 +401,7 @@ pub fn build_graph(
     }
 
     // --- 6. 監査と節 ---
-    let mut by_class = vec![0u64; HighwayClass::COUNT];
+    let mut by_class = [0u64; HighwayClass::COUNT];
     let (mut car_edges, mut bike_edges, mut walk_edges) = (0u64, 0u64, 0u64);
     let (mut car_oneway, mut bike_oneway) = (0u64, 0u64);
     for edge in &edges {

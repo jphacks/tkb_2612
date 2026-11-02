@@ -67,6 +67,9 @@ pub fn point_segment_distance(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> (f
     ((p.0 - cx).hypot(p.1 - cy), t)
 }
 
+/// 折れ線上の点と、その点での進行方向の単位ベクトル。
+pub type Sample = ((f64, f64), (f64, f64));
+
 /// 局所平面の折れ線。
 #[derive(Debug, Clone)]
 pub struct XyLine {
@@ -103,7 +106,7 @@ impl XyLine {
     }
 
     /// 先頭から `step/2, 3*step/2, ...` の位置（長さ未満）にある点と単位方向。短い線でも1点は返す。
-    pub fn samples(&self, step: f64) -> Vec<((f64, f64), (f64, f64))> {
+    pub fn samples(&self, step: f64) -> Vec<Sample> {
         let mut out = Vec::new();
         if self.points.len() < 2 {
             return out;

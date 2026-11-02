@@ -482,3 +482,83 @@ pub fn osm_to_graph(
         excluded,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unsorted_ways_are_ordered_by_id_and_duplicates_fail() {
+        let way = |id: i64, refs: &[i64], name: &str| (id, refs.to_vec(), name.to_owned());
+        let list = [
+            way(30, &[3, 4, 5], "c"),
+            way(10, &[1, 2], "a"),
+            way(20, &[2, 3], ""),
+        ];
+        let build = |list: &[(i64, Vec<i64>, String)]| {
+            let mut raw = RawWays {
+                id: vec![],
+                meta: vec![],
+                ref_str: vec![],
+                name_str: vec![],
+                ref_ofs: vec![0],
+                refs: vec![],
+                excluded: ExclusionCounts::default(),
+                ways_seen: 0,
+            };
+            for (id, refs, name) in list {
+                raw.id.push(*id);
+                raw.meta.push(WayMeta {
+                    layer: *id as i8,
+                    ..WayMeta::default()
+                });
+                raw.ref_str.push(None);
+                raw.name_str
+                    .push((!name.is_empty()).then(|| name.as_str().into()));
+                raw.refs.extend(refs);
+                raw.ref_ofs.push(raw.refs.len() as u32);
+            }
+            raw
+        };
+        let mut raw = build(&list);
+        raw.sort_by_way_id().unwrap();
+        assert_eq!(raw.id, vec![10, 20, 30]);
+        assert_eq!(raw.refs, vec![1, 2, 2, 3, 3, 4, 5]);
+        assert_eq!(raw.ref_ofs, vec![0, 2, 4, 7]);
+        assert_eq!(
+            raw.meta.iter().map(|m| m.layer).collect::<Vec<_>>(),
+            vec![10, 20, 30]
+        );
+        assert_eq!(raw.name_str[0].as_deref(), Some("a"));
+        assert_eq!(raw.name_str[1], None);
+        assert_eq!(raw.name_str[2].as_deref(), Some("c"));
+        // すでに整っていれば何もしない
+        raw.sort_by_way_id().unwrap();
+        assert_eq!(raw.id, vec![10, 20, 30]);
+        // IDの重複は失敗
+        let mut dup = build(&[
+            way(5, &[1, 2], ""),
+            way(4, &[2, 3], ""),
+            way(5, &[3, 4], ""),
+        ]);
+        assert!(dup.sort_by_way_id().is_err());
+    }
+
+    #[test]
+    fn coordinates_pack_and_unpack() {
+        for (lat, lon) in [
+            (350_000_000, 1_390_000_000),
+            (-1, -1),
+            (0, 0),
+            (459_999_999, 1_539_999_999),
+        ] {
+            let packed = pack_coord(lat, lon);
+            assert_eq!(
+                ((packed >> 32) as u32 as i32, packed as u32 as i32),
+                (lat, lon)
+            );
+        }
+        // 「座標なし」の印と衝突するのは (-1, -1) だけで、日本の範囲には現れない
+        assert_eq!(pack_coord(-1, -1), COORD_MISSING);
+    }
+}
