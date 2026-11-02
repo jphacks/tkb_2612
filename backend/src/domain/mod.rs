@@ -11,6 +11,7 @@ pub mod corridor;
 pub mod engine;
 pub mod navigation;
 pub mod rounding;
+pub mod routing;
 pub mod scoring;
 pub mod snapshot;
 

@@ -23,10 +23,68 @@ pub const METADATA_FILE: &str = "metadata.json";
 pub const HOLIDAYS_FILE: &str = "syukujitsu.csv";
 /// 17列のgzip CSVの形式。
 pub const SCHEMA_VERSION: u64 = 2;
+/// 自前経路探索用の8つの `.bin` を加えた形式（形式書4章）。
+pub const SCHEMA_VERSION_ROUTING: u64 = 3;
 /// gzipの圧縮レベル。
 pub const GZIP_LEVEL: u32 = 3;
 /// metadataの `processor.name`。
 pub const PROCESSOR_NAME: &str = "prepare_release";
+/// schema 3のmetadataの `processor.name`（形式書4.1節）。
+pub const PROCESSOR_NAME_ROUTING: &str = "routing_prep";
+
+pub const GRAPH_FILE: &str = "graph.bin";
+pub const RESTRICTIONS_FILE: &str = "restrictions.bin";
+pub const TOPOLOGY_FILE: &str = "topology.bin";
+pub const ODINDEX_FILE: &str = "odindex.bin";
+pub const ACCIDENT_ATTRS_FILE: &str = "accident_attrs.bin";
+pub const ASSIGNMENT_FILE: &str = "assignment.bin";
+pub const RISK_FILE: &str = "risk.bin";
+pub const ALT_FILE: &str = "alt.bin";
+
+/// schema 3の8つの `.bin`。`release_id` の行の順番（形式書4.2節）であり、順番を変えてはいけない。
+pub const ROUTING_FILES: [&str; 8] = [
+    GRAPH_FILE,
+    RESTRICTIONS_FILE,
+    TOPOLOGY_FILE,
+    ODINDEX_FILE,
+    ACCIDENT_ATTRS_FILE,
+    ASSIGNMENT_FILE,
+    RISK_FILE,
+    ALT_FILE,
+];
+
+/// マジックナンバー（形式書3.1節）。
+pub const GRAPH_MAGIC: [u8; 8] = *b"TKRGRAPH";
+pub const RESTRICTIONS_MAGIC: [u8; 8] = *b"TKRRESTR";
+pub const TOPOLOGY_MAGIC: [u8; 8] = *b"TKRTOPOL";
+pub const ODINDEX_MAGIC: [u8; 8] = *b"TKRODIDX";
+pub const ACCIDENT_ATTRS_MAGIC: [u8; 8] = *b"TKRACATR";
+pub const ASSIGNMENT_MAGIC: [u8; 8] = *b"TKRASSGN";
+pub const RISK_MAGIC: [u8; 8] = *b"TKRRISK_";
+pub const ALT_MAGIC: [u8; 8] = *b"TKRALT__";
+/// 中間生成物 `graph_attrs.bin` のマジックナンバー（形式書16章。releaseには入れない）。
+pub const GRAPH_ATTRS_MAGIC: [u8; 8] = *b"TKRGATTR";
+
+/// 各 `.bin` の `format_version`（このコードが読み書きする版。初版は1）。`ROUTING_FILES` と同じ順。
+pub const ROUTING_FORMAT_VERSIONS: [u32; 8] = [1; 8];
+
+/// `ROUTING_FILES` と同じ順のマジックナンバー。
+pub const ROUTING_MAGICS: [[u8; 8]; 8] = [
+    GRAPH_MAGIC,
+    RESTRICTIONS_MAGIC,
+    TOPOLOGY_MAGIC,
+    ODINDEX_MAGIC,
+    ACCIDENT_ATTRS_MAGIC,
+    ASSIGNMENT_MAGIC,
+    RISK_MAGIC,
+    ALT_MAGIC,
+];
+
+/// ファイル名から、マジックナンバーと `format_version` を引く。
+pub fn routing_file_spec(file: &str) -> Option<([u8; 8], u32)> {
+    let i = ROUTING_FILES.iter().position(|&f| f == file)?;
+    Some((ROUTING_MAGICS[i], ROUTING_FORMAT_VERSIONS[i]))
+}
 
 /// 小文字hexのSHA-256。
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -37,6 +95,49 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 /// `release_id`：`dataset_id` と祝日表のハッシュを `\n` で連結した文字列のSHA-256。
 pub fn release_id(dataset_id: &str, holiday_sha256: &str) -> String {
     sha256_hex(format!("{dataset_id}\n{holiday_sha256}").as_bytes())
+}
+
+/// schema 3の `release_id`（形式書4.2節）。`file_sha256` は8つの `.bin` の（ファイル名、SHA-256）で、
+/// 並びは問わない。ファイルが欠ける、重複する、`ROUTING_FILES` にない名前を含む場合は `None`。
+///
+/// 連結する文字列：`<dataset_id>\n<祝日表のSHA-256>\n` に続けて、`ROUTING_FILES` の順に
+/// `<ファイル名> <SHA-256>` を `\n` で連結する（末尾に改行を付けない）。
+/// 先頭2行は [`release_id`] と同じ連結なので、schema 2の式とは3行目以降だけが違う。
+pub fn try_routing_release_id(
+    dataset_id: &str,
+    holiday_sha256: &str,
+    file_sha256: &[(&str, &str)],
+) -> Option<String> {
+    if file_sha256.len() != ROUTING_FILES.len() {
+        return None;
+    }
+    let mut text = format!("{dataset_id}\n{holiday_sha256}");
+    for file in ROUTING_FILES {
+        let mut found = file_sha256.iter().filter(|(name, _)| *name == file);
+        let (_, hash) = found.next()?;
+        if found.next().is_some() {
+            return None;
+        }
+        text.push('\n');
+        text.push_str(file);
+        text.push(' ');
+        text.push_str(hash);
+    }
+    Some(sha256_hex(text.as_bytes()))
+}
+
+/// [`try_routing_release_id`] の、欠けや重複を許さない版。
+///
+/// # Panics
+/// `file_sha256` が `ROUTING_FILES` の8ファイルをちょうど1つずつ含まないとき。
+/// 読込側は、先に8ファイルが揃っていることを検査してから呼ぶ。
+pub fn routing_release_id(
+    dataset_id: &str,
+    holiday_sha256: &str,
+    file_sha256: &[(&str, &str)],
+) -> String {
+    try_routing_release_id(dataset_id, holiday_sha256, file_sha256)
+        .expect("file_sha256はROUTING_FILESの8ファイルを1つずつ含む")
 }
 
 /// 保持行を順にgzip CSVへ書く。行数・年度・祝日表の収録範囲外の行数も数える。

@@ -5,6 +5,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::NaiveDate;
@@ -12,7 +13,7 @@ use flate2::read::GzDecoder;
 use serde_json::Value;
 
 use crate::contract::geo::{LAT_RANGE, LON_RANGE};
-use crate::contract::{DatasetInfo, DayType, Period, Weather};
+use crate::contract::{DatasetInfo, DayType, Period, RouteEngine, Weather};
 use crate::domain::{AccidentColumns, AccidentSnapshot, HolidayCalendar};
 
 use super::LoadError;
@@ -24,6 +25,30 @@ use super::release::{
 
 fn invalid(message: impl Into<String>) -> LoadError {
     LoadError::Invalid(message.into())
+}
+
+/// metadata.jsonの `schema_version` だけを読む（`load_engine` がエンジンを選ぶために使う）。
+///
+/// JSONでない、または `schema_version` が整数でない場合は `LoadError::Invalid`。
+/// 値の検査（2か3か）は呼び出し側が行う。
+pub fn read_schema_version(release_dir: &Path) -> Result<u64, LoadError> {
+    let bytes = fs::read(release_dir.join(METADATA_FILE))?;
+    let metadata: Value =
+        serde_json::from_slice(&bytes).map_err(|_| invalid("metadata.jsonがJSONではありません"))?;
+    metadata
+        .get("schema_version")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| invalid("schema_versionが整数ではありません"))
+}
+
+/// schema 3のreleaseを読み、形式書4.3節の検証をしてから `RoutingEngine` を作る。
+///
+/// 骨組み：schema 2の検証（`load_snapshot`）に加えて、8つの `.bin` の有無・ハッシュ・
+/// `routing_release_id`・マジックナンバー・`format_version`・節の件数・`DEPS` を確かめ、
+/// `routing_files::decode_*` で型に変換する。
+pub fn load_routing_engine(release_dir: &Path) -> Result<Arc<dyn RouteEngine>, LoadError> {
+    let _ = release_dir;
+    todo!("schema 3の読込（形式書4.3節）")
 }
 
 /// metadata.jsonを読み、schema_versionを確かめる。

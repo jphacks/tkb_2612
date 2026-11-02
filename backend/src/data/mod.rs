@@ -6,12 +6,14 @@
 //! `contract` と `domain` に依存してよい（`domain` は `data` に依存しない）。
 //! `api`・`providers`・`testing` やHTTP/非同期ランタイムには依存しない。
 
+pub mod binfile;
 pub mod csv_syntax;
 pub mod encoding;
 pub mod holidays;
 pub mod load;
 pub mod preprocess;
 pub mod release;
+pub mod routing_files;
 
 use std::fmt;
 use std::path::Path;
@@ -54,9 +56,19 @@ pub fn load_calendar(release_dir: &Path) -> Result<Arc<dyn Calendar>, LoadError>
 
 /// 事故データを全件ロード・検証してエンジンを作る。
 ///
-/// gzipと祝日表の実ファイルから `dataset_id`・`release_id` を再計算してmetadataと照合し、
+/// `metadata.json` の `schema_version` でエンジンを選ぶ（形式書4.3節）。
+/// 2なら `AccidentEngine`、3なら `RoutingEngine`、それ以外は失敗する。
+/// いずれもgzipと祝日表の実ファイルから `dataset_id`・`release_id` を再計算してmetadataと照合し、
 /// 一致しなければ失敗する。
 pub fn load_engine(release_dir: &Path) -> Result<Arc<dyn RouteEngine>, LoadError> {
-    let (snapshot, dataset) = load::load_snapshot(release_dir)?;
-    Ok(Arc::new(AccidentEngine::new(Arc::new(snapshot), dataset)))
+    match load::read_schema_version(release_dir)? {
+        release::SCHEMA_VERSION => {
+            let (snapshot, dataset) = load::load_snapshot(release_dir)?;
+            Ok(Arc::new(AccidentEngine::new(Arc::new(snapshot), dataset)))
+        }
+        release::SCHEMA_VERSION_ROUTING => load::load_routing_engine(release_dir),
+        _ => Err(LoadError::Invalid(
+            "schema_versionが2または3ではありません".to_owned(),
+        )),
+    }
 }
