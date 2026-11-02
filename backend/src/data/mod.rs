@@ -11,6 +11,7 @@ pub mod csv_syntax;
 pub mod encoding;
 pub mod holidays;
 pub mod load;
+pub mod osm;
 pub mod preprocess;
 pub mod release;
 pub mod routing_files;

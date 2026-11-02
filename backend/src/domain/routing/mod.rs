@@ -9,6 +9,7 @@ pub mod accident;
 pub mod engine;
 pub mod graph;
 pub mod legality;
+pub mod prep;
 pub mod risk;
 pub mod search;
 pub mod snap;
