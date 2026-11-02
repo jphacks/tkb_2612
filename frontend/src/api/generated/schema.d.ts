@@ -16,7 +16,7 @@ export interface paths {
         /**
          * 最短時間経路と事故考慮経路を比較する
          * @description 候補1〜6本を返す。最短は所要時間最小で、最短距離ではない。
-         *     直線距離20〜30000m、候補distanceとgeometry長は各80000m以下。
+         *     直線距離20〜30000m、候補distanceは80000m以下（最短時間経路が超えたら422、他の候補は外す）。
          *     リクエストはUTF-8 JSON、1〜16384バイト。大きすぎる場合も400。
          *     Content-Type不正・JSON不正・値不正は外部呼出し前に400。
          *     unknownキーは無視。hour/period整合と距離等の相関制約はbehavior.mdを参照。
@@ -24,9 +24,11 @@ export interface paths {
          *     天候は事故を除外せず、一致事故をweather_matchで別集計し、スコアで重く数える。
          *     全候補で該当事故が0件でも条件を解除しない。その場合safest_idはnull。
          *     navigationはfastest_idとnullでないsafest_idの候補だけに含め、未選定はnull。
-         *     同一選定IDでは1個を共用する。ナビ用生成でOSRM呼出しを追加せず、1検索最大3呼出し・steps=falseを維持する。
-         *     全体期限内の追加候補のみの個別上流通信の失敗は200のwarningsに残す。
+         *     同一選定IDでは1個を共用する。新方式（schema 3）は外部の経路提供元を呼ばない。
+         *     旧方式（schema 2）はナビ用生成でOSRM呼出しを追加せず、1検索最大3呼出し・steps=falseを維持する。
+         *     旧方式では、全体期限内の追加候補のみの個別上流通信の失敗は200のwarningsに残す。
          *     ただし共有上流ゲートの読取失敗・競合未解消と待ち行列満杯は、追加候補の取得中でも要求全体を503 service_busyにする。
+         *     探索の打ち切りや探索範囲の縮小では警告を出さない。
          *     受付からJSON準備・gzip圧縮完了までの全体期限35秒（転送を除く）を超えたら、段階によらず503 service_busy。
          *     候補が取得済みでも全体期限後に200を返さない。
          *     gzipを許可するAccept-Encodingなら応答圧縮必須、Content-Encoding: gzipとVary: Accept-Encodingを返す。
@@ -374,7 +376,7 @@ export interface components {
             };
             properties: {
                 route_id: components["schemas"]["RouteId"];
-                /** @description この最寄り小線分へ割り当てた72m以内の事故の死者×10+負傷者の合計、重み点。距離減衰・天候倍率を含まない。 */
+                /** @description この小線分に置いた集合Bの事故の死者×10+負傷者の合計、重み点。距離減衰・天候倍率・割り当て重みを含まない。新方式では事故件数がしきい値（3件）以上の小線分だけを返す。 */
                 severity_weight: number;
                 /** @description 75m分割後の小線分の0始まりindex。元geometryの頂点indexではない。 */
                 segment_index: number;
@@ -385,7 +387,7 @@ export interface components {
             };
         };
         /**
-         * @description 重み降順、同値はsegment_index昇順の最大100区間、重み3以上。
+         * @description 重み降順、同値はsegment_index昇順の最大100区間、重み3以上（新方式は事故3件以上の小線分。behavior.md 7章）。
          *     切り捨ての有無は候補のhigh_risk_totalとの比較で判定する。
          *     連結しない。全高リスク区間の網羅ではなく表示用の上位集合。空ならfeatures=[]。
          *     GPS接近通知に流用しない。全対象区間は別フィールドnavigation.sectionsで配信する。
@@ -396,7 +398,7 @@ export interface components {
             features: components["schemas"]["HighRiskFeature"][];
         };
         /**
-         * @description 重み3以上の小線分でsidが連続する最大列を結合した区間。元geometryは重複送信しない。
+         * @description 高リスクの小線分（high_risk_totalで数えるもの）でsidが連続する最大列を結合した区間。元geometryは重複送信しない。
          *     元geometryとnavigation.vertex_distances_mから表示位置を補間する。区間の計算・順序はbackendだけで決める。
          */
         NavigationSection: {
@@ -422,7 +424,7 @@ export interface components {
         NavigationData: {
             /** @description 元geometry全頂点の緯度の算術平均φ、度。behavior.md 6章の局所平面投影に使用。 */
             projection_lat_deg: number;
-            /** @description 局所平面での経路全長L、m。OSRM distance・geometry_lengthと異なる。0ならナビ開始不可、候補は保持。 */
+            /** @description 局所平面での経路全長L、m。候補のdistance・geometry_lengthと異なる。0ならナビ開始不可、候補は保持。 */
             length_m: number;
             /** @description 元geometryの各頂点までの累積距離、m。頂点数と同数、先頭0、非減少、末尾length_m。重複頂点を残しf64値を丸めず返す。 */
             vertex_distances_m: number[];
@@ -443,12 +445,12 @@ export interface components {
         };
         RouteCandidate: {
             id: components["schemas"]["RouteId"];
-            /** @description OSRM等の推定所要時間、秒 */
+            /** @description 推定所要時間、秒（新方式は道路グラフの所要時間モデル、旧方式はOSRM） */
             duration: number;
-            /** @description OSRM等の経路距離、メートル */
+            /** @description 経路距離、メートル（新方式は通った辺の長さの和、旧方式はOSRM） */
             distance: number;
             geometry: components["schemas"]["LineString"];
-            /** @description 集合B（72m以内・移動手段・時間帯・曜日区分。天候では絞らない）の事故件数、間引き前 */
+            /** @description 集合B（新方式は経路の辺・交差点に割り当てた事故と72m以内の帰属不明の事故、旧方式は72m以内。移動手段・時間帯・曜日区分で絞り、天候では絞らない）の事故件数、間引き前 */
             accident_count: components["schemas"]["Count"];
             /** @description 死者1人以上の事故件数 */
             fatal_accidents: components["schemas"]["Count"];
@@ -461,8 +463,12 @@ export interface components {
             /** @description 天候指定時は指定天候に一致する事故の集計。天候allならnull。キーは常に返す。 */
             weather_match: components["schemas"]["WeatherMatch"] | null;
             /**
-             * @description Σ exp(-d²/(2·24²)) × 天候倍率 × (10×死者+負傷者)、小数2桁に丸め。重み点。
-             *     天候倍率は指定天候が雨で一致なら2、霧/雪で一致なら4、それ以外1。候補の選定に使用。
+             * @description 経路の推定リスク、小数2桁に丸め。候補の選定に使用。
+             *     新方式：経路の辺と交差点のモデルの値の和（道路種別ごとの平均で補正した期待件数×深刻度。
+             *     自動車は生活道路の係数、雨・霧・雪の指定時は同じ天候の事故の割合に応じた倍率を含む）。
+             *     集合Bが空でも正になり得る。帰属不明の事故は含めない（behavior.md 7章）。
+             *     旧方式：Σ exp(-d²/(2·24²)) × 天候倍率 × (10×死者+負傷者)。
+             *     天候倍率は指定天候が雨で一致なら2、霧/雪で一致なら4、それ以外1。
              */
             weighted_risk: number;
             /** @description 丸めたweighted_risk/max(distance/1000,0.001)、重み点/km、小数3桁に丸め。選定に使わない。 */
@@ -471,7 +477,7 @@ export interface components {
             /** @description accident_points.features.length=min(accident_count,250)。表示点数。 */
             points_shown: number;
             high_risk_sections: components["schemas"]["HighRiskCollection"];
-            /** @description severity_weightが3以上の小線分の総数（100件で切る前）。high_risk_sections.features.length=min(high_risk_total,100)。 */
+            /** @description 高リスクの小線分の総数（100件で切る前）。新方式は事故3件以上、旧方式はseverity_weightが3以上の小線分。high_risk_sections.features.length=min(high_risk_total,100)。 */
             high_risk_total: components["schemas"]["Count"];
             /** @description 必須。idがfastest_idまたはnullでないsafest_idならNavigationData、それ以外はnull。対象0件はsections=[]。 */
             navigation: components["schemas"]["NavigationData"] | null;
@@ -512,7 +518,7 @@ export interface components {
             risk_reduction_percent: number | null;
             /** @description 候補内選定の理由。UIは文字列として表示する。 */
             reason: string;
-            /** @description 追加候補失敗、比較不可、全候補0件等。なしは空配列。 */
+            /** @description 追加候補失敗（旧方式のみ）、比較不可、全候補0件等。探索の打ち切りでは出さない。なしは空配列。 */
             warnings: string[];
             /**
              * @deprecated
@@ -521,19 +527,19 @@ export interface components {
             relaxed_conditions: string[];
             effective_conditions: components["schemas"]["EffectiveConditions"];
             /**
-             * @description 事故集計（集合B）の経路周辺半径、メートル
+             * @description 事故集計（集合B）の経路周辺半径、メートル。新方式では帰属不明の事故を数える範囲
              * @constant
              */
             radius_m: 72;
             /**
-             * @description 距離重みのガウスσ、メートル
+             * @description 距離重みのガウスσ、メートル。旧方式だけが使い、新方式では互換のための固定値
              * @constant
              */
             distance_weight_sigma_m: 24;
-            /** @description 候補取得後の集計・選定・ナビデータ構築時間、ミリ秒、小数2桁。外部通信と転送を除く。 */
+            /** @description 集計・選定・ナビデータ構築時間（新方式は経路探索を含む。旧方式は候補取得後から）、ミリ秒、小数2桁。外部通信と転送を除く。 */
             aggregation_ms: number;
             data_years: components["schemas"]["Years"];
-            /** @description 参考指標であり曝露補正した事故確率ではない旨 */
+            /** @description 推定指標の説明と、曝露補正した事故確率ではない旨。文面はbehavior.md 8章 */
             risk_note: string;
         };
         GeocodeResult: {
@@ -612,7 +618,7 @@ export interface components {
             api_version: "2.0";
             /** @constant */
             status: "ok";
-            /** @description 事故CSVと同梱祝日表を合わせた配信物の識別子。sha256(dataset_id + "\n" + 祝日表のSHA-256)。 */
+            /** @description 配信物の識別子。schema 2はsha256(dataset_id + "\n" + 祝日表のSHA-256)。schema 3は道路グラフ等の追加ファイルのSHA-256も連結する（behavior.md 3章）。 */
             release_id: string;
             dataset_id: components["schemas"]["DatasetId"];
             /** @description modes=0を含むロード行数、件。実運用は空データで起動しない。 */
@@ -695,7 +701,7 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
-        /** @description 422 route_too_long。初回の候補distanceまたはgeometry_lengthが80000m超。 */
+        /** @description 422 route_too_long。最短時間経路のdistanceが80000m超（旧方式は初回の候補distanceまたはgeometry_lengthが80000m超）。 */
         RouteTooLong: {
             headers: {
                 "Cache-Control": components["headers"]["NoStore"];
@@ -715,8 +721,9 @@ export interface components {
             };
         };
         /**
-         * @description 502 no_route（経路なし、route APIのみ）またはexternal_api_error
+         * @description 502 no_route（route APIのみ。出発地・目的地を道路へ吸着できない、または経路なし）またはexternal_api_error
          *     （外部HTTP/通信/timeout/JSON/形状不正/応答12000000バイト超）。上流429も502。
+         *     新方式のrouteは経路提供元を呼ばないのでexternal_api_errorを返さない。
          */
         UpstreamError: {
             headers: {

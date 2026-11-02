@@ -4,3 +4,6 @@ frontend/.env.local
 frontend/.env.*.local
 frontend/coverage/
 *.tsbuildinfo
+
+# Routing work outputs (logs, intermediate files)
+/data/work/
