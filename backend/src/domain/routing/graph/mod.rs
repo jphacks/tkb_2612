@@ -2,6 +2,7 @@
 
 pub mod restrictions;
 pub mod rules;
+pub mod synthetic;
 pub mod time;
 
 use std::fmt;
@@ -9,6 +10,7 @@ use std::fmt;
 use serde_json::Value;
 
 use crate::contract::{LatLon, Mode};
+use crate::domain::routing::NONE;
 
 use self::time::TimeModel;
 
@@ -44,7 +46,24 @@ impl Coord {
             lon_e7: (p.lon * 1e7).round() as i32,
         }
     }
+
+    /// 日本矩形（形式書5章。緯度20〜46度・経度122〜154度、両端を含む）の内側か。
+    pub const fn in_japan(self) -> bool {
+        self.lat_e7 >= LAT_E7_MIN
+            && self.lat_e7 <= LAT_E7_MAX
+            && self.lon_e7 >= LON_E7_MIN
+            && self.lon_e7 <= LON_E7_MAX
+    }
 }
+
+/// 日本矩形（形式書5章）の南端（1e-7度）。
+pub const LAT_E7_MIN: i32 = 200_000_000;
+/// 日本矩形の北端（1e-7度）。
+pub const LAT_E7_MAX: i32 = 460_000_000;
+/// 日本矩形の西端（1e-7度）。
+pub const LON_E7_MIN: i32 = 1_220_000_000;
+/// 日本矩形の東端（1e-7度）。
+pub const LON_E7_MAX: i32 = 1_540_000_000;
 
 /// 有向辺（形式書1章）：`2×辺番号 + 向き`。向き0は辺の始点→終点、1は終点→始点。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -305,6 +324,10 @@ pub enum GraphError {
     Shape(String),
     /// `NODELL` が日本矩形の外。
     Coordinates(String),
+    /// `NODEFLG` の予約ビット（ビット7）が立っている。
+    NodeFlags(String),
+    /// `TIMEMODL` の値が不正（非有限、負、角度の閾値の逆転など。形式書6.6節「8章の形で読める」）。
+    TimeModel(String),
 }
 
 impl fmt::Display for GraphError {
@@ -316,6 +339,8 @@ impl fmt::Display for GraphError {
             GraphError::Edge(m) => ("EDGE", m),
             GraphError::Shape(m) => ("SHAPE", m),
             GraphError::Coordinates(m) => ("NODELL", m),
+            GraphError::NodeFlags(m) => ("NODEFLG", m),
+            GraphError::TimeModel(m) => ("TIMEMODL", m),
         };
         write!(f, "graph.binが不正です（{kind}）: {message}")
     }
@@ -352,14 +377,222 @@ pub struct Graph {
     parts: GraphParts,
 }
 
+/// 節の件数の整合（形式書6.1節）。以降の検査が添字で読めるようにする。
+fn check_counts(parts: &GraphParts) -> Result<(), GraphError> {
+    let n = parts.node_ll.len();
+    let e = parts.edges.len();
+    if n >= NONE as usize {
+        return Err(GraphError::Counts(format!(
+            "ノード数{n}が上限（u32::MAXを「なし」に使うため未満）を超えています"
+        )));
+    }
+    if e >= 1 << 31 {
+        return Err(GraphError::Counts(format!(
+            "辺数{e}が2^31以上です（有向辺番号がu32に収まらない）"
+        )));
+    }
+    let expected = [
+        ("NODEFLG", parts.node_flags.len(), n),
+        ("NODEOFS", parts.node_ofs.len(), n + 1),
+        ("ADJ", parts.adj.len(), 2 * e),
+        ("SHPOFS", parts.shape_ofs.len(), e + 1),
+    ];
+    for (name, actual, want) in expected {
+        if actual != want {
+            return Err(GraphError::Counts(format!(
+                "{name}の件数が{actual}です（{want}のはず。N={n}、E={e}）"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn check_node_offsets(parts: &GraphParts) -> Result<(), GraphError> {
+    let ofs = &parts.node_ofs;
+    if ofs[0] != 0 {
+        return Err(GraphError::NodeOffsets(format!(
+            "NODEOFS[0]が{}です（0のはず）",
+            ofs[0]
+        )));
+    }
+    if let Some(i) = ofs.windows(2).position(|w| w[0] > w[1]) {
+        return Err(GraphError::NodeOffsets(format!(
+            "NODEOFS[{i}]={}がNODEOFS[{}]={}より大きい（非減少でない）",
+            ofs[i],
+            i + 1,
+            ofs[i + 1]
+        )));
+    }
+    let last = ofs[ofs.len() - 1] as usize;
+    if last != parts.adj.len() {
+        return Err(GraphError::NodeOffsets(format!(
+            "NODEOFSの末尾が{last}です（2E={}のはず）",
+            parts.adj.len()
+        )));
+    }
+    Ok(())
+}
+
+fn check_coordinates(parts: &GraphParts) -> Result<(), GraphError> {
+    match parts.node_ll.iter().position(|c| !c.in_japan()) {
+        Some(v) => {
+            let c = parts.node_ll[v];
+            Err(GraphError::Coordinates(format!(
+                "ノード{v}の座標（lat_e7={}、lon_e7={}）が日本矩形の外です",
+                c.lat_e7, c.lon_e7
+            )))
+        }
+        None => Ok(()),
+    }
+}
+
+fn check_node_flags(parts: &GraphParts) -> Result<(), GraphError> {
+    match parts.node_flags.iter().position(|f| f & 0x80 != 0) {
+        Some(v) => Err(GraphError::NodeFlags(format!(
+            "ノード{v}のフラグ{:#04x}で予約ビット（ビット7）が立っています",
+            parts.node_flags[v]
+        ))),
+        None => Ok(()),
+    }
+}
+
+fn check_edges(parts: &GraphParts) -> Result<(), GraphError> {
+    let n = parts.node_ll.len();
+    for (i, e) in parts.edges.iter().enumerate() {
+        if e.tail as usize >= n || e.head as usize >= n {
+            return Err(GraphError::Edge(format!(
+                "辺{i}の端点（tail={}、head={}）がN={n}以上です",
+                e.tail, e.head
+            )));
+        }
+        if e.length_dm < 1 {
+            return Err(GraphError::Edge(format!("辺{i}のlength_dmが0です")));
+        }
+        if e.access == 0 {
+            return Err(GraphError::Edge(format!(
+                "辺{i}のaccessが0です（通れない辺はグラフに入れない）"
+            )));
+        }
+        if e.access & !access::ALL != 0 {
+            return Err(GraphError::Edge(format!(
+                "辺{i}のaccess {:#04x}で予約ビット（ビット6〜7）が立っています",
+                e.access
+            )));
+        }
+        if HighwayClass::from_code(e.class).is_none() {
+            return Err(GraphError::Edge(format!(
+                "辺{i}のclass {}が21を超えています",
+                e.class
+            )));
+        }
+        if e.flags & 0x80 != 0 {
+            return Err(GraphError::Edge(format!(
+                "辺{i}のflags {:#04x}で予約ビット（ビット7）が立っています",
+                e.flags
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// `ADJ`：ノードvの範囲の要素が、vを出発点とする有向辺で、狭義昇順であること。
+/// 範囲の長さの合計が2Eで、各有向辺の出発ノードはただ1つなので、2E個の有向辺がちょうど1回ずつ現れる。
+/// 呼び出す前に `check_node_offsets`・`check_edges` を通っていること。
+fn check_adjacency(parts: &GraphParts) -> Result<(), GraphError> {
+    let e_count = parts.edges.len();
+    for v in 0..parts.node_ll.len() {
+        let range = parts.node_ofs[v] as usize..parts.node_ofs[v + 1] as usize;
+        let mut prev: Option<DirEdge> = None;
+        for pos in range {
+            let d = parts.adj[pos];
+            if d.edge() as usize >= e_count {
+                return Err(GraphError::Adjacency(format!(
+                    "ADJ[{pos}]の辺番号{}がE={e_count}以上です",
+                    d.edge()
+                )));
+            }
+            let record = &parts.edges[d.edge() as usize];
+            let from = if d.is_reverse() {
+                record.head
+            } else {
+                record.tail
+            };
+            if from as usize != v {
+                return Err(GraphError::Adjacency(format!(
+                    "ADJ[{pos}]（有向辺{}）の出発ノード{from}が、属する範囲のノード{v}と違います",
+                    d.0
+                )));
+            }
+            if prev.is_some_and(|p| p >= d) {
+                return Err(GraphError::Adjacency(format!(
+                    "ノード{v}のADJが狭義昇順ではありません（ADJ[{pos}]={}）",
+                    d.0
+                )));
+            }
+            prev = Some(d);
+        }
+    }
+    Ok(())
+}
+
+/// `SHPOFS` が0から始まり非減少で末尾が形状点数であること。形状点の差分を足していった座標が
+/// `i32` に収まること（`edge_polyline` の加算が溢れない）。
+fn check_shape(parts: &GraphParts) -> Result<(), GraphError> {
+    let ofs = &parts.shape_ofs;
+    if ofs[0] != 0 {
+        return Err(GraphError::Shape(format!(
+            "SHPOFS[0]が{}です（0のはず）",
+            ofs[0]
+        )));
+    }
+    if let Some(i) = ofs.windows(2).position(|w| w[0] > w[1]) {
+        return Err(GraphError::Shape(format!(
+            "SHPOFS[{i}]={}がSHPOFS[{}]={}より大きい（非減少でない）",
+            ofs[i],
+            i + 1,
+            ofs[i + 1]
+        )));
+    }
+    let last = ofs[ofs.len() - 1] as usize;
+    if last != parts.shape.len() {
+        return Err(GraphError::Shape(format!(
+            "SHPOFSの末尾が{last}です（形状点数{}のはず）",
+            parts.shape.len()
+        )));
+    }
+    for (e, record) in parts.edges.iter().enumerate() {
+        let points = &parts.shape[ofs[e] as usize..ofs[e + 1] as usize];
+        let start = parts.node_ll[record.tail as usize];
+        let mut lat = Some(start.lat_e7);
+        let mut lon = Some(start.lon_e7);
+        for p in points {
+            lat = lat.and_then(|x| x.checked_add(i32::from(p.dlat_e7)));
+            lon = lon.and_then(|x| x.checked_add(i32::from(p.dlon_e7)));
+        }
+        if lat.is_none() || lon.is_none() {
+            return Err(GraphError::Shape(format!(
+                "辺{e}の形状点の差分を足すと座標がi32を超えます"
+            )));
+        }
+    }
+    Ok(())
+}
+
 impl Graph {
     /// 節から作る。形式書6.6節の検査（`NODEOFS` が非減少で末尾が2E、`ADJ` の各要素の辺番号がE未満で
     /// その出発ノードが範囲のノードと一致、`EDGE` の `tail`・`head` がN未満、`length_dm ≥ 1`、
     /// `access ≠ 0`、`class ≤ 21`、`SHPOFS` が非減少で末尾が形状点数、`NODELL` が日本矩形の内側）を行う。
     /// 小さな合成グラフでもそのまま使える（件数に下限を設けない）。
     pub fn from_parts(parts: GraphParts) -> Result<Graph, GraphError> {
-        let _ = parts;
-        todo!("形式書6.6節の検査")
+        check_counts(&parts)?;
+        check_node_offsets(&parts)?;
+        check_coordinates(&parts)?;
+        check_node_flags(&parts)?;
+        check_edges(&parts)?;
+        check_adjacency(&parts)?;
+        check_shape(&parts)?;
+        parts.time_model.validate().map_err(GraphError::TimeModel)?;
+        Ok(Graph { parts })
     }
 
     /// 節に戻す（`routing_files::encode_graph` が使う）。
@@ -564,5 +797,256 @@ mod tests {
             g.dedge_polyline(bwd),
             line.into_iter().rev().collect::<Vec<_>>()
         );
+    }
+
+    // ---- from_parts（形式書6.6節） ----
+
+    use crate::domain::routing::graph::synthetic::{GraphBuilder, grid};
+
+    /// 2×2の格子：ノード0〜3、辺e0=0-1、e1=0-2、e2=1-3、e3=2-3。各ノードの `ADJ` は2要素。
+    fn base_parts() -> GraphParts {
+        grid(2, 2, 100.0).0.parts()
+    }
+
+    fn rejected(mutate: impl FnOnce(&mut GraphParts)) -> GraphError {
+        let mut parts = base_parts();
+        mutate(&mut parts);
+        Graph::from_parts(parts).expect_err("検査で拒否されるはず")
+    }
+
+    #[test]
+    fn from_parts_accepts_valid_graphs() {
+        let parts = base_parts();
+        let graph = Graph::from_parts(parts.clone()).unwrap();
+        assert_eq!(graph.parts(), &parts);
+        assert_eq!(graph.into_parts(), parts);
+
+        // 空のグラフ、辺のないグラフ
+        assert!(Graph::from_parts(GraphBuilder::new().parts()).is_ok());
+        let mut one = GraphBuilder::new();
+        one.add_node_deg(35.0, 139.0);
+        assert!(Graph::from_parts(one.parts()).is_ok());
+
+        // `tiny()` と同じ内容
+        assert!(Graph::from_parts(tiny().into_parts()).is_ok());
+    }
+
+    #[test]
+    fn from_parts_accepts_the_rectangle_corners_and_loops() {
+        let mut b = GraphBuilder::new();
+        let sw = b.add_node(Coord::new(LAT_E7_MIN, LON_E7_MIN));
+        let ne = b.add_node(Coord::new(LAT_E7_MAX, LON_E7_MAX));
+        b.add_road(sw, ne);
+        b.add_road(ne, ne);
+        let graph = b.try_build().unwrap();
+        // ループの2つの有向辺が同じノードに入る。
+        assert_eq!(graph.out_dedges(ne).len(), 3);
+    }
+
+    #[test]
+    fn from_parts_rejects_count_mismatches() {
+        for mutate in [
+            (|p: &mut GraphParts| {
+                p.node_flags.pop();
+            }) as fn(&mut GraphParts),
+            |p| p.node_ofs.push(8),
+            |p| {
+                p.adj.pop();
+            },
+            |p| {
+                p.shape_ofs.pop();
+            },
+            |p| {
+                p.node_ll.pop();
+            },
+            |p| p.node_ofs.clear(),
+        ] {
+            assert!(matches!(rejected(mutate), GraphError::Counts(_)));
+        }
+    }
+
+    #[test]
+    fn from_parts_rejects_bad_node_offsets() {
+        assert!(matches!(
+            rejected(|p| p.node_ofs[0] = 1),
+            GraphError::NodeOffsets(_)
+        ));
+        // 非減少でない
+        assert!(matches!(
+            rejected(|p| p.node_ofs[2] = 1),
+            GraphError::NodeOffsets(_)
+        ));
+        // 末尾が2Eでない
+        assert!(matches!(
+            rejected(|p| p.node_ofs[4] = 7),
+            GraphError::NodeOffsets(_)
+        ));
+        assert!(matches!(
+            rejected(|p| p.node_ofs[4] = 9),
+            GraphError::NodeOffsets(_)
+        ));
+    }
+
+    #[test]
+    fn from_parts_rejects_bad_adjacency() {
+        // 辺番号がE以上
+        assert!(matches!(
+            rejected(|p| p.adj[0] = DirEdge::new(4, false)),
+            GraphError::Adjacency(_)
+        ));
+        // 出発ノードが範囲のノードと違う（別のノードの有向辺と入れ替える）
+        assert!(matches!(
+            rejected(|p| p.adj.swap(0, 2)),
+            GraphError::Adjacency(_)
+        ));
+        // 昇順でない
+        assert!(matches!(
+            rejected(|p| p.adj.swap(0, 1)),
+            GraphError::Adjacency(_)
+        ));
+        // 重複
+        assert!(matches!(
+            rejected(|p| p.adj[1] = p.adj[0]),
+            GraphError::Adjacency(_)
+        ));
+        // 逆向きの有向辺を出発ノードの範囲に入れ違える
+        assert!(matches!(
+            rejected(|p| p.adj[0] = DirEdge::new(0, true)),
+            GraphError::Adjacency(_)
+        ));
+    }
+
+    #[test]
+    fn from_parts_rejects_bad_edges() {
+        let edge_mutations: [fn(&mut EdgeRecord); 7] = [
+            |e| e.tail = 4,
+            |e| e.head = 99,
+            |e| e.length_dm = 0,
+            |e| e.access = 0,
+            |e| e.access |= 0x40,
+            |e| e.class = 22,
+            |e| e.flags |= 0x80,
+        ];
+        for mutate in edge_mutations {
+            let error = rejected(|p| mutate(&mut p.edges[1]));
+            assert!(matches!(error, GraphError::Edge(_)), "{error}");
+        }
+        // 境界の値は受け付ける。
+        let mut parts = base_parts();
+        parts.edges[0].class = 21;
+        parts.edges[0].length_dm = 1;
+        parts.edges[0].access = access::ALL;
+        parts.edges[0].flags = 0x7f;
+        parts.edges[0].maxspeed_kmh = 255;
+        assert!(Graph::from_parts(parts).is_ok());
+    }
+
+    #[test]
+    fn from_parts_rejects_bad_shapes() {
+        let point = ShapePoint {
+            dlat_e7: 1,
+            dlon_e7: 1,
+        };
+        // SHPOFS[0] が0でない
+        assert!(matches!(
+            rejected(|p| {
+                p.shape = vec![point];
+                p.shape_ofs = vec![1, 1, 1, 1, 1];
+            }),
+            GraphError::Shape(_)
+        ));
+        // 非減少でない
+        assert!(matches!(
+            rejected(|p| {
+                p.shape = vec![point, point];
+                p.shape_ofs = vec![0, 2, 1, 2, 2];
+            }),
+            GraphError::Shape(_)
+        ));
+        // 末尾が形状点数と違う
+        assert!(matches!(
+            rejected(|p| {
+                p.shape = vec![point, point];
+                p.shape_ofs = vec![0, 1, 1, 1, 1];
+            }),
+            GraphError::Shape(_)
+        ));
+        assert!(matches!(
+            rejected(|p| p.shape_ofs = vec![0, 0, 0, 0, 1]),
+            GraphError::Shape(_)
+        ));
+        // 差分を足した座標がi32を超える
+        let far = ShapePoint {
+            dlat_e7: 0,
+            dlon_e7: i16::MAX,
+        };
+        assert!(matches!(
+            rejected(|p| {
+                p.shape = vec![far; 30_000];
+                p.shape_ofs = vec![0, 30_000, 30_000, 30_000, 30_000];
+            }),
+            GraphError::Shape(_)
+        ));
+        // 形状点があっても整合していれば受け付ける。
+        let mut parts = base_parts();
+        parts.shape = vec![point; 3];
+        parts.shape_ofs = vec![0, 1, 1, 3, 3];
+        assert!(Graph::from_parts(parts).is_ok());
+    }
+
+    #[test]
+    fn from_parts_rejects_nodes_outside_japan() {
+        for bad in [
+            Coord::new(LAT_E7_MIN - 1, 1_390_000_000),
+            Coord::new(LAT_E7_MAX + 1, 1_390_000_000),
+            Coord::new(350_000_000, LON_E7_MIN - 1),
+            Coord::new(350_000_000, LON_E7_MAX + 1),
+            Coord::new(0, 0),
+        ] {
+            let error = rejected(|p| p.node_ll[2] = bad);
+            assert!(matches!(error, GraphError::Coordinates(_)), "{error}");
+        }
+    }
+
+    #[test]
+    fn from_parts_rejects_reserved_node_flag_bit_and_bad_time_models() {
+        assert!(matches!(
+            rejected(|p| p.node_flags[0] = 0x80),
+            GraphError::NodeFlags(_)
+        ));
+        assert!(
+            Graph::from_parts({
+                let mut p = base_parts();
+                p.node_flags = vec![0x7f; 4];
+                p
+            })
+            .is_ok()
+        );
+        assert!(matches!(
+            rejected(|p| p.time_model.speed_kmh.car[3] = -1.0),
+            GraphError::TimeModel(_)
+        ));
+        assert!(matches!(
+            rejected(|p| p.time_model.turn.bike.u_turn_min_deg = 10.0),
+            GraphError::TimeModel(_)
+        ));
+    }
+
+    #[test]
+    fn from_parts_error_messages_name_the_section() {
+        let message = rejected(|p| p.edges[0].length_dm = 0).to_string();
+        assert!(
+            message.contains("graph.bin") && message.contains("EDGE"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn coord_in_japan_boundaries() {
+        assert!(Coord::new(LAT_E7_MIN, LON_E7_MIN).in_japan());
+        assert!(Coord::new(LAT_E7_MAX, LON_E7_MAX).in_japan());
+        assert!(!Coord::new(LAT_E7_MIN - 1, LON_E7_MIN).in_japan());
+        assert!(!Coord::new(LAT_E7_MAX, LON_E7_MAX + 1).in_japan());
+        assert!(Coord::new(356_000_000, 1_397_000_000).in_japan());
     }
 }

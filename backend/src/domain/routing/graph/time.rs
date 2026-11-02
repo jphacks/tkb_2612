@@ -434,8 +434,8 @@ mod tests {
 
     // ---- 時間の関数（形式書8章） ----
 
-    use crate::domain::routing::graph::synthetic::{EdgeSpec, GraphBuilder, grid};
     use crate::domain::routing::graph::node_flags;
+    use crate::domain::routing::graph::synthetic::{EdgeSpec, GraphBuilder, grid};
 
     const ALL_CLASSES: usize = HighwayClass::COUNT;
 
