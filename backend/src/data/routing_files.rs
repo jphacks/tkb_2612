@@ -719,12 +719,73 @@ pub fn decode_odindex(bytes: &[u8]) -> Result<Decoded<OdIndex>, LoadError> {
 }
 
 /// `accident_attrs.bin`（形式書12章）。起動時はハッシュの照合だけで、常駐させない。
+///
+/// 節は `DEPS`・`PARAMS`・`ATTR` の順。`PARAMS` は `table.params` をそのまま書く
+/// （件数 `rows` を含むこと。`decode_accident_attrs` が `ATTR` の件数と照合する）。
 pub fn encode_accident_attrs(table: &AccidentAttrTable, deps: &Deps) -> Vec<u8> {
-    todo!("形式書12章")
+    use super::binfile::{BinFileWriter, DEPS_SECTION, PARAMS_SECTION};
+    use super::release::routing_file_spec;
+    use crate::domain::routing::accident::AccidentAttr;
+
+    let (magic, format_version) =
+        routing_file_spec(ACCIDENT_ATTRS_FILE).expect("accident_attrs.binは8ファイルの1つ");
+    let mut writer = BinFileWriter::new(magic, format_version);
+    writer.add_json(
+        DEPS_SECTION,
+        &serde_json::to_value(deps).expect("JSONに書ける値"),
+    );
+    writer.add_json(PARAMS_SECTION, &table.params);
+    let mut records = Vec::with_capacity(table.attrs.len() * AccidentAttr::SIZE);
+    for attr in &table.attrs {
+        records.extend_from_slice(&attr.to_bytes());
+    }
+    writer.add_section(
+        "ATTR",
+        AccidentAttr::SIZE as u32,
+        table.attrs.len() as u64,
+        records,
+    );
+    writer.finish()
 }
 
+/// `accident_attrs.bin` を読む。マジックナンバー・`format_version`・`DEPS` に `accidents.csv.gz` が
+/// あること・`ATTR` の `elem_size`（8）と件数（`PARAMS.rows` と一致）・各レコードの値の範囲と
+/// 列どうしの整合（`AccidentAttr::validate`）を検査する。
 pub fn decode_accident_attrs(bytes: &[u8]) -> Result<Decoded<AccidentAttrTable>, LoadError> {
-    todo!("形式書12章")
+    use super::binfile::{BinFile, PARAMS_SECTION};
+    use super::release::routing_file_spec;
+    use crate::domain::routing::accident::AccidentAttr;
+
+    let invalid = |message: String| LoadError::Invalid(format!("accident_attrs.bin: {message}"));
+    let (magic, format_version) =
+        routing_file_spec(ACCIDENT_ATTRS_FILE).expect("accident_attrs.binは8ファイルの1つ");
+    let file = BinFile::parse(bytes)?;
+    file.expect(magic, format_version)?;
+    let deps = file.deps()?;
+    for key in required_deps(ACCIDENT_ATTRS_FILE) {
+        if !deps.contains_key(*key) {
+            return Err(invalid(format!("DEPSに{key}がない")));
+        }
+    }
+    let params = file.json(PARAMS_SECTION)?;
+    let rows = params
+        .get("rows")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| invalid("PARAMSのrowsが整数でない".to_owned()))?;
+    let section = file.require("ATTR")?;
+    section.expect_elem_size(AccidentAttr::SIZE as u32)?;
+    section.expect_count(rows)?;
+    let mut attrs = Vec::with_capacity(rows as usize);
+    for (id, record) in section.records(AccidentAttr::SIZE as u32)?.enumerate() {
+        let attr = AccidentAttr::from_bytes(record.try_into().expect("elem_sizeは8"));
+        attr.validate()
+            .map_err(|e| invalid(format!("事故{id}: {e}")))?;
+        attrs.push(attr);
+    }
+    Ok(Decoded {
+        value: AccidentAttrTable { params, attrs },
+        deps,
+    })
 }
 
 /// `assignment.bin`（形式書13章）。

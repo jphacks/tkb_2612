@@ -34,9 +34,116 @@ pub struct AccidentAttr {
     pub terrain: u8,
 }
 
+/// 道路形状のコード（2024年のコード表の値）。
+pub const ROAD_SHAPE_CODES: [u8; 12] = [0, 1, 7, 11, 12, 13, 14, 21, 22, 23, 31, 37];
+/// 車道幅員のコード（2024年のコード表の値）。
+pub const CARRIAGEWAY_WIDTH_CODES: [u8; 13] = [0, 1, 2, 3, 4, 5, 6, 11, 14, 15, 17, 18, 19];
+/// 歩車道区分のコード。
+pub const SIDEWALK_DIVISION_CODES: [u8; 4] = [1, 2, 3, 4];
+/// 地形のコード（1：市街地－人口集中、2：市街地－その他、3：非市街地）。
+pub const TERRAIN_CODES: [u8; 3] = [1, 2, 3];
+
 impl AccidentAttr {
     /// `ATTR` 節の `elem_size`。
     pub const SIZE: usize = 8;
+
+    /// すべての属性が欠損・未知のレコード。
+    pub const MISSING: AccidentAttr = AccidentAttr {
+        route_upper: MISSING_U16,
+        route_lower: MISSING_U8,
+        route_class: MISSING_U8,
+        road_shape: MISSING_U8,
+        carriageway_width: MISSING_U8,
+        sidewalk_division: MISSING_U8,
+        terrain: MISSING_U8,
+    };
+
+    /// `ATTR` 節の1要素（形式書12章、リトルエンディアン）。
+    pub fn to_bytes(&self) -> [u8; Self::SIZE] {
+        let upper = self.route_upper.to_le_bytes();
+        [
+            upper[0],
+            upper[1],
+            self.route_lower,
+            self.route_class,
+            self.road_shape,
+            self.carriageway_width,
+            self.sidewalk_division,
+            self.terrain,
+        ]
+    }
+
+    pub fn from_bytes(bytes: [u8; Self::SIZE]) -> Self {
+        Self {
+            route_upper: u16::from_le_bytes([bytes[0], bytes[1]]),
+            route_lower: bytes[2],
+            route_class: bytes[3],
+            road_shape: bytes[4],
+            carriageway_width: bytes[5],
+            sidewalk_division: bytes[6],
+            terrain: bytes[7],
+        }
+    }
+
+    /// 路線の区分。欠損・未知は `None`。
+    pub fn route_class_kind(&self) -> Option<RouteClass> {
+        RouteClass::from_code(self.route_class)
+    }
+
+    /// 「高速・自専道のコードの事故」（`route_class` が5〜7）か。欠損・未知は偽。
+    pub fn is_motorway_code(&self) -> bool {
+        self.route_class_kind()
+            .is_some_and(RouteClass::is_motorway_code)
+    }
+
+    /// 形式書12章の値の範囲と、列どうしの整合を確かめる。読込側（`decode_accident_attrs`）が使う。
+    ///
+    /// - 路線コードの上4桁は0〜9999、下1桁は0〜9。上4桁と下1桁は、両方あるか両方とも欠損・未知。
+    /// - `route_class` は、上4桁から `RouteClass::from_route_upper` で決めた値と一致する。
+    ///   上4桁が表にない（または欠損・未知の）ときは `MISSING_U8`。
+    /// - 道路形状・車道幅員・歩車道区分・地形は、2024年のコード表の値か `MISSING_U8`。
+    pub fn validate(&self) -> Result<(), String> {
+        let upper_missing = self.route_upper == MISSING_U16;
+        if !upper_missing && self.route_upper > 9999 {
+            return Err(format!("路線コードの上4桁{}が範囲外", self.route_upper));
+        }
+        if upper_missing != (self.route_lower == MISSING_U8) {
+            return Err("路線コードの上4桁と下1桁の欠損が一致しない".to_owned());
+        }
+        if !upper_missing && self.route_lower > 9 {
+            return Err(format!("路線コードの下1桁{}が範囲外", self.route_lower));
+        }
+        let expected_class = if upper_missing {
+            MISSING_U8
+        } else {
+            RouteClass::from_route_upper(self.route_upper).map_or(MISSING_U8, RouteClass::code)
+        };
+        if self.route_class != expected_class {
+            return Err(format!(
+                "route_class{}が上4桁{}から決まる値{}と一致しない",
+                self.route_class, self.route_upper, expected_class
+            ));
+        }
+        for (name, value, codes) in [
+            ("道路形状", self.road_shape, &ROAD_SHAPE_CODES[..]),
+            (
+                "車道幅員",
+                self.carriageway_width,
+                &CARRIAGEWAY_WIDTH_CODES[..],
+            ),
+            (
+                "歩車道区分",
+                self.sidewalk_division,
+                &SIDEWALK_DIVISION_CODES[..],
+            ),
+            ("地形", self.terrain, &TERRAIN_CODES[..]),
+        ] {
+            if value != MISSING_U8 && !codes.contains(&value) {
+                return Err(format!("{name}のコード{value}が表にない"));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// `accident_attrs.bin` の中身。
@@ -109,6 +216,27 @@ impl RouteClass {
 
     pub fn from_code(code: u8) -> Option<Self> {
         Self::ALL.get(usize::from(code)).copied()
+    }
+
+    /// 区分に入る路線コードの上4桁の範囲 `(最小, 最大)`（形式書12章の表。両端を含む）。
+    pub const fn upper_range(self) -> (u16, u16) {
+        match self {
+            RouteClass::NationalRoute => (1, 999),
+            RouteClass::MajorPrefecturalRoad => (1000, 1499),
+            RouteClass::MajorMunicipalRoad => (1500, 1999),
+            RouteClass::PrefecturalRoad => (2000, 2999),
+            RouteClass::MunicipalRoad => (3000, 3999),
+            RouteClass::Expressway => (4000, 4999),
+            RouteClass::DesignatedMotorway => (5000, 5499),
+            RouteClass::OtherMotorway => (5500, 5999),
+            RouteClass::RoadTransportActRoad => (6000, 6999),
+            RouteClass::FarmRoad => (7000, 7999),
+            RouteClass::ForestRoad => (8000, 8499),
+            RouteClass::PortRoad => (8500, 8999),
+            RouteClass::PrivateRoad => (9000, 9499),
+            RouteClass::Other => (9500, 9500),
+            RouteClass::GeneralTrafficOther => (9900, 9900),
+        }
     }
 
     /// 路線コードの上4桁から決める（形式書12章の表）。表にない値（0、9501〜9899、9901以上）は `None`。
@@ -400,6 +528,111 @@ mod tests {
             RouteClass::Expressway.is_motorway_code()
                 && !RouteClass::MunicipalRoad.is_motorway_code()
         );
+    }
+
+    #[test]
+    fn route_class_ranges_agree_with_from_route_upper() {
+        let mut next = 1u16;
+        for class in RouteClass::ALL {
+            let (lo, hi) = class.upper_range();
+            assert!(lo <= hi);
+            assert_eq!(RouteClass::from_route_upper(lo), Some(class));
+            assert_eq!(RouteClass::from_route_upper(hi), Some(class));
+            // 区分は昇順に並び、重ならない
+            assert!(lo >= next, "{class:?}");
+            next = hi + 1;
+        }
+        // 範囲に入る値は、その区分に決まる
+        for upper in 0..=9999u16 {
+            let by_range = RouteClass::ALL.into_iter().find(|c| {
+                let (lo, hi) = c.upper_range();
+                (lo..=hi).contains(&upper)
+            });
+            assert_eq!(RouteClass::from_route_upper(upper), by_range, "{upper}");
+        }
+    }
+
+    #[test]
+    fn attr_bytes_round_trip_and_layout() {
+        let attr = AccidentAttr {
+            route_upper: 0x1234,
+            route_lower: 3,
+            route_class: 1,
+            road_shape: 14,
+            carriageway_width: 15,
+            sidewalk_division: 2,
+            terrain: 1,
+        };
+        // 形式書12章：上4桁はリトルエンディアンの u16、続けて下1桁・route_class・道路形状・
+        // 車道幅員・歩車道区分・地形
+        assert_eq!(attr.to_bytes(), [0x34, 0x12, 3, 1, 14, 15, 2, 1]);
+        assert_eq!(AccidentAttr::from_bytes(attr.to_bytes()), attr);
+        assert_eq!(AccidentAttr::MISSING.to_bytes(), [0xFF; 8]);
+        assert_eq!(AccidentAttr::from_bytes([0xFF; 8]), AccidentAttr::MISSING);
+        assert_eq!(AccidentAttr::SIZE, 8);
+    }
+
+    #[test]
+    fn attr_validation() {
+        let ok = AccidentAttr {
+            route_upper: 5000,
+            route_lower: 0,
+            route_class: RouteClass::DesignatedMotorway.code(),
+            road_shape: 14,
+            carriageway_width: 6,
+            sidewalk_division: 4,
+            terrain: 3,
+        };
+        assert_eq!(ok.validate(), Ok(()));
+        assert!(ok.is_motorway_code());
+        assert_eq!(ok.route_class_kind(), Some(RouteClass::DesignatedMotorway));
+        assert_eq!(AccidentAttr::MISSING.validate(), Ok(()));
+        assert!(!AccidentAttr::MISSING.is_motorway_code());
+        // 上4桁が表にない（9501〜9899）ときは route_class が欠損・未知
+        let unknown_class = AccidentAttr {
+            route_upper: 9700,
+            route_class: MISSING_U8,
+            ..ok
+        };
+        assert_eq!(unknown_class.validate(), Ok(()));
+        let bad = [
+            AccidentAttr {
+                route_upper: 10000,
+                ..ok
+            },
+            AccidentAttr {
+                route_lower: 10,
+                ..ok
+            },
+            AccidentAttr {
+                route_lower: MISSING_U8,
+                ..ok
+            },
+            AccidentAttr {
+                route_class: RouteClass::Expressway.code(),
+                ..ok
+            },
+            AccidentAttr {
+                route_class: MISSING_U8,
+                ..ok
+            },
+            AccidentAttr {
+                road_shape: 2,
+                ..ok
+            },
+            AccidentAttr {
+                carriageway_width: 12,
+                ..ok
+            },
+            AccidentAttr {
+                sidewalk_division: 0,
+                ..ok
+            },
+            AccidentAttr { terrain: 4, ..ok },
+        ];
+        for attr in bad {
+            assert!(attr.validate().is_err(), "{attr:?}");
+        }
     }
 
     #[test]

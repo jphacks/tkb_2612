@@ -7,6 +7,7 @@
 //! I/O・CSV構文・途中の復号失敗・必須ファイル欠損・必須列の欠損/重複・コード表不一致・
 //! 全行除外は前処理全体の失敗。一部年度だけで成功扱いにしない。
 
+pub mod attrs;
 pub mod codebook;
 pub mod rows;
 
@@ -19,7 +20,7 @@ use crate::contract::Calendar;
 use crate::domain::HolidayCalendar;
 
 use self::codebook::{CodebookError, CodebookFile, CodebookVerifier};
-use self::rows::{Column, ColumnIndex, ExclusionReason, convert_row};
+use self::rows::{AccidentRecord, Column, ColumnIndex, ExclusionReason, convert_row};
 use super::csv_syntax::ends_inside_quoted_field;
 use super::encoding::decode_text;
 use super::release::{AccidentCsvWriter, ReleaseContent, build_release, sha256_hex};
@@ -109,6 +110,29 @@ impl FileAudit {
     }
 }
 
+/// 保持した行を受け取る側。`scan_file` が、保持判定・除外理由の集計・監査を一か所で行い、
+/// 保持した行ごとに `retained` を呼ぶ。同じ原本から別の列を取り出す処理（`attrs`）も、
+/// 同じ保持判定を通る。
+trait RowSink {
+    /// ヘッダ（正規化前の列名）を受け取る。失敗するとファイル単位の失敗になる。
+    fn begin(&mut self, header: &[String]) -> Result<(), String>;
+    /// 保持した行。`record` は同じ行の原本のフィールド。
+    fn retained(&mut self, accident: &AccidentRecord, record: &csv::StringRecord);
+}
+
+/// 保持行を17列のgzip CSVへ書く。
+struct CsvSink<'a>(&'a mut AccidentCsvWriter);
+
+impl RowSink for CsvSink<'_> {
+    fn begin(&mut self, _header: &[String]) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn retained(&mut self, accident: &AccidentRecord, _record: &csv::StringRecord) {
+        self.0.push(accident);
+    }
+}
+
 /// 1年度のCSVのバイト列を処理し、保持行を `writer` へ書く。
 pub fn process_file(
     file: &str,
@@ -116,6 +140,17 @@ pub fn process_file(
     source_year: u16,
     calendar: &dyn Calendar,
     writer: &mut AccidentCsvWriter,
+) -> Result<FileAudit, PreprocessError> {
+    scan_file(file, bytes, source_year, calendar, &mut CsvSink(writer))
+}
+
+/// 1年度のCSVのバイト列を処理し、保持行を `sink` へ渡す（`process_file` の本体）。
+fn scan_file(
+    file: &str,
+    bytes: &[u8],
+    source_year: u16,
+    calendar: &dyn Calendar,
+    sink: &mut dyn RowSink,
 ) -> Result<FileAudit, PreprocessError> {
     let file_error = |message: String| PreprocessError::File {
         file: file.to_owned(),
@@ -138,6 +173,7 @@ pub fn process_file(
         .map(str::to_owned)
         .collect();
     let columns = ColumnIndex::from_header(&header).map_err(|e| file_error(e.to_string()))?;
+    sink.begin(&header).map_err(file_error)?;
     let mut audit = FileAudit {
         source_year,
         file: file.to_owned(),
@@ -162,7 +198,7 @@ pub fn process_file(
                 if accident.modes == 0 {
                     audit.no_target_mode += 1;
                 }
-                writer.push(&accident);
+                sink.retained(&accident, &record);
             }
             Err(reason) => {
                 audit.excluded_rows += 1;
