@@ -265,6 +265,55 @@ pub fn read_code_sheets(bytes: &[u8]) -> Result<CodeSheets, CodebookError> {
     })
 }
 
+/// シートの、B列に値がある行の（B列, C列）の文字列（前後の空白を除く）。`code_sheet` と違い、
+/// B列が数字だけの行に限らない（路線コードの範囲や、車道幅員の `12,14` のような複数コードを含む）。
+fn raw_sheet_rows(xml: &str, strings: &[String]) -> Result<Vec<(String, String)>, CodebookError> {
+    let doc = roxmltree::Document::parse(xml).map_err(xlsx_error)?;
+    let mut rows = Vec::new();
+    for row in doc.descendants().filter(|n| is_main(n, "row")) {
+        let mut b = None;
+        let mut c = None;
+        for cell in row.children().filter(|n| is_main(n, "c")) {
+            match cell.attribute("r").map(column_of) {
+                Some("B") => b = cell_text(cell, strings),
+                Some("C") => c = cell_text(cell, strings),
+                _ => {}
+            }
+        }
+        if let Some(b) = b.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()) {
+            rows.push((b, c.unwrap_or_default().trim().to_owned()));
+        }
+    }
+    Ok(rows)
+}
+
+/// XLSXから、指定したシートのB列・C列の文字列を行順に取り出す（シート名→行）。
+///
+/// 事故の属性（路線・道路形状・車道幅員・歩車道区分・地形）のコード表の照合に使う。
+/// シートがなければ失敗する。
+pub fn read_sheet_rows(
+    bytes: &[u8],
+    sheet_names: &[&str],
+) -> Result<BTreeMap<String, Vec<(String, String)>>, CodebookError> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(xlsx_error)?;
+    let workbook = read_entry(&mut archive, "xl/workbook.xml")?
+        .ok_or_else(|| xlsx_error("xl/workbook.xmlがありません"))?;
+    let rels = read_entry(&mut archive, "xl/_rels/workbook.xml.rels")?
+        .ok_or_else(|| xlsx_error("workbook.xml.relsがありません"))?;
+    let strings = shared_strings(read_entry(&mut archive, "xl/sharedStrings.xml")?.as_deref())?;
+    let paths = sheet_paths(&workbook, &rels)?;
+    let mut sheets = BTreeMap::new();
+    for &name in sheet_names {
+        let path = paths
+            .get(name)
+            .ok_or_else(|| CodebookError(format!("シート {name} がありません")))?;
+        let xml = read_entry(&mut archive, path)?
+            .ok_or_else(|| CodebookError(format!("シート {name} の本体がありません")))?;
+        sheets.insert(name.to_owned(), raw_sheet_rows(&xml, &strings)?);
+    }
+    Ok(sheets)
+}
+
 /// 照合したコード表のファイル。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodebookFile {
