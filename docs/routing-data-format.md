@@ -465,6 +465,7 @@ P1が、wayのタグから `class`・`access`・`flags`・`maxspeed_kmh` を決�
 | `min_weight`・`max_targets` | 重みの下限0.1、候補の上限3 |
 | `cluster_half_extent_m`・`lane_width_m`・`default_carriageway_m` | 距離の尤度で使う、クラスタの半径と車道の半幅の推定値 |
 | `table_max_distance_m`・`table_prior_weight` | 属性の尤度表の距離の上限と、表の事前の重み |
+| `use_likelihood`・`use_clusters` | 要素を外した比較用の指定。`use_likelihood` が `false` なら属性の尤度表をスコアに使わず距離のガウスだけで配分する（高速・自専道のコードによる候補の絞り込みは残す）。`use_clusters` が `false` なら交差点クラスタを候補にせず、交差点の事故も辺の候補だけで配分する。どちらも既定は `true` で、既定のときはキーを書かない（既定の出力のバイト列を変えないため） |
 | `grid_cell_e7` | 候補を探す格子の大きさ |
 | `distance_kernel`・`candidate_edges`・`motorway_rule`・`intersection_shapes`・`general_traffic_place_shape`・`renormalize_after_cut`・`twin_rule` | 規則の説明（文字列・値） |
 | 尤度表 | 属性ごとの尤度表 |

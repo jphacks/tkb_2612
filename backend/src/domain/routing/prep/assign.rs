@@ -95,6 +95,10 @@ pub struct AssignParams {
     pub grid_cell_e7: i32,
     /// 並列処理の1つの塊の事故数。
     pub chunk: usize,
+    /// 属性の尤度表をスコアに使うか。偽なら距離のガウスだけで配分する。
+    pub use_likelihood: bool,
+    /// 交差点クラスタを候補にするか。偽なら交差点の事故も辺の候補だけで配分する。
+    pub use_clusters: bool,
 }
 
 impl Default for AssignParams {
@@ -111,14 +115,19 @@ impl Default for AssignParams {
             lane_width_m: 3.25,
             grid_cell_e7: 5_000,
             chunk: 2_048,
+            use_likelihood: true,
+            use_clusters: true,
         }
     }
 }
 
 impl AssignParams {
     /// `PARAMS` に書くJSON。
+    ///
+    /// 要素を外した比較のための `use_likelihood`・`use_clusters` は、既定値（真）のときは書かない。
+    /// 書くと既定の出力の `PARAMS` が変わり、`assignment.bin` のバイト列が変わってしまうため。
     pub fn to_json(&self) -> Value {
-        json!({
+        let mut value = json!({
             "rules_version": ASSIGN_RULES_VERSION,
             "sigma0_m": self.sigma0_m,
             "edge_radius_m": self.edge_radius_m,
@@ -139,7 +148,15 @@ impl AssignParams {
             "general_traffic_place_shape": 0,
             "renormalize_after_cut": false,
             "twin_rule": "many-to-many: 候補は双子でつながる辺の連結成分を1組にし、MIRRORは位置に対応する双子1本（端の内側に投影できる近い辺を優先）に写す",
-        })
+        });
+        let object = value.as_object_mut().expect("JSONオブジェクト");
+        if !self.use_likelihood {
+            object.insert("use_likelihood".to_owned(), json!(false));
+        }
+        if !self.use_clusters {
+            object.insert("use_clusters".to_owned(), json!(false));
+        }
+        value
     }
 }
 
@@ -423,6 +440,9 @@ impl<'a> RoadIndex<'a> {
         frame: &LocalFrame,
         scratch: &mut Scratch,
     ) -> Vec<ClusterCand> {
+        if !self.params.use_clusters {
+            return Vec::new();
+        }
         collect_ids(
             &self.node_grid,
             p,
@@ -641,8 +661,12 @@ impl<'a> RoadIndex<'a> {
     ) -> f64 {
         let half = self.half_width_m(cand.edge);
         let sigma2 = self.params.sigma0_m * self.params.sigma0_m + half * half;
-        -(cand.dist_m * cand.dist_m) / (2.0 * sigma2)
-            + self.edge_evidence(cand.edge, attr, tables, frame, xy)
+        let evidence = if self.params.use_likelihood {
+            self.edge_evidence(cand.edge, attr, tables, frame, xy)
+        } else {
+            0.0
+        };
+        -(cand.dist_m * cand.dist_m) / (2.0 * sigma2) + evidence
     }
 
     fn cluster_log_score(&self, cand: &ClusterCand, attr: &AccidentAttr, tables: &Tables) -> f64 {
@@ -650,8 +674,12 @@ impl<'a> RoadIndex<'a> {
         let sigma2 = self.params.sigma0_m * self.params.sigma0_m + h * h;
         let top_class = self.topology.clusters[cand.cluster as usize].top_class;
         let route_class = attr.route_class_kind().map(|c| c.code());
-        -(cand.dist_m * cand.dist_m) / (2.0 * sigma2)
-            + tables.cluster_log_likelihood(top_class, route_class)
+        let evidence = if self.params.use_likelihood {
+            tables.cluster_log_likelihood(top_class, route_class)
+        } else {
+            0.0
+        };
+        -(cand.dist_m * cand.dist_m) / (2.0 * sigma2) + evidence
     }
 
     // --- 候補を集める（尤度表の推定と配分で共通） ---
