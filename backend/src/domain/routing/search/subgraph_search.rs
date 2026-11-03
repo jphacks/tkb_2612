@@ -22,8 +22,9 @@ use crate::contract::{CancelToken, Interrupt};
 use crate::domain::routing::graph::DirEdge;
 use crate::domain::routing::graph::time::{node_penalty_ds, turn_cost_ds};
 
+use super::Path;
+use super::SearchContext;
 use super::ellipse::{NO_DEDGE, SubArc, Subgraph};
-use super::{Path, SearchContext};
 
 /// 出発の状態（番号0）。
 pub(super) const SOURCE_STATE: u32 = 0;

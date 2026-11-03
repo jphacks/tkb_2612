@@ -17,9 +17,10 @@
 
 use crate::contract::{CancelToken, Interrupt};
 
+use super::Path;
+use super::SearchContext;
 use super::ellipse::Subgraph;
 use super::subgraph_search::{Objective, shortest_path};
-use super::{Path, SearchContext};
 
 /// LARACの結果。
 #[derive(Debug, Clone, PartialEq)]
