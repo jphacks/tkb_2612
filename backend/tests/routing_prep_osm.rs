@@ -750,7 +750,11 @@ fn topology_and_odindex_round_trip() {
     assert_eq!(topology.sidewalk_parent(1), None);
     // 吸着：しきい値3ノード。T字路の6ノード（1,5,2,3,4 と、3から先の 7・8 は一方通行）のうち、
     // 両方向に通れる成分の辺は吸着できる。一方通行の 103・104（成分が1ノード）は吸着できない
-    assert!(topology.snappable(0, Mode::Car) && topology.snappable(3, Mode::Car));
+    // （P3は、通過できないノード（車止め）を通り抜けられないものとして成分を求める。辺0（ノード1と車止め5）は、
+    // 車止めの向こうの行き止まり（ノード1）なので吸着できない。辺1（車止め5とノード2）は、もう一方の端点が
+    // 大きな成分に入っているので吸着できる）
+    assert!(!topology.snappable(0, Mode::Car));
+    assert!(topology.snappable(1, Mode::Car) && topology.snappable(3, Mode::Car));
     assert!(!topology.snappable(4, Mode::Car) && !topology.snappable(5, Mode::Car));
     // 歩行者だけの歩道は、2ノードの成分なのでwalkでも吸着できない
     assert!(!topology.snappable(6, Mode::Walk));
@@ -775,6 +779,85 @@ fn topology_and_odindex_round_trip() {
         .cell_key(graph.node_coord(attrs.node_by_osm_id(2).unwrap()))
         .unwrap();
     assert!(index.edges_in_cell(key).contains(&1));
+}
+
+/// 柵・車止め（`barrier=bollard`）のノードの向こうの行き止まりは、carの吸着先にならない（P3の規則）。
+/// 旧い規則（障害物を無視して強連結成分を求める）では、車止めの向こうも大きな成分に入って吸着できてしまい、
+/// 着けない目的地になる。walk・bikeは車止めを通れるので、吸着できる。
+#[test]
+fn topology_excludes_dead_ends_behind_barrier_nodes_for_the_blocked_mode() {
+    let mut p = PbfWriter::default();
+    let at = |y: f64, x: f64| {
+        (
+            LAT0 + (y * f64::from(UNIT)) as i32,
+            LON0 + (x * f64::from(UNIT)) as i32,
+        )
+    };
+    let mut node = |id: i64, y: f64, x: f64, tags: Tags<'_>| {
+        let (lat, lon) = at(y, x);
+        p.node(id, lat, lon, tags);
+    };
+    // 本線：4ノードの環（しきい値3以上）。2〜4は信号を付けて、グラフのノードにする（辺を区切る）
+    let signal = [("highway", "traffic_signals")];
+    node(1, 0.0, 0.0, &[]);
+    node(2, 0.0, 1.0, &signal);
+    node(3, 1.0, 1.0, &signal);
+    node(4, 1.0, 0.0, &signal);
+    // 環のノード1から南へ、車止め（10）を通って行き止まり（12）へ
+    node(10, -0.5, 0.0, &[("barrier", "bollard")]);
+    node(11, -0.8, 0.1, &[]);
+    node(12, -1.0, 0.0, &[]);
+    let r = [("highway", "residential")];
+    p.way(200, &[1, 2, 3, 4, 1], &r);
+    p.way(201, &[1, 10, 11, 12], &r);
+
+    let tmp = tempfile::tempdir().unwrap();
+    let built = build_all(tmp.path(), &p);
+    let graph = decode_graph(&built.bytes("graph.bin")).unwrap().value;
+    let attrs = decode_graph_attrs(&built.bytes("graph_attrs.bin"))
+        .unwrap()
+        .value;
+    let topology = decode_topology(&built.bytes("topology.bin")).unwrap().value;
+    topology.validate(&graph).unwrap();
+    let node_of = |osm: i64| attrs.node_by_osm_id(osm).unwrap();
+    let edge_between = |a: i64, b: i64| {
+        (0..graph.edge_count() as u32)
+            .find(|&e| {
+                let r = graph.edge(e);
+                (r.tail, r.head) == (node_of(a), node_of(b))
+                    || (r.tail, r.head) == (node_of(b), node_of(a))
+            })
+            .unwrap_or_else(|| panic!("ノード{a}と{b}の間の辺がない"))
+    };
+    let gate = edge_between(1, 10); // 環のノードと車止めの間
+    let dead_end = edge_between(10, 12); // 車止めの向こうの行き止まり
+    assert!(graph.node_blocked(node_of(10), Mode::Car));
+    assert!(!graph.node_blocked(node_of(10), Mode::Walk));
+    // car：車止めのノードを端点に持つ辺でも、もう一方が大きな成分なら吸着できる。向こうの行き止まりは吸着できない
+    assert!(topology.snappable(gate, Mode::Car));
+    assert!(!topology.snappable(dead_end, Mode::Car));
+    // bike・walk：車止めを通れるので、成分は環と行き止まりを含む6ノード
+    for mode in [Mode::Bike, Mode::Walk] {
+        assert!(topology.snappable(gate, mode), "{mode:?}");
+        assert!(topology.snappable(dead_end, mode), "{mode:?}");
+    }
+    // PARAMS：規則と、障害物を見ない旧い規則との差
+    let params = &topology.params;
+    assert!(
+        params["config"]["snap_barrier_rule"]
+            .as_str()
+            .unwrap()
+            .starts_with("scc-without-barrier-nodes")
+    );
+    let car = &params["snap"]["car"];
+    assert_eq!(
+        car["edges_snappable_if_barriers_ignored"].as_u64().unwrap(),
+        car["edges_snappable"].as_u64().unwrap() + 1
+    );
+    assert_eq!(
+        params["snap"]["walk"]["edges_snappable_if_barriers_ignored"],
+        params["snap"]["walk"]["edges_snappable"]
+    );
 }
 
 #[test]

@@ -4,8 +4,16 @@
 //!
 //! # 判定の規則（形式書10章が「P3で決める」とした部分）
 //!
-//! - 吸着可能な辺：手段ごとの有向グラフ（`access` のビットの向き。ノードの通過不可は無視する）の
-//!   強連結成分のうち、ノード数が `scc_min_nodes`（200）以上のものに、辺の両端が入る辺。
+//! - 吸着可能な辺：手段ごとの有向グラフ（`access` のビットの向き）の強連結成分のうち、ノード数が
+//!   `scc_min_nodes`（200）以上のものに、辺の両端が入る辺。ただし、その手段で通過できないノード
+//!   （`NODEFLG` の障害物。柵・ゲートなど）は通り抜けられないものとして強連結成分を求める（障害物の
+//!   ノードは、どの成分にもつなげず、単独の成分として数える）。障害物のノードを端点に持つ辺は、障害物は
+//!   出発・到着の辺の端点としては使えるので、次の条件を満たせば吸着可能にする（形式書10章の「両端が
+//!   強連結成分に入る」を補った規則。`topology.bin` の `PARAMS.config.snap_barrier_rule` に記録する）。
+//!   - もう一方の端点が、しきい値以上の成分に入っている。両端が障害物の辺は吸着不可。
+//!   - 辺が両方向に通れる。出発の辺は、障害物のノードの側へは進めず、到着の辺は、障害物のノードの側から
+//!     入れないので、一方通行の辺は、障害物の側から出るだけか、障害物へ入るだけになり、出発か到着の
+//!     どちらかに使えない（探索が到達できずに全体を調べ尽くすのを避ける）。
 //! - 交差点クラスタ：carで通れる辺の次数（接する辺の数。ループは2）が3以上のノードを交差点ノードとし、
 //!   長さが `cluster_edge_max_dm`（20m）以下のcarの辺でつながる交差点ノードを1つにまとめる。
 //!   横断歩道のノード（`NODEFLG` のビット1、または `CROSSING` の辺の端点）で、carの辺をたどって
@@ -94,9 +102,14 @@ impl TopologyConfig {
             "sidewalk_max_angle_deg": self.sidewalk_max_angle_deg,
             "sidewalk_min_match": self.sidewalk_min_match,
             "sidewalk_sample_step_m": self.sidewalk_sample_step_m,
+            "snap_barrier_rule": SNAP_BARRIER_RULE,
         })
     }
 }
+
+/// `PARAMS.config.snap_barrier_rule` に書く、吸着可能な辺の判定への補足（モジュールの説明を参照）。
+pub const SNAP_BARRIER_RULE: &str = "scc-without-barrier-nodes; edge touching a barrier node is snappable \
+     if the other endpoint is in a large component and the edge is passable in both directions";
 
 const CAR_ANY: u8 = access::CAR_FWD | access::CAR_BWD;
 
@@ -104,9 +117,21 @@ const CAR_ANY: u8 = access::CAR_FWD | access::CAR_BWD;
 // 吸着可能な辺（強連結成分）
 // ---------------------------------------------------------------------------
 
+/// その手段で通過できないノード（`NODEFLG` の障害物）か。
+fn blocked(view: &GraphView<'_>, v: NodeId, mode: Mode) -> bool {
+    view.node_flags(v) & node_flags::block_bit(mode) != 0
+}
+
 /// 手段ごとの有向グラフの強連結成分を求め、ノードごとに「属する成分のノード数」を返す。
-/// 反復版のTarjan法。ノードの通過不可（`NODEFLG`）は無視する。
+/// 反復版のTarjan法。その手段で通過できないノード（`NODEFLG` の障害物）は通り抜けられないものとして、
+/// どの成分にもつなげず、単独の成分（ノード数1）にする。
 pub fn component_sizes(view: &GraphView<'_>, mode: Mode) -> Vec<u32> {
+    component_sizes_with(view, mode, false)
+}
+
+/// [`component_sizes`] の本体。`through_barriers` が真なら、障害物のノードも通り抜けられるものとして
+/// 求める（障害物を見ない旧い規則。監査で、障害物の規則の効果を数えるために使う）。
+pub fn component_sizes_with(view: &GraphView<'_>, mode: Mode, through_barriers: bool) -> Vec<u32> {
     const UNVISITED: u32 = u32::MAX;
     let n = view.node_count();
     let ofs = &view.parts.node_ofs;
@@ -120,6 +145,9 @@ pub fn component_sizes(view: &GraphView<'_>, mode: Mode) -> Vec<u32> {
 
     for root in 0..n as u32 {
         if index[root as usize] != UNVISITED {
+            continue;
+        }
+        if !through_barriers && blocked(view, root, mode) {
             continue;
         }
         index[root as usize] = counter;
@@ -136,6 +164,9 @@ pub fn component_sizes(view: &GraphView<'_>, mode: Mode) -> Vec<u32> {
                     continue;
                 }
                 let w = view.dedge_to(d);
+                if !through_barriers && blocked(view, w, mode) {
+                    continue;
+                }
                 if index[w as usize] == UNVISITED {
                     index[w as usize] = counter;
                     low[w as usize] = counter;
@@ -167,7 +198,10 @@ pub fn component_sizes(view: &GraphView<'_>, mode: Mode) -> Vec<u32> {
             }
         }
     }
-    comp.iter().map(|&c| sizes[c as usize]).collect()
+    // 障害物のノードは訪れていないので、単独の成分（ノード数1）にする
+    comp.iter()
+        .map(|&c| if c == UNVISITED { 1 } else { sizes[c as usize] })
+        .collect()
 }
 
 struct SnapResult {
@@ -175,20 +209,58 @@ struct SnapResult {
     audit: Value,
 }
 
+/// 辺 `e` が吸着可能か（モジュールの説明の規則）。`sizes` は障害物を通り抜けられないとして求めた成分の大きさ。
+fn edge_snappable(
+    view: &GraphView<'_>,
+    sizes: &[u32],
+    e: EdgeId,
+    mode: Mode,
+    min_nodes: u32,
+) -> bool {
+    let record = view.edge(e);
+    let large = |v: NodeId| sizes[v as usize] >= min_nodes;
+    match (
+        blocked(view, record.tail, mode),
+        blocked(view, record.head, mode),
+    ) {
+        (false, false) => large(record.tail) && large(record.head),
+        (true, true) => false,
+        (blocked_tail, _) => {
+            let other = if blocked_tail {
+                record.head
+            } else {
+                record.tail
+            };
+            large(other) && record.access & access::both(mode) == access::both(mode)
+        }
+    }
+}
+
 fn snap_bits(view: &GraphView<'_>, mode: Mode, min_nodes: u32) -> SnapResult {
     let sizes = component_sizes(view, mode);
+    // 障害物を見ない旧い規則での吸着可能な辺の数（監査用。効果の大きさを記録する）
+    let sizes_through = component_sizes_with(view, mode, true);
     let edges = view.edge_count();
     let mut bits = vec![0u64; edges.div_ceil(64)];
-    let (mut passable, mut snappable) = (0u64, 0u64);
+    let (mut passable, mut snappable, mut snappable_through) = (0u64, 0u64, 0u64);
+    let (mut touching_barrier, mut snappable_touching_barrier) = (0u64, 0u64);
     for e in 0..edges {
         if !view.edge_has_mode(e as u32, mode) {
             continue;
         }
         passable += 1;
         let record = view.edge(e as u32);
-        if sizes[record.tail as usize] >= min_nodes && sizes[record.head as usize] >= min_nodes {
+        if sizes_through[record.tail as usize] >= min_nodes
+            && sizes_through[record.head as usize] >= min_nodes
+        {
+            snappable_through += 1;
+        }
+        let touches = blocked(view, record.tail, mode) || blocked(view, record.head, mode);
+        touching_barrier += u64::from(touches);
+        if edge_snappable(view, &sizes, e as u32, mode, min_nodes) {
             bits[e / 64] |= 1 << (e % 64);
             snappable += 1;
+            snappable_touching_barrier += u64::from(touches);
         }
     }
     let nodes_in_large = sizes.iter().filter(|&&s| s >= min_nodes).count();
@@ -207,6 +279,10 @@ fn snap_bits(view: &GraphView<'_>, mode: Mode, min_nodes: u32) -> SnapResult {
     let audit = json!({
         "edges_passable": passable,
         "edges_snappable": snappable,
+        // 障害物を見ない旧い規則（両端が成分に入る）で数えた吸着可能な辺。差が、障害物の規則で外れた辺
+        "edges_snappable_if_barriers_ignored": snappable_through,
+        "edges_touching_barrier_nodes": touching_barrier,
+        "edges_snappable_touching_barrier_nodes": snappable_touching_barrier,
         // 小数6桁に丸める（JSONの浮動小数の往復で最後の桁がずれないように）
         "snappable_ratio": if passable == 0 { 0.0 } else { (snappable as f64 / passable as f64 * 1e6).round() / 1e6 },
         "nodes_in_large_components": nodes_in_large,
@@ -880,6 +956,142 @@ mod tests {
         // walkは歩行者だけの辺（ring[1]-ring[2]）しか通れない。2ノードの成分なので、しきい値2なら吸着できる
         let walk = snap_bits(&view, Mode::Walk, 2);
         assert!(bit(&walk.bits, walk_only));
+    }
+
+    /// 障害物（通過できないノード）の向こう側の小さな領域は、吸着先にならない。
+    /// 障害物を無視すると、全体が1つの成分になって吸着可能に見える。
+    #[test]
+    fn pockets_behind_barrier_nodes_are_not_snappable() {
+        let mut b = GraphBuilder::new();
+        // 本線の環：6ノード（しきい値5以上）
+        let main: Vec<u32> = (0..6)
+            .map(|i| node(&mut b, 0.0, f64::from(i) * 30.0))
+            .collect();
+        let main_edges: Vec<u32> = (0..6)
+            .map(|i| road(&mut b, main[i], main[(i + 1) % 6]))
+            .collect();
+        // 本線の環のノードから、障害物のノード bn（carは通過できない）を経て、4ノードの環（ポケット）へ
+        let bn = node(&mut b, 100.0, 0.0);
+        let gate = road(&mut b, main[0], bn);
+        let pocket: Vec<u32> = (0..4)
+            .map(|i| node(&mut b, 200.0, f64::from(i) * 30.0))
+            .collect();
+        let entry = road(&mut b, bn, pocket[0]);
+        let pocket_edges: Vec<u32> = (0..4)
+            .map(|i| road(&mut b, pocket[i], pocket[(i + 1) % 4]))
+            .collect();
+        b.add_node_flags(bn, node_flags::block_bit(Mode::Car));
+        let g = b.build();
+        let view = GraphView::new(g.parts());
+
+        // 障害物を通り抜けられるとすると、全体（6+1+4ノード）が1つの成分
+        assert!(
+            component_sizes_with(&view, Mode::Car, true)
+                .iter()
+                .all(|&s| s == 11)
+        );
+        // 通り抜けられないとすると、本線・障害物・ポケットに分かれる
+        let sizes = component_sizes(&view, Mode::Car);
+        assert_eq!(sizes[main[3] as usize], 6);
+        assert_eq!(sizes[bn as usize], 1);
+        assert_eq!(sizes[pocket[2] as usize], 4);
+
+        let car = snap_bits(&view, Mode::Car, 5);
+        for &e in &main_edges {
+            assert!(bit(&car.bits, e), "本線の辺 {e}");
+        }
+        // 障害物のノードを端点に持つ辺：もう一方が大きい成分で、両方向に通れるので吸着可能
+        assert!(bit(&car.bits, gate));
+        // 障害物の向こうの辺は、吸着不可（ポケットが小さい）
+        assert!(!bit(&car.bits, entry));
+        for &e in &pocket_edges {
+            assert!(!bit(&car.bits, e), "ポケットの辺 {e}");
+        }
+        assert_eq!(car.audit["edges_passable"], 12);
+        assert_eq!(car.audit["edges_snappable"], 7);
+        assert_eq!(car.audit["edges_snappable_if_barriers_ignored"], 12);
+        assert_eq!(car.audit["edges_touching_barrier_nodes"], 2);
+        assert_eq!(car.audit["edges_snappable_touching_barrier_nodes"], 1);
+    }
+
+    /// 障害物は手段ごと：carが通過できないノードでも、walk・bikeは通り抜けられる。
+    #[test]
+    fn barrier_nodes_only_affect_the_blocked_mode() {
+        let mut b = GraphBuilder::new();
+        let main: Vec<u32> = (0..6)
+            .map(|i| node(&mut b, 0.0, f64::from(i) * 30.0))
+            .collect();
+        for i in 0..6 {
+            b.add_edge(EdgeSpec::new(main[i], main[(i + 1) % 6]));
+        }
+        let bn = node(&mut b, 100.0, 0.0);
+        b.add_edge(EdgeSpec::new(main[0], bn));
+        let pocket: Vec<u32> = (0..4)
+            .map(|i| node(&mut b, 200.0, f64::from(i) * 30.0))
+            .collect();
+        let entry = b.add_edge(EdgeSpec::new(bn, pocket[0]));
+        for i in 0..4 {
+            b.add_edge(EdgeSpec::new(pocket[i], pocket[(i + 1) % 4]));
+        }
+        b.add_node_flags(bn, node_flags::block_bit(Mode::Car));
+        let g = b.build();
+        let view = GraphView::new(g.parts());
+        assert!(!bit(&snap_bits(&view, Mode::Car, 5).bits, entry));
+        for mode in [Mode::Bike, Mode::Walk] {
+            let r = snap_bits(&view, mode, 5);
+            assert!(bit(&r.bits, entry), "{mode:?}");
+            assert_eq!(r.audit["edges_snappable"], 12, "{mode:?}");
+            assert_eq!(r.audit["edges_touching_barrier_nodes"], 0, "{mode:?}");
+        }
+    }
+
+    /// 両端が障害物の辺と、障害物のノードの側からしか出られない・障害物のノードへしか入れない一方通行の辺は、
+    /// 吸着不可（出発か到着のどちらかに使えず、探索が到達できない）。
+    #[test]
+    fn edges_between_barriers_and_one_way_edges_next_to_a_barrier_are_not_snappable() {
+        let mut b = GraphBuilder::new();
+        let ring: Vec<u32> = (0..4)
+            .map(|i| node(&mut b, 0.0, f64::from(i) * 30.0))
+            .collect();
+        for i in 0..4 {
+            road(&mut b, ring[i], ring[(i + 1) % 4]);
+        }
+        let block = |b: &mut GraphBuilder, north: f64, east: f64| {
+            let v = node(b, north, east);
+            b.add_node_flags(v, node_flags::block_bit(Mode::Car));
+            v
+        };
+        let (g1, g2) = (block(&mut b, 100.0, 0.0), block(&mut b, 100.0, 30.0));
+        let two_way = road(&mut b, ring[0], g1);
+        let between = road(&mut b, g1, g2);
+        let into_barrier = b.add_edge(EdgeSpec::new(ring[1], g2).access(access::CAR_FWD));
+        let g3 = block(&mut b, -100.0, 0.0);
+        let out_of_barrier = b.add_edge(EdgeSpec::new(g3, ring[2]).access(access::CAR_FWD));
+        let g = b.build();
+        let view = GraphView::new(g.parts());
+        let car = snap_bits(&view, Mode::Car, 3);
+        assert!(bit(&car.bits, two_way));
+        assert!(!bit(&car.bits, between));
+        assert!(!bit(&car.bits, into_barrier));
+        assert!(!bit(&car.bits, out_of_barrier));
+    }
+
+    #[test]
+    fn params_record_the_barrier_rule() {
+        let mut b = GraphBuilder::new();
+        let n: Vec<u32> = (0..3)
+            .map(|i| node(&mut b, 0.0, f64::from(i) * 30.0))
+            .collect();
+        road(&mut b, n[0], n[1]);
+        road(&mut b, n[1], n[2]);
+        road(&mut b, n[2], n[0]);
+        let g = b.build();
+        let t = build_topology(g.parts(), &attrs(&g, &[]), &config()).unwrap();
+        assert_eq!(t.params["config"]["snap_barrier_rule"], SNAP_BARRIER_RULE);
+        let car = &t.params["snap"]["car"];
+        assert_eq!(car["edges_snappable"], 3);
+        assert_eq!(car["edges_snappable_if_barriers_ignored"], 3);
+        assert_eq!(car["edges_touching_barrier_nodes"], 0);
     }
 
     #[test]
