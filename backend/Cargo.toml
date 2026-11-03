@@ -25,6 +25,8 @@ http-body = "1"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["http1", "server", "server-graceful", "service", "tokio"] }
+osmpbf = "0.3"
+rayon = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 roxmltree = "0.21"
 serde = { version = "1", features = ["derive"] }

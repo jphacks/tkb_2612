@@ -8,12 +8,14 @@
 pub mod alt;
 pub mod candidates;
 pub mod ellipse;
+pub mod endpoints;
 pub mod fastest;
 pub mod larac;
 pub mod pipeline;
 pub mod rcsp;
 pub mod reduced;
 pub mod subgraph_search;
+pub mod turn_dijkstra;
 
 use crate::contract::Mode;
 use crate::domain::routing::RISK_SCALE;
