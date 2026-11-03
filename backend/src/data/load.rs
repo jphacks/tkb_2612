@@ -553,8 +553,14 @@ fn read_holidays(
 }
 
 /// 祝日表だけを読む（`load_calendar`）。事故データの全件ロードを待たない。
+///
+/// schema 2と3のどちらでも、祝日表の置き方とmetadataの `holiday_table` は同じ（形式書4章）。
 pub fn load_holiday_calendar(release_dir: &Path) -> Result<HolidayCalendar, LoadError> {
-    let metadata = read_metadata(release_dir)?;
+    let metadata = read_metadata_value(release_dir)?;
+    let schema = metadata.get("schema_version").and_then(Value::as_u64);
+    if schema != Some(SCHEMA_VERSION) && schema != Some(SCHEMA_VERSION_ROUTING) {
+        return Err(invalid("schema_versionが2または3ではありません"));
+    }
     read_holidays(release_dir, &metadata).map(|(calendar, _)| calendar)
 }
 

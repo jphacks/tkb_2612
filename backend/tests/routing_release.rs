@@ -233,6 +233,15 @@ fn load_engine_rejects_other_schema_versions() {
     ));
 }
 
+#[test]
+fn load_calendar_reads_the_holidays_of_a_schema_3_release() {
+    // 起動時は祝日表を先に読むので、schema 3のreleaseでも load_calendar が通る必要がある。
+    use accident_route_backend::testing::TestRelease;
+
+    let (release, _) = TestRelease::routing();
+    data::load_calendar(release.path()).expect("schema 3の人工releaseの祝日表を読める");
+}
+
 #[tokio::test]
 async fn load_engine_routes_schema_3_to_the_routing_loader() {
     // M0.6の人工release：schema 3を実際に読み、候補が空の検索から応答まで通す。
