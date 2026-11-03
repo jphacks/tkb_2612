@@ -3,7 +3,9 @@ use super::*;
 use crate::domain::routing::graph::synthetic::{RandomGraphConfig, random_graph};
 use crate::domain::routing::graph::{Graph, HighwayClass, edge_flags};
 use crate::domain::routing::prep::assign_audit::verify_assignment;
-use crate::domain::routing::prep::assign_tables::{TableCounts, Tables};
+use crate::domain::routing::prep::assign_tables::{
+    REF_MATCH, REF_MISMATCH, TableCounts, Tables, ref_group,
+};
 use crate::domain::routing::prep::attrs::GraphAttrs;
 use crate::domain::routing::prep::geom::distance_m;
 use crate::domain::routing::prep::topo::{TopologyConfig, build_topology};
@@ -971,6 +973,141 @@ fn snap_accidents_rejects_mismatched_inputs() {
         accident_attrs: &accident_attrs,
     };
     assert!(snap_accidents(&bad, &AssignParams::default(), &|_| {}).is_err());
+}
+
+#[test]
+fn likelihood_false_gives_the_same_weight_at_the_same_distance() {
+    // 同じ種別の道路が12m離れて並ぶ。事故は真ん中（どちらからも6m）。refだけが違う
+    let w = world(
+        &[(0.0, 0.0), (0.0, 200.0), (12.0, 0.0), (12.0, 200.0)],
+        &[
+            Spec::new(0, 1, RES).with_ref("16"),
+            Spec::new(2, 3, RES).with_ref("17"),
+        ],
+        &[],
+        &[],
+    );
+    let mut counts = TableCounts::default();
+    counts.route_by_kind[RES.code() as usize][0] = 900;
+    counts.route_by_kind[RES.code() as usize][4] = 900;
+    counts.ref_states[0][ref_group(RES.code())][REF_MATCH] = 900;
+    counts.ref_states[0][ref_group(RES.code())][REF_MISMATCH] = 10;
+    let tables = Tables::from_counts(counts, 10.0);
+    let weight_of = |out: &Outcome, edge: u32| {
+        out.targets
+            .iter()
+            .find(|t| t.kind == 0 && t.target == edge)
+            .map_or(0.0, |t| t.weight)
+    };
+    let at = at_m(6.0, 100.0);
+    // 既定では、国道16号の事故はrefの一致する辺0に寄る
+    let with_likelihood = RoadIndex::build(
+        w.graph.parts(),
+        &w.attrs,
+        &w.topology,
+        AssignParams::default(),
+    );
+    let out =
+        with_likelihood.assign_one(&tables, at, &attr(16, 14), &mut Scratch::default(), false);
+    assert!(weight_of(&out, 0) > 0.8, "{:?}", weights(&out));
+    // 尤度表を使わなければ、属性が違っても距離が同じなので同じ重み（0.5ずつ）
+    let without_likelihood = RoadIndex::build(
+        w.graph.parts(),
+        &w.attrs,
+        &w.topology,
+        AssignParams {
+            use_likelihood: false,
+            ..AssignParams::default()
+        },
+    );
+    for a in [attr(16, 14), attr(3000, 14), AccidentAttr::MISSING] {
+        let out = without_likelihood.assign_one(&tables, at, &a, &mut Scratch::default(), false);
+        assert_eq!(out.targets.len(), 2, "{:?}", weights(&out));
+        // 座標は1e-7度に丸めるので、距離には1cmほどの差が残る
+        assert!(
+            (weight_of(&out, 0) - 0.5).abs() < 1e-2,
+            "{:?}",
+            weights(&out)
+        );
+        assert!(
+            (weight_of(&out, 1) - 0.5).abs() < 1e-2,
+            "{:?}",
+            weights(&out)
+        );
+    }
+}
+
+#[test]
+fn clusters_false_assigns_intersection_accidents_only_to_edges() {
+    // 十字路。ハブ（ノード0）をクラスタにする
+    let w = world(
+        &[
+            (0.0, 0.0),
+            (100.0, 0.0),
+            (-100.0, 0.0),
+            (0.0, 100.0),
+            (0.0, -100.0),
+        ],
+        &[
+            Spec::new(0, 1, RES),
+            Spec::new(0, 2, RES),
+            Spec::new(0, 3, RES),
+            Spec::new(0, 4, RES),
+        ],
+        &[&[0]],
+        &[],
+    );
+    let index = RoadIndex::build(
+        w.graph.parts(),
+        &w.attrs,
+        &w.topology,
+        AssignParams {
+            use_clusters: false,
+            ..AssignParams::default()
+        },
+    );
+    assert!(
+        index
+            .cluster_candidates(
+                at_m(3.0, 4.0),
+                &LocalFrame::new(at_m(3.0, 4.0)),
+                &mut Scratch::default()
+            )
+            .is_empty()
+    );
+    let out = index.assign_one(
+        &Tables::neutral(),
+        at_m(3.0, 4.0),
+        &attr(3000, 1),
+        &mut Scratch::default(),
+        true,
+    );
+    assert!(!out.targets.is_empty(), "{:?}", weights(&out));
+    assert!(
+        out.targets.iter().all(|t| t.kind == 0),
+        "{:?}",
+        weights(&out)
+    );
+    let detail = out.detail.as_ref().unwrap();
+    assert!(detail.clusters.is_empty());
+    // 既定では同じ事故がクラスタに載る
+    let out = assign(&w, at_m(3.0, 4.0), &attr(3000, 1));
+    assert_eq!(out.targets[0].kind, 1);
+}
+
+#[test]
+fn params_json_omits_the_comparison_switches_at_default_and_records_false() {
+    let json = AssignParams::default().to_json();
+    assert!(json.get("use_likelihood").is_none());
+    assert!(json.get("use_clusters").is_none());
+    let json = AssignParams {
+        use_likelihood: false,
+        use_clusters: false,
+        ..AssignParams::default()
+    }
+    .to_json();
+    assert_eq!(json["use_likelihood"], false);
+    assert_eq!(json["use_clusters"], false);
 }
 
 #[test]

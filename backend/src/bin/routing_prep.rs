@@ -26,7 +26,7 @@
 //! | `osm-graph` | `--pbf <PBF> --output-dir <DIR> [--threads N]`：`graph.bin`・`graph_attrs.bin`・`graph.audit.json` |
 //! | `restrictions` | `--pbf <PBF> --graph <graph.bin> --attrs <graph_attrs.bin> --output <restrictions.bin>`：監査は `<output>` の拡張子を `audit.json` にしたもの |
 //! | `topology` | `--graph <graph.bin> --attrs <graph_attrs.bin> --output <topology.bin> [--scc-min-nodes N] [--threads N]`（`--scc-min-nodes` の既定は200。小さなグラフのテスト用） |
-//! | `accident-snap` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --accidents <accidents.csv.gz> --output <assignment.bin> [--sigma0 M] [--threads N] [--review-dir DIR --review-count N --review-seed N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--review-dir` を付けると人手判定用の `review_sample.json` を書く |
+//! | `accident-snap` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --accidents <accidents.csv.gz> --output <assignment.bin> [--sigma0 M] [--likelihood true|false] [--clusters true|false] [--threads N] [--review-dir DIR --review-count N --review-seed N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--review-dir` を付けると人手判定用の `review_sample.json` を書く。`--likelihood false` は尤度表を使わず距離だけで、`--clusters false` は交差点クラスタを候補にせず辺だけで割り当てる（要素を外した比較用） |
 //! | `risk-fit` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --accidents <accidents.csv.gz> --output <risk.bin> [--train-years 2019-2022] [--validate-year 2023] [--inherit-from <参照のrisk.bin>] [--c 1.0] [--threads N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--inherit-from` を付けると、W・β・β_clusterを参照から引き継ぎ、検証年を使わない |
 //! | `od-index` | `--graph <graph.bin> --output <odindex.bin> [--threads N]` |
 //! | `alt` | `--graph <graph.bin> --output <alt.bin> [--modes car,bike,walk] [--landmarks 16] [--unit-ds 40] [--with-to false] [--start-node N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--modes` の既定は `car` |
@@ -393,8 +393,8 @@ fn accident_snap(options: &Options) -> Result<(), String> {
         AccidentInfo, pick_review, review_record,
     };
 
-    const USAGE: &str = "使い方: routing_prep accident-snap --graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --accidents <accidents.csv.gz> --output <assignment.bin> [--sigma0 M] [--threads N] [--review-dir DIR --review-count N --review-seed N]";
-    const KNOWN: [&str; 12] = [
+    const USAGE: &str = "使い方: routing_prep accident-snap --graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --accidents <accidents.csv.gz> --output <assignment.bin> [--sigma0 M] [--likelihood true|false] [--clusters true|false] [--threads N] [--review-dir DIR --review-count N --review-seed N]";
+    const KNOWN: [&str; 14] = [
         "graph",
         "attrs",
         "topology",
@@ -402,6 +402,8 @@ fn accident_snap(options: &Options) -> Result<(), String> {
         "accidents",
         "output",
         "sigma0",
+        "likelihood",
+        "clusters",
         "threads",
         "review-dir",
         "review-count",
@@ -435,6 +437,16 @@ fn accident_snap(options: &Options) -> Result<(), String> {
             .filter(|x| x.is_finite() && *x > 0.0)
             .ok_or_else(|| "--sigma0 は正の数".to_owned())?;
     }
+    let parse_bool = |name: &str, default: bool| -> Result<bool, String> {
+        match options.0.get(name).map(String::as_str) {
+            None => Ok(default),
+            Some("true") => Ok(true),
+            Some("false") => Ok(false),
+            Some(_) => Err(format!("--{name} はtrueかfalse")),
+        }
+    };
+    params.use_likelihood = parse_bool("likelihood", true)?;
+    params.use_clusters = parse_bool("clusters", true)?;
     let parse_usize = |name: &str, default: usize| -> Result<usize, String> {
         match options.0.get(name) {
             Some(v) => v.parse::<usize>().map_err(|_| format!("--{name} は整数")),
