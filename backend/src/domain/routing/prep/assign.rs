@@ -118,7 +118,8 @@ impl AssignParams {
             "sigma0_m": self.sigma0_m,
             "edge_radius_m": self.edge_radius_m,
             "cluster_radius_m": self.cluster_radius_m,
-            "min_weight": self.min_weight,
+            // f32の0.1を、そのまま十進数で書く（0.10000000149…にしない）
+            "min_weight": self.min_weight.to_string().parse::<f64>().unwrap_or(f64::from(self.min_weight)),
             "max_targets": self.max_targets,
             "cluster_half_extent_m": self.cluster_half_extent_m,
             "table_max_distance_m": self.table_max_distance_m,

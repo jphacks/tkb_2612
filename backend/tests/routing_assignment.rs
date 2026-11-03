@@ -529,14 +529,32 @@ fn nationwide_assignment_satisfies_every_invariant() {
         stats.motorway_coded_assigned
     );
 
-    // 起動時の索引
+    // 起動時の索引（作る時間と、常駐する大きさ）
+    let started = std::time::Instant::now();
     let index = EdgeAccidentIndex::build(a, graph.edges.len(), topology.cluster_count());
+    let index_seconds = started.elapsed().as_secs_f64();
     assert_eq!(
         index.edge_entries.len() + index.cluster_entries.len(),
         a.targets.len()
     );
+    let index_bytes = (index.edge_ofs.len() + index.cluster_ofs.len()) * 4
+        + index.edge_entries.len()
+            * std::mem::size_of::<accident_route_backend::domain::routing::accident::EdgeAccident>(
+            )
+        + index.cluster_entries.len()
+            * std::mem::size_of::<accident_route_backend::domain::routing::accident::ClusterAccident>(
+            );
     let snapshot = AccidentSnapshot::new(columns);
+    let started = std::time::Instant::now();
     let grid = UnassignedGrid::build(a, &snapshot);
+    eprintln!(
+        "NATIONWIDE: EdgeAccidentIndex::build {index_seconds:.2}s, {:.0}MB（辺{}件・クラスタ{}件）; UnassignedGrid::build {:.2}s, セル{}",
+        index_bytes as f64 / 1e6,
+        index.edge_entries.len(),
+        index.cluster_entries.len(),
+        started.elapsed().as_secs_f64(),
+        grid.cells.len()
+    );
     assert_eq!(
         grid.cells.values().map(Vec::len).sum::<usize>(),
         a.unassigned.len()
