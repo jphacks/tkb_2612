@@ -20,7 +20,7 @@ use crate::domain::routing::graph::restrictions::{Restriction, Restrictions};
 use crate::domain::routing::graph::time::TimeModel;
 use crate::domain::routing::graph::{Coord, DirEdge, EdgeRecord, Graph, GraphParts, ShapePoint};
 use crate::domain::routing::prep::attrs::GraphAttrs;
-use crate::domain::routing::risk::RiskModel;
+use crate::domain::routing::risk::{CoefRecord, RiskModel, RiskParams, TABLE_LEN};
 use crate::domain::routing::search::alt::Landmarks;
 use crate::domain::routing::snap::{OdIndex, OdIndexParams};
 use crate::domain::routing::topology::{ClusterRecord, SidewalkParent, Topology, TwinPair};
@@ -30,7 +30,7 @@ use super::binfile::{BinFile, BinFileWriter, DEPS_SECTION, PARAMS_SECTION};
 use super::release::{
     ACCIDENT_ATTRS_FILE, ALT_FILE, ALT_MAGIC, ASSIGNMENT_FILE, ASSIGNMENT_MAGIC, GRAPH_ATTRS_MAGIC,
     GRAPH_FILE, GRAPH_MAGIC, ODINDEX_FILE, ODINDEX_MAGIC, RESTRICTIONS_FILE, RESTRICTIONS_MAGIC,
-    RISK_FILE, TOPOLOGY_FILE, TOPOLOGY_MAGIC, routing_file_spec,
+    RISK_FILE, RISK_MAGIC, TOPOLOGY_FILE, TOPOLOGY_MAGIC, routing_file_spec,
 };
 
 /// `DEPS` 節：入力ファイル名→SHA-256（小文字hex）。
@@ -913,13 +913,114 @@ pub fn decode_assignment(bytes: &[u8]) -> Result<Decoded<Assignment>, LoadError>
     })
 }
 
-/// `risk.bin`（形式書14章）。
-pub fn encode_risk(model: &RiskModel, deps: &Deps) -> Vec<u8> {
-    todo!("形式書14章")
+fn le_f32(bytes: &[u8], at: usize) -> f32 {
+    f32::from_le_bytes(bytes[at..at + 4].try_into().expect("4バイト"))
 }
 
+fn le_f64(bytes: &[u8], at: usize) -> f64 {
+    f64::from_le_bytes(bytes[at..at + 8].try_into().expect("8バイト"))
+}
+
+/// `CoefRecord`（形式書14.1節、48バイト）をリトルエンディアンで並べる。
+fn coef_record_bytes(record: &CoefRecord) -> [u8; CoefRecord::SIZE] {
+    let mut out = [0_u8; CoefRecord::SIZE];
+    out[0..8].copy_from_slice(&record.r.to_le_bytes());
+    out[8..16].copy_from_slice(&record.s.to_le_bytes());
+    out[16..24].copy_from_slice(&record.a.to_le_bytes());
+    for (i, value) in record.rho.iter().enumerate() {
+        let at = 24 + 4 * i;
+        out[at..at + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    out[44..48].copy_from_slice(&record.pad.to_le_bytes());
+    out
+}
+
+fn coef_record_from_bytes(bytes: &[u8]) -> CoefRecord {
+    CoefRecord {
+        r: le_f64(bytes, 0),
+        s: le_f64(bytes, 8),
+        a: le_f64(bytes, 16),
+        rho: std::array::from_fn(|i| le_f32(bytes, 24 + 4 * i)),
+        pad: le_f32(bytes, 44),
+    }
+}
+
+/// `risk.bin`（形式書14章）。節は `DEPS`・`PARAMS`・`EDGEK`・`CLUSJ`・`KTAB`・`JTAB` の順。
+/// `PARAMS` は `raw_params` に型付きの `params` を上書きして書く（`beta_cluster` なども含める）。
+pub fn encode_risk(model: &RiskModel, deps: &Deps) -> Vec<u8> {
+    let mut params = match &model.raw_params {
+        Value::Object(map) => map.clone(),
+        _ => Map::new(),
+    };
+    if let Value::Object(typed) = serde_json::to_value(&model.params).expect("JSONに書ける") {
+        params.extend(typed);
+    }
+    let mut writer = BinFileWriter::new(RISK_MAGIC, format_version_of(RISK_FILE));
+    writer.add_json(DEPS_SECTION, &deps_json(deps));
+    writer.add_json(PARAMS_SECTION, &Value::Object(params));
+    writer.add_values("EDGEK", &model.edge_k);
+    writer.add_values("CLUSJ", &model.cluster_j);
+    let mut k_table = Vec::with_capacity(model.k_table.len() * CoefRecord::SIZE);
+    for record in &model.k_table {
+        k_table.extend_from_slice(&coef_record_bytes(record));
+    }
+    writer.add_section(
+        "KTAB",
+        CoefRecord::SIZE as u32,
+        model.k_table.len() as u64,
+        k_table,
+    );
+    let mut j_table = Vec::with_capacity(model.j_table.len() * CoefRecord::SIZE);
+    for record in &model.j_table {
+        j_table.extend_from_slice(&coef_record_bytes(record));
+    }
+    writer.add_section(
+        "JTAB",
+        CoefRecord::SIZE as u32,
+        model.j_table.len() as u64,
+        j_table,
+    );
+    writer.finish()
+}
+
+/// `risk.bin` を読む。マジックナンバー・`format_version`・`DEPS` の必須キー・`KTAB`・`JTAB` の件数
+/// （`TABLE_LEN`）と `elem_size`（48）を検査する。`PARAMS` の `beta_cluster` がなければ `beta` を使う。
 pub fn decode_risk(bytes: &[u8]) -> Result<Decoded<RiskModel>, LoadError> {
-    todo!("形式書14章")
+    let (file, deps) = open(
+        bytes,
+        RISK_FILE,
+        RISK_MAGIC,
+        format_version_of(RISK_FILE),
+        required_deps(RISK_FILE),
+    )?;
+    let raw_params = file.json(PARAMS_SECTION)?;
+    let params: RiskParams = serde_json::from_value(raw_params.clone())
+        .map_err(|_| invalid("risk.binのPARAMSがリスクの形として読めない"))?;
+    let edge_k = file.require("EDGEK")?.u8s()?;
+    let cluster_j = file.require("CLUSJ")?.u8s()?;
+    let k_section = file.require("KTAB")?;
+    k_section.expect_count(TABLE_LEN as u64)?;
+    let k_table: Vec<CoefRecord> = k_section
+        .records(CoefRecord::SIZE as u32)?
+        .map(coef_record_from_bytes)
+        .collect();
+    let j_section = file.require("JTAB")?;
+    j_section.expect_count(TABLE_LEN as u64)?;
+    let j_table: Vec<CoefRecord> = j_section
+        .records(CoefRecord::SIZE as u32)?
+        .map(coef_record_from_bytes)
+        .collect();
+    Ok(Decoded {
+        value: RiskModel {
+            params,
+            raw_params,
+            edge_k,
+            cluster_j,
+            k_table,
+            j_table,
+        },
+        deps,
+    })
 }
 
 /// `alt.bin` の節名に使う手段の記号（形式書15章。`walk`→`FOT`・`bike`→`BIK`・`car`→`CAR`）。
@@ -1090,6 +1191,7 @@ pub fn decode_alt(bytes: &[u8]) -> Result<Decoded<Landmarks>, LoadError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::Mode;
     use crate::data::release::{ACCIDENTS_FILE, ROUTING_FILES};
     const NONE_U32: u32 = u32::MAX;
 
@@ -1787,5 +1889,155 @@ mod tests {
             .directions
             .insert("car".to_owned(), vec!["from".to_owned()]);
         assert!(decode_alt(&encode_alt(&bad, &deps)).is_err());
+    }
+
+    // --- risk.bin ---
+
+    fn sample_risk_model() -> RiskModel {
+        use crate::domain::routing::graph::time::PerMode;
+        use crate::domain::routing::risk::table_index;
+        use crate::domain::routing::risk::{WeatherMultiplier, road_class_k};
+
+        let mut k_table = vec![CoefRecord::default(); TABLE_LEN];
+        let mut j_table = vec![CoefRecord::default(); TABLE_LEN];
+        let k = road_class_k(6, 1, true);
+        k_table[table_index(Mode::Car, k, 0)] = CoefRecord {
+            r: 1.25e-5,
+            s: 12.5,
+            a: 0.75,
+            rho: [0.1, 0.2, 0.3, 0.15, 0.25],
+            pad: 0.0,
+        };
+        j_table[table_index(Mode::Car, 35, 7)] = CoefRecord {
+            r: 0.0125,
+            s: 21.0,
+            a: 0.5,
+            rho: [0.05, 0.1, 0.4, 0.2, 0.25],
+            pad: 0.0,
+        };
+        RiskModel {
+            params: RiskParams {
+                train_source_years: vec![2019, 2020, 2021, 2022],
+                years: 4,
+                c: 1.5,
+                c_groups: vec![5, 6, 7, 8],
+                beta: PerMode {
+                    walk: 0.1,
+                    bike: 0.2,
+                    car: 0.3,
+                },
+                beta_cluster: PerMode {
+                    walk: 0.4,
+                    bike: 0.5,
+                    car: 0.6,
+                },
+                weather_multiplier: WeatherMultiplier {
+                    rain: 2.0,
+                    fog: 4.0,
+                    snow: 4.0,
+                },
+                urban: json!({"cell_deg": 0.005}),
+                pooling: json!({"version": 1}),
+                fit: json!({"deviance": 1.25}),
+            },
+            raw_params: json!({"custom": "keep", "years": 999}),
+            edge_k: vec![k, 0xFE, 0xFF],
+            cluster_j: vec![35],
+            k_table,
+            j_table,
+        }
+    }
+
+    fn risk_deps() -> Deps {
+        required_deps("risk.bin")
+            .iter()
+            .map(|file| ((*file).to_owned(), sha256_hex(file.as_bytes())))
+            .collect()
+    }
+
+    #[test]
+    fn risk_round_trips_with_the_documented_layout() {
+        let model = sample_risk_model();
+        let deps = risk_deps();
+        let bytes = encode_risk(&model, &deps);
+        let decoded = decode_risk(&bytes).unwrap();
+        assert_eq!(decoded.value.params, model.params);
+        assert_eq!(decoded.value.edge_k, model.edge_k);
+        assert_eq!(decoded.value.cluster_j, model.cluster_j);
+        assert_eq!(decoded.value.k_table, model.k_table);
+        assert_eq!(decoded.value.j_table, model.j_table);
+        assert_eq!(decoded.deps, deps);
+        // 型付きのparamsで上書きしつつ、paramsに入らないキーも保つ
+        assert_eq!(decoded.value.raw_params["custom"], json!("keep"));
+        assert_eq!(decoded.value.raw_params["years"], json!(4));
+        assert_eq!(
+            bytes,
+            encode_risk(&decoded.value, &decoded.deps),
+            "同じ値から同じバイト列"
+        );
+        let file = BinFile::parse(&bytes).unwrap();
+        file.expect(*b"TKRRISK_", 1).unwrap();
+        let counts = file.section_counts();
+        assert_eq!(
+            (
+                counts["EDGEK"],
+                counts["CLUSJ"],
+                counts["KTAB"],
+                counts["JTAB"]
+            ),
+            (3, 1, TABLE_LEN as u64, TABLE_LEN as u64)
+        );
+        // 形式書14.1節：CoefRecordは48バイトで、r・s・a・rho・padの順
+        let k_section = file.require("KTAB").unwrap();
+        assert_eq!(k_section.elem_size, 48);
+        use crate::domain::routing::risk::{road_class_k, table_index};
+        let index = table_index(Mode::Car, road_class_k(6, 1, true), 0);
+        let record = &k_section.bytes[index * 48..(index + 1) * 48];
+        assert_eq!(&record[0..8], &1.25e-5_f64.to_le_bytes());
+        assert_eq!(&record[8..16], &12.5_f64.to_le_bytes());
+        assert_eq!(&record[16..24], &0.75_f64.to_le_bytes());
+        assert_eq!(&record[24..28], &0.1_f32.to_le_bytes());
+        assert_eq!(&record[44..48], &0.0_f32.to_le_bytes());
+    }
+
+    #[test]
+    fn risk_params_without_beta_cluster_use_beta() {
+        let params: RiskParams = serde_json::from_value(json!({
+            "train_source_years": [2019, 2020],
+            "years": 2,
+            "c": 1.25,
+            "c_groups": [5, 6, 7, 8],
+            "beta": {"walk": 0.1, "bike": 0.2, "car": 0.3},
+            "weather_multiplier": {"rain": 2.0, "fog": 4.0, "snow": 4.0},
+            "urban": {"cell_deg": 0.005},
+            "pooling": {},
+            "fit": {}
+        }))
+        .unwrap();
+        assert_eq!(params.beta_cluster, params.beta);
+    }
+
+    #[test]
+    fn risk_decode_rejects_broken_files() {
+        let deps = risk_deps();
+        let good = encode_risk(&sample_risk_model(), &deps);
+        assert!(decode_risk(&good).is_ok());
+        // マジックナンバー、切り詰め、空
+        let mut bytes = good.clone();
+        bytes[0] ^= 1;
+        assert!(decode_risk(&bytes).is_err());
+        assert!(decode_risk(&good[..good.len() - 8]).is_err());
+        assert!(decode_risk(&[]).is_err());
+        // DEPSの必須キー
+        let mut fewer = deps.clone();
+        fewer.remove("assignment.bin");
+        assert!(decode_risk(&encode_risk(&sample_risk_model(), &fewer)).is_err());
+        // KTAB・JTABの件数がTABLE_LENでない
+        let mut model = sample_risk_model();
+        model.k_table.pop();
+        assert!(decode_risk(&encode_risk(&model, &deps)).is_err());
+        let mut model = sample_risk_model();
+        model.j_table.pop();
+        assert!(decode_risk(&encode_risk(&model, &deps)).is_err());
     }
 }
