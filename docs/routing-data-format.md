@@ -122,6 +122,15 @@ schema 2のキー（`backend/README.md` の「release形式」）はすべて残
 
 `dataset_id`・`rows`・`holiday_table`・`data_years`・`files`・`totals`・`codebooks_xlsx`・`codebooks_pdf`・`holiday_uncovered_rows`・`columns`・`gzip_bytes` は、`base_release` の値をそのまま写す。
 
+P9 `package` が決める細部は次のとおり。
+
+- 上のコピー元のキーのうち、base にないキーは足さない。`elapsed_seconds` はbaseにあっても写さない（所要時間はコマンドの標準出力・標準エラーにだけ出す）。
+- `base_release` は `release_id`・`processor`・`generated_at` の3キーを持つ。base に `processor`・`generated_at` がなければ `null` にする。
+- `routing.files` の順は `data::release::ROUTING_FILES`（4.2節と同じ固定順）。`sections` は `DEPS`・`PARAMS` を含むすべての節の `count`（JSONの節はバイト数）。
+- `routing.inputs.osm` は `graph.bin` の `PARAMS.osm` をそのまま写す（キーがなければ `null`）。`routing.inputs.accidents` は `release_id`（base のschema 2の値）と `dataset_id` を持ち、`files`・`codebooks_*` は `base_release` から写したトップレベルの同名キーを参照する。`routing.inputs.holiday_table` はbase の `holiday_table` をそのまま写す。
+- `routing.risk` は `train_source_years`・`years`・`c`・`c_groups`・`beta`・`beta_cluster`・`weather_multiplier` を写す。`risk.bin` の `PARAMS` に `inherited_from`・`validate_year` があればそれも写す。`fit`・`pooling`・`urban` は写さない。
+- `routing.audit.unverified_deps` は、各 `.bin` の `DEPS` のうち、release の11ファイルに含まれないキー（`graph_attrs.bin` など中間生成物）の配列。各要素は `file`（DEPS を持つファイル）・`key`・`sha256`。release内のファイルへのキーは、8ファイルを読み終えた後も含めて実ファイルのSHA-256と照合する。
+
 ### 4.2 `release_id`
 
 schema 3の `release_id` は、次の行を `\n` で連結した（末尾に改行を付けない）UTF-8文字列のSHA-256（小文字hex）とする。
