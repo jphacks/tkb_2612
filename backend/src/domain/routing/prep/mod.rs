@@ -10,8 +10,13 @@
 //! | `restrict` | turn restrictionのrelationを有向辺の列にする | P2 |
 //! | `topo` | 吸着可能な辺、交差点クラスタ、双子、歩道の親 | P3 |
 //! | `odindex` | 吸着用の格子 | P7 |
+//! | `assign`・`assign_tables`・`assign_audit`・`assign_review` | 事故の割り当て、尤度表、集計と検査、確認用の抽出 | P5 |
 //! | `geom`・`grid`・`view` | 座標・格子・グラフの読み取りの補助 | — |
 
+pub mod assign;
+pub mod assign_audit;
+pub mod assign_review;
+pub mod assign_tables;
 pub mod attrs;
 pub mod geom;
 pub mod graph_build;
