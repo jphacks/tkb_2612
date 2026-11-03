@@ -599,15 +599,23 @@ pub fn decode_topology(bytes: &[u8]) -> Result<Decoded<Topology>, LoadError> {
             b: le_u32(r, 4),
         })
         .collect();
-    if twins.windows(2).any(|w| w[0].a > w[1].a) {
-        return Err(invalid("topology.binのTWINがaの昇順でない"));
+    if twins
+        .windows(2)
+        .any(|w| (w[0].a, w[0].b) >= (w[1].a, w[1].b))
+    {
+        return Err(invalid("topology.binのTWINが(a,b)の辞書順の狭義昇順でない"));
     }
     for t in &twins {
         if edge_limit.is_some_and(|e| u64::from(t.a) >= e || u64::from(t.b) >= e) {
             return Err(invalid("topology.binのTWINの辺番号が範囲外"));
         }
-        let mirrored = twins.partition_point(|x| x.a < t.b);
-        if twins.get(mirrored).is_none_or(|x| x.a != t.b || x.b != t.a) {
+        if t.a == t.b {
+            return Err(invalid("topology.binのTWINが同じ辺の組"));
+        }
+        if twins
+            .binary_search_by_key(&(t.b, t.a), |x| (x.a, x.b))
+            .is_err()
+        {
             return Err(invalid("topology.binのTWINに逆向きの組がない"));
         }
     }
@@ -962,7 +970,12 @@ mod tests {
                 pad: [0; 3],
             }],
             cluster_nodes: vec![1, 2],
-            twins: vec![TwinPair { a: 3, b: 5 }, TwinPair { a: 5, b: 3 }],
+            twins: vec![
+                TwinPair { a: 3, b: 5 },
+                TwinPair { a: 3, b: 6 },
+                TwinPair { a: 5, b: 3 },
+                TwinPair { a: 6, b: 3 },
+            ],
             sidewalk_parents: vec![SidewalkParent {
                 sidewalk: 9,
                 parent: 4,
@@ -1006,9 +1019,44 @@ mod tests {
                 },
             ),
             (
+                "TWINの複数のbの片方に逆向きがない",
+                Topology {
+                    twins: vec![
+                        TwinPair { a: 3, b: 5 },
+                        TwinPair { a: 3, b: 6 },
+                        TwinPair { a: 5, b: 3 },
+                    ],
+                    ..base.clone()
+                },
+            ),
+            (
                 "TWINが昇順でない",
                 Topology {
                     twins: vec![TwinPair { a: 5, b: 3 }, TwinPair { a: 3, b: 5 }],
+                    ..base.clone()
+                },
+            ),
+            (
+                "TWINの同じaでbが昇順でない",
+                Topology {
+                    twins: vec![
+                        TwinPair { a: 3, b: 6 },
+                        TwinPair { a: 3, b: 5 },
+                        TwinPair { a: 5, b: 3 },
+                        TwinPair { a: 6, b: 3 },
+                    ],
+                    ..base.clone()
+                },
+            ),
+            (
+                "TWINの同じ組が重複",
+                Topology {
+                    twins: vec![
+                        TwinPair { a: 3, b: 5 },
+                        TwinPair { a: 3, b: 5 },
+                        TwinPair { a: 5, b: 3 },
+                        TwinPair { a: 5, b: 3 },
+                    ],
                     ..base.clone()
                 },
             ),

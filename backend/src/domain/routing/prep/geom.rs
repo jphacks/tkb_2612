@@ -115,6 +115,34 @@ impl XyLine {
         best
     }
 
+    /// `nearest` と同じ最寄りの点を探し、その点が折れ線の端の外側にはみ出して射影される点か
+    /// （始点より手前、または終点より先にあって、端点が最寄りになったか）も返す。
+    /// 並走している区間かどうかの判定に使う（折れ線の延長線上にあるだけの点を除く）。
+    pub fn nearest_with_overhang(&self, p: (f64, f64)) -> (f64, Option<(f64, f64)>, bool) {
+        let last = self.points.len().saturating_sub(2);
+        let mut best = (f64::INFINITY, None, false);
+        for (i, w) in self.points.windows(2).enumerate() {
+            let (d, _) = point_segment_distance(p, w[0], w[1]);
+            if d < best.0 {
+                let (dx, dy) = (w[1].0 - w[0].0, w[1].1 - w[0].1);
+                let len2 = dx * dx + dy * dy;
+                let raw = if len2 > 0.0 {
+                    ((p.0 - w[0].0) * dx + (p.1 - w[0].1) * dy) / len2
+                } else {
+                    0.0
+                };
+                let overhang = (i == 0 && raw < 0.0) || (i == last && raw > 1.0);
+                let len = len2.sqrt();
+                best = (d, (len > 0.0).then(|| (dx / len, dy / len)), overhang);
+            }
+        }
+        if self.points.len() == 1 {
+            let d = (p.0 - self.points[0].0).hypot(p.1 - self.points[0].1);
+            best = (d, None, true);
+        }
+        best
+    }
+
     /// 先頭から `step/2, 3*step/2, ...` の位置（長さ未満）にある点と単位方向。短い線でも1点は返す。
     pub fn samples(&self, step: f64) -> Vec<Sample> {
         let mut out = Vec::new();
@@ -215,5 +243,28 @@ mod tests {
         assert_eq!(s[0].0, (0.0, 3.0));
         let (d, dir) = line.nearest((50.0, 7.0));
         assert_eq!((d, dir), (7.0, Some((1.0, 0.0))));
+    }
+
+    #[test]
+    fn nearest_with_overhang_flags_points_beyond_the_ends() {
+        // L字の折れ線：(0,0)→(100,0)→(100,100)
+        let line = XyLine {
+            points: vec![(0.0, 0.0), (100.0, 0.0), (100.0, 100.0)],
+            length: 200.0,
+        };
+        // 内側（最初の線分に射影される）
+        assert_eq!(
+            line.nearest_with_overhang((50.0, 10.0)),
+            (10.0, Some((1.0, 0.0)), false)
+        );
+        // 折れ角の外側（頂点が最寄りだが、端ではない）
+        let (d, _, overhang) = line.nearest_with_overhang((110.0, -10.0));
+        assert!((d - 200.0_f64.sqrt()).abs() < 1e-9);
+        assert!(!overhang);
+        // 始点より手前・終点より先は、端点が最寄りでもはみ出しとする
+        assert!(line.nearest_with_overhang((-5.0, 3.0)).2);
+        assert!(line.nearest_with_overhang((95.0, 130.0)).2);
+        // 端点ちょうどの手前（折れ線の中）ははみ出しではない
+        assert!(!line.nearest_with_overhang((100.0, 95.0)).2);
     }
 }

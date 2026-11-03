@@ -57,7 +57,9 @@ fn valid_topology() -> (Graph, Topology) {
         twins: vec![
             TwinPair { a: 2, b: 8 },
             TwinPair { a: 3, b: 5 },
+            TwinPair { a: 3, b: 6 },
             TwinPair { a: 5, b: 3 },
+            TwinPair { a: 6, b: 3 },
             TwinPair { a: 8, b: 2 },
         ],
         sidewalk_parents: vec![
@@ -223,11 +225,19 @@ fn topology_validate_rejects_each_violation() {
             |t| t.twins[0] = TwinPair { a: 2, b: 2 },
             "TWIN[0]",
         ),
-        ("TWINがaの昇順でない", |t| t.twins.swap(0, 1), "TWIN"),
+        ("TWINが(a,b)の昇順でない", |t| t.twins.swap(0, 1), "TWIN"),
         (
-            "TWINのaが重複",
-            |t| t.twins[2] = TwinPair { a: 3, b: 6 },
+            "TWINの同じ組が重複",
+            |t| t.twins[2] = TwinPair { a: 3, b: 5 },
             "TWIN",
+        ),
+        ("TWINの同じaでbが昇順でない", |t| t.twins.swap(1, 2), "TWIN"),
+        (
+            "TWINのaが複数のbを持ち、片方の逆向きがない",
+            |t| {
+                t.twins.remove(4);
+            },
+            "逆向き",
         ),
         (
             "TWINの逆向きがない",

@@ -41,6 +41,7 @@ pub mod cluster_flags {
 }
 
 /// `TWIN` 節のレコード（形式書10章、8バイト）。各組を `(a,b)` と `(b,a)` の両方の向きで入れる。
+/// 1つの辺に双子は複数ありうる（同じ `a` に複数の `b`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TwinPair {
     pub a: EdgeId,
@@ -71,7 +72,7 @@ pub struct Topology {
     pub clusters: Vec<ClusterRecord>,
     /// `CLSNODE`：クラスタに属するノード。クラスタiのノードは `[node_start..node_start+node_count]`（昇順）。
     pub cluster_nodes: Vec<NodeId>,
-    /// `TWIN`：`a` の昇順。
+    /// `TWIN`：`(a, b)` の辞書順の狭義昇順（同じ `a` の中は `b` の昇順）。
     pub twins: Vec<TwinPair>,
     /// `SWPARENT`：`sidewalk` の昇順。
     pub sidewalk_parents: Vec<SidewalkParent>,
@@ -95,7 +96,8 @@ impl Topology {
     ///
     /// 次も確かめる。ビット列のEビット目以降（最後のワードの余り）は0。`CLUSTER` の `pad` は0で、
     /// `flags` は定義済みのビットだけ。クラスタのノードは狭義昇順でN未満。`CLSNODE` に余りがない。
-    /// `TWIN` は `a` が狭義昇順（1つの辺に双子は1つ）で `a ≠ b`、`(a,b)` があれば `(b,a)` もある。
+    /// `TWIN` は `(a,b)` が辞書順の狭義昇順（1つの辺に双子は複数ありうる。同じ組の重複はない）で
+    /// `a ≠ b`、`(a,b)` があれば `(b,a)` もある。
     /// `SWPARENT` は `sidewalk` が狭義昇順で `sidewalk ≠ parent`。
     pub fn validate(&self, graph: &Graph) -> Result<(), TopologyError> {
         let n = graph.node_count();
@@ -216,14 +218,18 @@ impl Topology {
                 )));
             }
         }
-        if let Some(i) = self.twins.windows(2).position(|w| w[0].a >= w[1].a) {
+        if let Some(i) = self
+            .twins
+            .windows(2)
+            .position(|w| (w[0].a, w[0].b) >= (w[1].a, w[1].b))
+        {
             return Err(TopologyError(format!(
-                "TWINのaが狭義昇順ではありません（TWIN[{}]）",
+                "TWINの(a,b)が辞書順の狭義昇順ではありません（TWIN[{}]）",
                 i + 1
             )));
         }
         for (i, t) in self.twins.iter().enumerate() {
-            if self.twin_of(t.b) != Some(t.a) {
+            if !self.are_twins(t.b, t.a) {
                 return Err(TopologyError(format!(
                     "TWIN[{i}]=({},{})の逆向き({},{})がありません",
                     t.a, t.b, t.b, t.a
@@ -292,10 +298,32 @@ impl Topology {
         &self.cluster_nodes[start..start + usize::from(record.node_count)]
     }
 
-    /// 上下線の双子の辺。
-    pub fn twin_of(&self, edge: EdgeId) -> Option<EdgeId> {
-        let i = self.twins.partition_point(|t| t.a < edge);
-        self.twins.get(i).filter(|t| t.a == edge).map(|t| t.b)
+    /// 辺 `edge` を `a` とする `TWIN` のレコード（`b` の昇順）。双子がなければ空。
+    pub fn twin_records(&self, edge: EdgeId) -> &[TwinPair] {
+        let start = self.twins.partition_point(|t| t.a < edge);
+        let len = self.twins[start..].partition_point(|t| t.a == edge);
+        &self.twins[start..start + len]
+    }
+
+    /// 辺 `edge` の上下線の双子の辺（昇順、複数ありうる）。長い1本の反対側が短い複数の辺に
+    /// 分かれているとき、その全部が双子になる。
+    pub fn twins_of(
+        &self,
+        edge: EdgeId,
+    ) -> impl DoubleEndedIterator<Item = EdgeId> + ExactSizeIterator + Clone + '_ {
+        self.twin_records(edge).iter().map(|t| t.b)
+    }
+
+    /// 辺 `edge` に双子があるか。
+    pub fn has_twin(&self, edge: EdgeId) -> bool {
+        !self.twin_records(edge).is_empty()
+    }
+
+    /// `a` と `b` が双子か（二分探索）。
+    pub fn are_twins(&self, a: EdgeId, b: EdgeId) -> bool {
+        self.twins
+            .binary_search_by_key(&(a, b), |t| (t.a, t.b))
+            .is_ok()
     }
 
     /// 歩道の辺の親の車道の辺。
@@ -337,7 +365,12 @@ mod tests {
                 pad: [0; 3],
             }],
             cluster_nodes: vec![1, 2],
-            twins: vec![TwinPair { a: 3, b: 5 }, TwinPair { a: 5, b: 3 }],
+            twins: vec![
+                TwinPair { a: 3, b: 5 },
+                TwinPair { a: 3, b: 6 },
+                TwinPair { a: 5, b: 3 },
+                TwinPair { a: 6, b: 3 },
+            ],
             sidewalk_parents: vec![SidewalkParent {
                 sidewalk: 9,
                 parent: 4,
@@ -359,10 +392,12 @@ mod tests {
             (None, Some(0), None)
         );
         assert_eq!(t.nodes_of_cluster(0), &[1, 2]);
-        assert_eq!(
-            (t.twin_of(3), t.twin_of(5), t.twin_of(4)),
-            (Some(5), Some(3), None)
-        );
+        assert_eq!(t.twins_of(3).collect::<Vec<_>>(), vec![5, 6]);
+        assert_eq!(t.twins_of(5).collect::<Vec<_>>(), vec![3]);
+        assert_eq!(t.twins_of(4).len(), 0);
+        assert!(t.has_twin(6) && !t.has_twin(4) && !t.has_twin(7));
+        assert!(t.are_twins(3, 6) && t.are_twins(6, 3) && !t.are_twins(5, 6));
+        assert_eq!(t.twin_records(3).len(), 2);
         assert_eq!(
             (t.sidewalk_parent(9), t.sidewalk_parent(4)),
             (Some(4), None)
