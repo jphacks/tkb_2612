@@ -14,6 +14,7 @@ pub mod larac;
 pub mod pipeline;
 pub mod rcsp;
 pub mod reduced;
+pub mod route;
 pub mod subgraph_search;
 pub mod turn_dijkstra;
 
