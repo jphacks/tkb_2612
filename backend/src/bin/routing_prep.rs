@@ -19,7 +19,8 @@
 //! | `package` | P9 | `metadata.json` とreleaseディレクトリ |
 //!
 //! 実装済み：`osm-graph`（P1）・`restrictions`（P2）・`topology`（P3）・`accident-attrs`（P4）・
-//! `accident-snap`（P5）・`od-index`（P7）。残りは骨組みのまま（`todo!()`）。
+//! `accident-snap`（P5）・`od-index`（P7）・`alt`（P8）。残り（`risk-fit`・`package`）は骨組みのまま
+//! （`todo!()`）。
 //!
 //! | サブコマンド | 引数 |
 //! |---|---|
@@ -28,6 +29,7 @@
 //! | `topology` | `--graph <graph.bin> --attrs <graph_attrs.bin> --output <topology.bin> [--scc-min-nodes N] [--threads N]`（`--scc-min-nodes` の既定は200。小さなグラフのテスト用） |
 //! | `accident-snap` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --accidents <accidents.csv.gz> --output <assignment.bin> [--sigma0 M] [--threads N] [--review-dir DIR --review-count N --review-seed N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--review-dir` を付けると人手判定用の `review_sample.json` を書く |
 //! | `od-index` | `--graph <graph.bin> --output <odindex.bin> [--threads N]` |
+//! | `alt` | `--graph <graph.bin> --output <alt.bin> [--modes car,bike,walk] [--landmarks 16] [--unit-ds 40] [--with-to false] [--start-node N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--modes` の既定は `car` |
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -685,9 +687,220 @@ fn od_index(options: &Options) -> Result<(), String> {
 }
 
 /// P8：ALTの距離表 `alt.bin` を作る（形式書15章）。
+///
+/// 手段ごとに最遠点法でランドマークを選び（[`farthest_landmark_table`]）、`FR_<M>`（`--with-to true`
+/// なら `TO_<M>` も）を作る。`--start-node` を省いたときは、その手段で通れる有向辺を持つノードのうち
+/// ノード番号が最小のものを始点にする。全国グラフでは、手段ごとに16回（`to` も作ると32回）の
+/// ダイクストラ法を行う。
 fn alt(options: &Options) -> Result<(), String> {
-    let _ = options;
-    todo!("P8 alt")
+    use accident_route_backend::contract::Mode;
+    use accident_route_backend::data::routing_files::{decode_graph, encode_alt};
+    use accident_route_backend::domain::routing::graph::time::edge_time_ds;
+    use accident_route_backend::domain::routing::risk::mode_index;
+    use accident_route_backend::domain::routing::search::alt::Landmarks;
+    use accident_route_backend::domain::routing::search::alt::{
+        UNREACHABLE_Q, farthest_landmark_table_with_progress,
+    };
+
+    const USAGE: &str = "使い方: routing_prep alt --graph <graph.bin> --output <alt.bin> [--modes car,bike,walk] [--landmarks 16] [--unit-ds 40] [--with-to false] [--start-node N]";
+    const KNOWN: [&str; 7] = [
+        "graph",
+        "output",
+        "modes",
+        "landmarks",
+        "unit-ds",
+        "with-to",
+        "start-node",
+    ];
+    if let Some(unknown) = options.0.keys().find(|k| !KNOWN.contains(&k.as_str())) {
+        return Err(format!("不明な引数です: --{unknown}\n{USAGE}"));
+    }
+    let parse_usize = |name: &str, default: usize, min: usize| -> Result<usize, String> {
+        match options.0.get(name) {
+            Some(v) => v
+                .parse::<usize>()
+                .ok()
+                .filter(|&n| n >= min)
+                .ok_or_else(|| format!("--{name} は{min}以上の整数")),
+            None => Ok(default),
+        }
+    };
+    let modes = match options.0.get("modes") {
+        None => vec![Mode::Car],
+        Some(value) => {
+            let mut modes: Vec<Mode> = Vec::new();
+            for part in value.split(',') {
+                let mode = Mode::parse(part)
+                    .ok_or_else(|| format!("--modes の{part:?}がcar・bike・walkでない"))?;
+                if modes.contains(&mode) {
+                    return Err(format!("--modes の{}が重複している", mode.as_str()));
+                }
+                modes.push(mode);
+            }
+            modes
+        }
+    };
+    let count = parse_usize("landmarks", 16, 1)?;
+    let unit_ds = u32::try_from(parse_usize("unit-ds", 40, 1)?)
+        .map_err(|_| "--unit-ds が大きすぎる".to_owned())?;
+    let with_to = match options.0.get("with-to").map(String::as_str) {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => return Err("--with-to はtrueかfalse".to_owned()),
+    };
+    let start_node = match options.0.get("start-node") {
+        Some(v) => Some(
+            v.parse::<u32>()
+                .map_err(|_| "--start-node は0以上の整数".to_owned())?,
+        ),
+        None => None,
+    };
+
+    let started = Instant::now();
+    let graph_path = options.path("graph").map_err(|e| format!("{e}\n{USAGE}"))?;
+    let output = options
+        .path("output")
+        .map_err(|e| format!("{e}\n{USAGE}"))?;
+    log("入力を読む");
+    let graph_bytes = read_file(&graph_path)?;
+    let graph_hash = sha256_hex(&graph_bytes);
+    let graph = decode_graph(&graph_bytes).map_err(|e| e.to_string())?.value;
+    drop(graph_bytes);
+    log(&format!(
+        "graph.bin: ノード{} 辺{} {}",
+        graph.node_count(),
+        graph.edge_count(),
+        memory_summary()
+    ));
+
+    // その手段で通れる有向辺を1本以上持つ、ノード番号が最小のノード。始点は外へ出る辺が
+    // あるノードを選ぶ（入る辺だけのノードから始めると、始点自身しか到達できないため）。
+    let default_start = |mode: Mode| -> Option<u32> {
+        (0..graph.node_count() as u32).find(|&v| {
+            graph
+                .out_dedges(v)
+                .iter()
+                .any(|&d| edge_time_ds(&graph, d, mode).is_some())
+        })
+    };
+
+    let mut tables = [None, None, None];
+    let mut mode_audits = serde_json::Map::new();
+    let mut start_nodes = serde_json::Map::new();
+    for mode in modes {
+        let start = match start_node {
+            Some(start) => {
+                if start as usize >= graph.node_count() {
+                    return Err(format!(
+                        "--start-node {start} がノード数{}以上",
+                        graph.node_count()
+                    ));
+                }
+                start
+            }
+            None => default_start(mode)
+                .ok_or_else(|| format!("{}で通れる辺を持つノードがない", mode.as_str()))?,
+        };
+        start_nodes.insert(mode.as_str().to_owned(), json!(start));
+        log(&format!(
+            "{}: ランドマーク{}個を最遠点法で選ぶ（始点ノード{start}）",
+            mode.as_str(),
+            count
+        ));
+        let mode_started = Instant::now();
+        let table = farthest_landmark_table_with_progress(
+            &graph,
+            mode,
+            count,
+            start,
+            unit_ds,
+            with_to,
+            |i, node| {
+                let coord = graph.node_coord(node);
+                log(&format!(
+                    "  {} ランドマーク{}/{}: ノード{node} ({}, {})",
+                    mode.as_str(),
+                    i + 1,
+                    count,
+                    coord.lat_e7,
+                    coord.lon_e7
+                ));
+            },
+        );
+        let l = table.count();
+        let n = graph.node_count();
+        let mut landmarks = Vec::with_capacity(l);
+        for i in 0..l {
+            let reached = (0..n)
+                .filter(|&v| table.from[v * l + i] != UNREACHABLE_Q)
+                .count();
+            let node = table.nodes[i];
+            let coord = graph.node_coord(node);
+            log(&format!(
+                "  {} ランドマーク{}/{}: ノード{node} 到達{reached}ノード",
+                mode.as_str(),
+                i + 1,
+                l
+            ));
+            landmarks.push(json!({
+                "node": node,
+                "lat_e7": coord.lat_e7,
+                "lon_e7": coord.lon_e7,
+                "reached_nodes": reached,
+            }));
+        }
+        mode_audits.insert(
+            mode.as_str().to_owned(),
+            json!({
+                "start_node": start,
+                "landmarks": landmarks,
+                "count": l,
+                "with_to": with_to,
+                "elapsed_seconds": mode_started.elapsed().as_secs_f64(),
+            }),
+        );
+        log(&format!(
+            "  {} 完了 {:.1}秒 {} ランドマーク{}個",
+            mode.as_str(),
+            mode_started.elapsed().as_secs_f64(),
+            memory_summary(),
+            l
+        ));
+        tables[mode_index(mode)] = Some(table);
+    }
+
+    let mut landmarks = Landmarks::from_tables(unit_ds, tables);
+    // `AltParams` に入らない選び方の記録（形式書15章の `PARAMS`）。
+    if let Value::Object(params) = &mut landmarks.raw_params {
+        params.insert(
+            "selection".to_owned(),
+            json!({
+                "method": "farthest",
+                "start_nodes": start_nodes,
+                "with_to": with_to,
+            }),
+        );
+    }
+    let deps = Deps::from([(GRAPH_FILE.to_owned(), graph_hash)]);
+    let bytes = encode_alt(&landmarks, &deps);
+    write_file(&output, &bytes)?;
+    let audit = json!({
+        "command": "alt",
+        "elapsed_seconds": started.elapsed().as_secs_f64(),
+        "memory": memory_summary(),
+        "bytes": bytes.len(),
+        "sha256": sha256_hex(&bytes),
+        "params": landmarks.raw_params,
+        "modes": mode_audits,
+    });
+    write_json(&audit_path(&output), &audit)?;
+    log(&format!(
+        "完了 {:.1}秒 {} alt.bin {}バイト",
+        started.elapsed().as_secs_f64(),
+        memory_summary(),
+        bytes.len()
+    ));
+    Ok(())
 }
 
 /// P9：schema 2のreleaseに8つの `.bin` を加え、`metadata.json`（schema 3）を作る（形式書2章・4章）。
