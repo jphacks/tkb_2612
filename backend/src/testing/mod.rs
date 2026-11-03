@@ -14,5 +14,8 @@ pub mod router;
 
 pub use calendar::FixedCalendar;
 pub use engine::{StubEngine, StubEvaluation};
-pub use release::{ReleaseIds, TestRelease, example_router, write_example_release};
+pub use release::{
+    ReleaseIds, RoutingTestQuery, RoutingTestRelease, TestRelease, example_router,
+    write_example_release, write_routing_test_release,
+};
 pub use router::{RouterResponse, ScriptedRouter, StallingRouter, valid_routes};

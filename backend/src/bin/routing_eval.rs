@@ -15,6 +15,7 @@
 //! | `dump-time-model` | `graph.bin` の `TIMEMODL`（所要時間のモデル）をJSONで標準出力に書く（`--dir <DIR>`。M1.7の係数の探索用） |
 //! | `route-batch` | ODの一覧に対して、条件つきのリスクで吸着 → 探索（`find_routes`）を実行し、1件ごとの結果と計測値をJSON Linesで出す（M3b.5） |
 //! | `route-summary` | `route-batch` の結果をグループごとに集計し、JSONと人が読める表を出す（M3b.5） |
+//! | `load-release` | schema 3のreleaseを `data::load_engine` で読み、識別子・件数・所要時間・VmRSS・VmHWMをJSONで出す（M4.2） |
 //!
 //! `graph-stats` は `--dir <DIR>`（4つの `.bin` があるディレクトリ）を受け取る。`--parts-only true` を
 //! 付けると、`Graph::from_parts` と各 `validate` を省いて節だけを読む（検査にかかる時間の切り分け用）。
@@ -55,6 +56,7 @@ use accident_route_backend::contract::geo::{METERS_PER_DEGREE, straight_distance
 use accident_route_backend::contract::{
     CancelToken, ConditionFilter, DayType, Interrupt, LatLon, Mode, Period, Weather,
 };
+use accident_route_backend::data;
 use accident_route_backend::data::load::parse_accidents;
 use accident_route_backend::data::routing_files::{
     decode_alt, decode_assignment, decode_graph, decode_graph_parts, decode_odindex,
@@ -89,7 +91,7 @@ use accident_route_backend::domain::snapshot::AccidentSnapshot;
 use rayon::prelude::*;
 use serde_json::{Value, json};
 
-const USAGE: &str = "使い方: routing_eval <legality|bench|od-sample|y-metrics|graph-stats|fastest-batch|dump-time-model|route-batch|route-summary> [--名前 値]...";
+const USAGE: &str = "使い方: routing_eval <legality|bench|od-sample|y-metrics|graph-stats|fastest-batch|dump-time-model|route-batch|route-summary|load-release> [--名前 値]...";
 
 /// `--名前 値` の組。名前は先頭の `--` を除いて持つ。
 struct Options(BTreeMap<String, String>);
@@ -2059,6 +2061,25 @@ fn route_summary(options: &Options) -> Result<(), String> {
     Ok(())
 }
 
+/// schema 3のreleaseを起動時と同じ経路で読み、計測値をJSONで出す（M4.2）。
+fn load_release(options: &Options) -> Result<(), String> {
+    let dir = dir_option(options)?;
+    let engine = data::load_engine(dir).map_err(|e| e.to_string())?;
+    let dataset = engine.dataset();
+    let (rss, hwm) = memory_mb();
+    let value = json!({
+        "release_id": dataset.release_id,
+        "dataset_id": dataset.dataset_id,
+        "accidents": dataset.accidents,
+        "data_years": dataset.data_years,
+        "load_seconds": dataset.load_seconds,
+        "vm_rss_mb": rss,
+        "vm_hwm_mb": hwm,
+    });
+    println!("{value}");
+    Ok(())
+}
+
 /// リスク指標の評価。
 fn y_metrics(options: &Options) -> Result<(), String> {
     let _ = options;
@@ -2081,6 +2102,7 @@ fn main() -> ExitCode {
         Some("dump-time-model") => dump_time_model,
         Some("route-batch") => route_batch,
         Some("route-summary") => route_summary,
+        Some("load-release") => load_release,
         _ => {
             eprintln!(
                 "不明なサブコマンドです: {}\n{USAGE}",

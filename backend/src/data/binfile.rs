@@ -5,6 +5,9 @@
 //! 節の中身（構造体の並び）はこのモジュールでは解釈せず、`routing_files` が解釈する。
 
 use std::collections::BTreeMap;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
+use std::path::Path;
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -181,16 +184,36 @@ impl BinFileWriter {
 
 /// 節表の1行（検査済み）。
 #[derive(Debug, Clone)]
-struct SectionEntry {
-    name: String,
-    start: usize,
-    count: u64,
-    elem_size: u32,
+pub(crate) struct SectionEntry {
+    pub(crate) name: String,
+    pub(crate) start: usize,
+    pub(crate) count: u64,
+    pub(crate) elem_size: u32,
 }
 
 impl SectionEntry {
     fn len(&self) -> usize {
         self.count as usize * self.elem_size as usize
+    }
+
+    pub(crate) fn expect_elem_size(&self, elem_size: u32) -> Result<(), LoadError> {
+        if self.elem_size != elem_size {
+            return Err(invalid(format!(
+                "節{}のelem_sizeが{}ではない",
+                self.name, elem_size
+            )));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn expect_count(&self, count: u64) -> Result<(), LoadError> {
+        if self.count != count {
+            return Err(invalid(format!(
+                "節{}の件数{}が期待の{}と一致しない",
+                self.name, self.count, count
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -409,6 +432,268 @@ impl<'a> BinFile<'a> {
             return Err(invalid("payload_sha256が内容と一致しない"));
         }
         Ok(())
+    }
+}
+
+/// 大きな `.bin` を、ファイル全体を `Vec<u8>` に読まずに節ごとに読むための読み取り器。
+///
+/// ヘッダーと節表だけを先に読み、節の本体は [`read_values`](Self::read_values)・
+/// [`read_mapped`](Self::read_mapped) で必要な型の `Vec` に直接読み込む。形式書3章の容器の検査
+/// （節表・詰め物・末尾）は [`BinFile::parse`] と同じものを行う。
+pub(crate) struct BinFileReader {
+    file: File,
+    magic: [u8; 8],
+    format_version: u32,
+    sections: Vec<SectionEntry>,
+}
+
+fn invalid_reader(message: impl Into<String>) -> LoadError {
+    LoadError::Invalid(message.into())
+}
+
+/// `file` の `[start, end)` がすべて0か確かめる。
+fn check_zero_range(file: &mut File, start: u64, end: u64) -> Result<(), LoadError> {
+    if start == end {
+        return Ok(());
+    }
+    file.seek(SeekFrom::Start(start))?;
+    let mut remaining = end - start;
+    let mut buffer = [0_u8; 8192];
+    while remaining > 0 {
+        let n = remaining.min(buffer.len() as u64) as usize;
+        file.read_exact(&mut buffer[..n])?;
+        if buffer[..n].iter().any(|&b| b != 0) {
+            return Err(invalid_reader("binファイルの詰め物または末尾が0でない"));
+        }
+        remaining -= n as u64;
+    }
+    Ok(())
+}
+
+impl BinFileReader {
+    /// ファイルを開き、ヘッダー・節表を検査する。検査の内容は [`BinFile::parse`] と同じ。
+    pub(crate) fn open(path: &Path) -> Result<BinFileReader, LoadError> {
+        let mut file = File::open(path)?;
+        let file_len = file.metadata()?.len();
+        if file_len < HEADER_LEN as u64 {
+            return Err(invalid_reader("binファイルがヘッダーの長さに満たない"));
+        }
+        let mut header = [0_u8; HEADER_LEN];
+        file.read_exact(&mut header)?;
+        let mut magic = [0_u8; 8];
+        magic.copy_from_slice(&header[0..8]);
+        let format_version = read_u32(&header, 8);
+        let section_count = read_u32(&header, 12) as usize;
+        let header_len = read_u32(&header, 16) as usize;
+        if header_len != HEADER_LEN + SECTION_ENTRY_LEN * section_count {
+            return Err(invalid_reader(
+                "binファイルのheader_lenが節の数と一致しない",
+            ));
+        }
+        if header_len as u64 > file_len {
+            return Err(invalid_reader("binファイルが節表の途中で終わっている"));
+        }
+        if read_u32(&header, 20) != 0 || header[56..64].iter().any(|&b| b != 0) {
+            return Err(invalid_reader("binファイルのヘッダーの予約領域が0でない"));
+        }
+
+        let mut table = vec![0_u8; header_len - HEADER_LEN];
+        file.read_exact(&mut table)?;
+        let mut sections: Vec<SectionEntry> = Vec::with_capacity(section_count);
+        let mut prev_end = header_len as u64;
+        for i in 0..section_count {
+            let at = SECTION_ENTRY_LEN * i;
+            let raw_name = &table[at..at + SECTION_NAME_LEN];
+            let name_len = raw_name
+                .iter()
+                .position(|&b| b == 0)
+                .unwrap_or(SECTION_NAME_LEN);
+            if name_len == 0
+                || !raw_name[..name_len]
+                    .iter()
+                    .all(|b| (0x21..=0x7e).contains(b))
+                || raw_name[name_len..].iter().any(|&b| b != 0)
+            {
+                return Err(invalid_reader("binファイルの節の名前が不正"));
+            }
+            let name = String::from_utf8(raw_name[..name_len].to_vec()).expect("ASCII");
+            if sections.iter().any(|s| s.name == name) {
+                return Err(invalid_reader(format!(
+                    "binファイルの節の名前が重複している: {name}"
+                )));
+            }
+            let start = read_u64(&table, at + 8);
+            let count = read_u64(&table, at + 16);
+            let elem_size = read_u32(&table, at + 24);
+            if read_u32(&table, at + 28) != 0 {
+                return Err(invalid_reader(format!("節{name}の予約領域が0でない")));
+            }
+            if elem_size == 0 {
+                return Err(invalid_reader(format!("節{name}のelem_sizeが0")));
+            }
+            if start & (SECTION_ALIGN as u64 - 1) != 0 {
+                return Err(invalid_reader(format!(
+                    "節{name}の開始位置が8バイト境界でない"
+                )));
+            }
+            let len = count
+                .checked_mul(u64::from(elem_size))
+                .ok_or_else(|| invalid_reader(format!("節{name}の長さが大きすぎる")))?;
+            let end = start
+                .checked_add(len)
+                .filter(|&end| end <= file_len)
+                .ok_or_else(|| invalid_reader(format!("節{name}がファイルの範囲外にある")))?;
+            if start < prev_end {
+                return Err(invalid_reader(format!(
+                    "節{name}が前の節と重なっている（または節表の順でない）"
+                )));
+            }
+            check_zero_range(&mut file, prev_end, start)?;
+            sections.push(SectionEntry {
+                name,
+                start: start as usize,
+                count,
+                elem_size,
+            });
+            prev_end = end;
+        }
+        check_zero_range(&mut file, prev_end, file_len)?;
+        Ok(BinFileReader {
+            file,
+            magic,
+            format_version,
+            sections,
+        })
+    }
+
+    /// マジックナンバーと `format_version` が期待どおりか確かめる。
+    pub(crate) fn expect(&self, magic: [u8; 8], format_version: u32) -> Result<(), LoadError> {
+        if self.magic != magic {
+            return Err(invalid_reader(format!(
+                "マジックナンバーが{}ではない",
+                String::from_utf8_lossy(&magic)
+            )));
+        }
+        if self.format_version != format_version {
+            return Err(invalid_reader(format!(
+                "{}のformat_versionが{}ではない",
+                String::from_utf8_lossy(&magic),
+                format_version
+            )));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn magic(&self) -> [u8; 8] {
+        self.magic
+    }
+
+    pub(crate) fn format_version(&self) -> u32 {
+        self.format_version
+    }
+
+    /// 節名→`count`。
+    pub(crate) fn section_counts(&self) -> BTreeMap<String, u64> {
+        self.sections
+            .iter()
+            .map(|s| (s.name.clone(), s.count))
+            .collect()
+    }
+
+    /// 名前で節を引く（節表の情報だけを返す）。
+    pub(crate) fn section(&self, name: &str) -> Option<SectionEntry> {
+        self.sections.iter().find(|s| s.name == name).cloned()
+    }
+
+    /// 必須の節を引く。
+    pub(crate) fn require(&self, name: &str) -> Result<SectionEntry, LoadError> {
+        self.section(name)
+            .ok_or_else(|| invalid_reader(format!("必須の節{name}がない")))
+    }
+
+    /// 節の本体をそのまま読む。
+    pub(crate) fn read_section_bytes(
+        &mut self,
+        section: &SectionEntry,
+    ) -> Result<Vec<u8>, LoadError> {
+        let len = section.len();
+        let mut bytes = vec![0_u8; len];
+        self.file.seek(SeekFrom::Start(section.start as u64))?;
+        self.file.read_exact(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    /// 固定長の要素を `map` で型にしながら読む。作業用のバッファは1MB以下。
+    pub(crate) fn read_mapped<T>(
+        &mut self,
+        section: &SectionEntry,
+        elem_size: u32,
+        mut map: impl FnMut(&[u8]) -> T,
+    ) -> Result<Vec<T>, LoadError> {
+        if section.elem_size != elem_size {
+            return Err(invalid_reader(format!(
+                "節{}のelem_sizeが{}ではない",
+                section.name, elem_size
+            )));
+        }
+        let size = elem_size as usize;
+        let total = section.len();
+        if total == 0 {
+            return Ok(Vec::new());
+        }
+        let chunk_bytes = (1_usize << 20) / size * size;
+        let mut buffer = vec![0_u8; chunk_bytes.max(size)];
+        let mut out = Vec::with_capacity(section.count as usize);
+        self.file.seek(SeekFrom::Start(section.start as u64))?;
+        let mut remaining = total;
+        while remaining > 0 {
+            let n = remaining.min(buffer.len());
+            self.file.read_exact(&mut buffer[..n])?;
+            for record in buffer[..n].chunks_exact(size) {
+                out.push(map(record));
+            }
+            remaining -= n;
+        }
+        Ok(out)
+    }
+
+    /// 数値の配列の節を読む。
+    pub(crate) fn read_values<T: LeValue>(
+        &mut self,
+        section: &SectionEntry,
+    ) -> Result<Vec<T>, LoadError> {
+        self.read_mapped(section, T::SIZE as u32, T::read_le)
+    }
+
+    /// JSONの節をJSONオブジェクトとして読む。
+    pub(crate) fn json(&mut self, name: &str) -> Result<Value, LoadError> {
+        let section = self.require(name)?;
+        if section.elem_size != 1 {
+            return Err(invalid_reader(format!(
+                "JSONの節{name}のelem_sizeが1でない"
+            )));
+        }
+        let bytes = self.read_section_bytes(&section)?;
+        let value: Value = serde_json::from_slice(&bytes)
+            .map_err(|_| invalid_reader(format!("節{name}がJSONとして読めない")))?;
+        if !value.is_object() {
+            return Err(invalid_reader(format!("節{name}がJSONオブジェクトでない")));
+        }
+        Ok(value)
+    }
+
+    /// `DEPS` 節：入力ファイル名→SHA-256（小文字hex）。
+    pub(crate) fn deps(&mut self) -> Result<BTreeMap<String, String>, LoadError> {
+        let value = self.json(DEPS_SECTION)?;
+        let object = value.as_object().expect("jsonがobjectを確かめた");
+        let mut deps = BTreeMap::new();
+        for (file, hash) in object {
+            let hash = hash
+                .as_str()
+                .ok_or_else(|| invalid_reader(format!("DEPSの{file}の値が文字列でない")))?;
+            deps.insert(file.clone(), hash.to_owned());
+        }
+        Ok(deps)
     }
 }
 
