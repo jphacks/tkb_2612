@@ -11,7 +11,7 @@ use accident_route_backend::domain::routing::graph::{
 };
 use accident_route_backend::domain::routing::prep::attrs::GraphAttrs;
 use accident_route_backend::domain::routing::prep::risk_fit::{
-    RiskFitConfig, RiskFitInput, fit_risk,
+    InheritedFit, RiskFitConfig, RiskFitInput, RiskFitOutput, fit_risk,
 };
 use accident_route_backend::domain::routing::risk::{EDGE_K_NO_RISK, EDGE_K_SIDEWALK, RiskView};
 use accident_route_backend::domain::routing::topology::{
@@ -193,11 +193,12 @@ fn fixture(
     }
 }
 
-fn run(
+fn run_output(
     fixture: &Fixture,
     train: &[u16],
-    validate: u16,
-) -> accident_route_backend::domain::routing::risk::RiskModel {
+    validate: Option<u16>,
+    inherit: Option<InheritedFit>,
+) -> RiskFitOutput {
     let input = RiskFitInput {
         graph: &fixture.parts,
         graph_attrs: &fixture.attrs,
@@ -210,8 +211,17 @@ fn run(
         train_years: train.to_vec(),
         validate_year: validate,
         c: 1.0,
+        inherit,
     };
-    fit_risk(&input, &config, &|_| {}).unwrap().model
+    fit_risk(&input, &config, &|_| {}).unwrap()
+}
+
+fn run(
+    fixture: &Fixture,
+    train: &[u16],
+    validate: u16,
+) -> accident_route_backend::domain::routing::risk::RiskModel {
+    run_output(fixture, train, Some(validate), None).model
 }
 
 fn road(class: u8) -> EdgeSpec {
@@ -645,4 +655,195 @@ fn model_round_trips_and_risk_view_is_finite() {
         let risk = view.edge_risk(e);
         assert!(risk.is_finite() && risk >= 0.0, "edge{e}のrisk={risk}");
     }
+}
+
+fn inherited_fixture() -> Fixture {
+    let edges = vec![
+        EdgeSpec {
+            tail: 0,
+            head: 1,
+            length_dm: 1000,
+            class: 11,
+            flags: 0,
+        },
+        EdgeSpec {
+            tail: 0,
+            head: 1,
+            length_dm: 1000,
+            class: 11,
+            flags: 0,
+        },
+    ];
+    let coords = coords_for(&edges);
+    let cluster = ClusterRecord {
+        lat_e7: 0,
+        lon_e7: 0,
+        node_start: 0,
+        node_count: 0,
+        top_class: 11,
+        branches: 4,
+        flags: 0x01,
+        pad: [0; 3],
+    };
+    let all_modes = Mode::Walk.mask() | Mode::Bike.mask() | Mode::Car.mask();
+    let mut accidents = Vec::new();
+    for i in 0..80 {
+        let mut a = AccidentSpec::edge(2020, if i < 60 { 0 } else { 1 });
+        a.modes = all_modes;
+        a.weather = [1, 3, 4, 5, 1][i % 5];
+        accidents.push(a);
+    }
+    for i in 0..40 {
+        let mut a = AccidentSpec::edge(2021, if i < 30 { 0 } else { 1 });
+        a.modes = all_modes;
+        a.weather = [1, 3, 4, 5, 1][i % 5];
+        accidents.push(a);
+    }
+    for i in 0..20 {
+        let mut a = AccidentSpec::edge(2020, 0);
+        a.targets = vec![(1, 0, u32::MAX, 1.0, false)];
+        a.modes = all_modes;
+        a.weather = [1, 3, 4, 5, 1][i % 5];
+        accidents.push(a);
+    }
+    for i in 0..10 {
+        let mut a = AccidentSpec::edge(2021, 0);
+        a.targets = vec![(1, 0, u32::MAX, 1.0, false)];
+        a.modes = all_modes;
+        a.weather = [1, 3, 4, 5, 1][i % 5];
+        accidents.push(a);
+    }
+    fixture(
+        edges,
+        coords,
+        vec![2, 1],
+        vec![0, 0],
+        Vec::new(),
+        Vec::new(),
+        vec![cluster],
+        accidents,
+    )
+}
+
+fn assert_relative(actual: f64, expected: f64, what: &str) {
+    let scale = actual.abs().max(expected.abs()).max(1.0);
+    assert!(
+        (actual - expected).abs() <= 1e-9 * scale,
+        "{what}: {actual} != {expected}（相対誤差）"
+    );
+}
+
+fn kind_entries<'a>(
+    value: &'a serde_json::Value,
+    section: &str,
+    mode: Mode,
+) -> &'a serde_json::Map<String, serde_json::Value> {
+    value[section][mode.as_str()]["kinds"]
+        .as_object()
+        .unwrap_or_else(|| panic!("{section}.{}.kindsがない", mode.as_str()))
+}
+
+#[test]
+fn inherited_fit_reuses_w_beta_and_a_for_the_same_train_years() {
+    let fixture = inherited_fixture();
+    let reference = run(&fixture, &[2020], 2021);
+    let inherited = InheritedFit::from_model(&reference, serde_json::json!({"test": "same years"}))
+        .expect("参照から引き継げる");
+    let inherited_model = run_output(&fixture, &[2020], None, Some(inherited)).model;
+
+    for mode in Mode::ALL {
+        assert_relative(
+            *inherited_model.params.beta.get(mode),
+            *reference.params.beta.get(mode),
+            &format!("{}のbeta", mode.as_str()),
+        );
+        assert_relative(
+            *inherited_model.params.beta_cluster.get(mode),
+            *reference.params.beta_cluster.get(mode),
+            &format!("{}のbeta_cluster", mode.as_str()),
+        );
+        let reference_edges = kind_entries(&reference.params.fit, "edges", mode);
+        let inherited_edges = kind_entries(&inherited_model.params.fit, "edges", mode);
+        assert_eq!(reference_edges.len(), inherited_edges.len());
+        for (kind, entry) in reference_edges {
+            let expected = entry["w"].as_f64().expect("参照のW");
+            let actual = inherited_edges[kind]["w"].as_f64().expect("引き継いだW");
+            assert_relative(actual, expected, &format!("{}の辺{kind}のW", mode.as_str()));
+        }
+        let reference_clusters = kind_entries(&reference.params.fit, "clusters", mode);
+        let inherited_clusters = kind_entries(&inherited_model.params.fit, "clusters", mode);
+        assert_eq!(reference_clusters.len(), inherited_clusters.len());
+        for (kind, entry) in reference_clusters {
+            let expected = entry["w"].as_f64().expect("参照のW");
+            let actual = inherited_clusters[kind]["w"].as_f64().expect("引き継いだW");
+            assert_relative(
+                actual,
+                expected,
+                &format!("{}の交差点{kind}のW", mode.as_str()),
+            );
+        }
+        for cell in 0..10 {
+            for kind in 0..256_u16 {
+                let k = kind as u8;
+                assert_relative(
+                    inherited_model.k_coef(mode, k, cell).a,
+                    reference.k_coef(mode, k, cell).a,
+                    &format!("{}の辺{kind}のa", mode.as_str()),
+                );
+                assert_relative(
+                    inherited_model.j_coef(mode, k, cell).a,
+                    reference.j_coef(mode, k, cell).a,
+                    &format!("{}の交差点{kind}のa", mode.as_str()),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn inherited_a_is_recomputed_from_the_new_train_years() {
+    let fixture = inherited_fixture();
+    let reference = run(&fixture, &[2020], 2021);
+    let inherited = InheritedFit::from_model(&reference, serde_json::json!({"test": "new years"}))
+        .expect("参照から引き継げる");
+    let model = run_output(&fixture, &[2020, 2021], None, Some(inherited)).model;
+    let years = 2.0;
+
+    for mode in Mode::ALL {
+        for section in ["edges", "clusters"] {
+            let kinds = kind_entries(&model.params.fit, section, mode);
+            for (kind, entry) in kinds {
+                let w = entry["w"].as_f64().expect("W");
+                let r = entry["r_all_cells"].as_f64().expect("R");
+                let actual = entry["a"].as_f64().expect("a");
+                let expected = years * r * (1.0 / w - 1.0);
+                assert_relative(
+                    actual,
+                    expected,
+                    &format!("{}の{section}{kind}のa", mode.as_str()),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn inherited_fit_falls_back_to_a_parent_when_the_reference_lacks_the_kind() {
+    let fixture = inherited_fixture();
+    let mut reference = run(&fixture, &[2020], 2021);
+    let removed = {
+        let kinds = reference.params.fit["edges"]["walk"]["kinds"]
+            .as_object_mut()
+            .expect("辺の種別");
+        assert!(kinds.len() >= 2, "親をたどる種別が2つ以上ある");
+        let removed = kinds.keys().next().expect("種別").clone();
+        kinds.remove(&removed);
+        removed
+    };
+    let inherited = InheritedFit::from_model(&reference, serde_json::json!({"test": "missing W"}))
+        .expect("参照にない種別があっても引き継げる");
+    let output = run_output(&fixture, &[2020], None, Some(inherited));
+    let entry = &output.audit["fit"]["edges"]["walk"]["kinds"][removed.as_str()];
+    assert!(entry["w"].as_f64().is_some());
+    assert_eq!(entry["w_source"], "inherited-parent");
 }

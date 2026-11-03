@@ -11,6 +11,7 @@ use serde_json::{Map, Value, json};
 use crate::contract::Mode;
 use crate::domain::routing::accident::{AccidentAttrTable, Assignment, TargetKind};
 use crate::domain::routing::graph::GraphParts;
+use crate::domain::routing::graph::time::PerMode;
 use crate::domain::routing::prep::assign::is_road_edge;
 use crate::domain::routing::prep::attrs::GraphAttrs;
 use crate::domain::routing::risk::{
@@ -51,15 +52,91 @@ pub struct RiskFitInput<'a> {
     pub accidents: &'a AccidentColumns,
 }
 
+/// 検証年の逸脱度で選ぶ値を、参照の推定から引き継ぐとき（本番用、学習年が全期間のとき）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct InheritedFit {
+    /// 引き継ぎ元の説明（監査用。参照ファイルのパスとSHA-256など）。
+    pub source: Value,
+    /// 手段ごと（walk・bike・carの順。既存の手段の順に合わせる）・辺の種別kごとのW。参照にない種別は None。
+    pub edge_w: [Vec<Option<f64>>; 3],
+    /// 手段ごと・交差点の種別jごとのW。
+    pub cluster_w: [Vec<Option<f64>>; 3],
+    pub beta: PerMode<f64>,
+    pub beta_cluster: PerMode<f64>,
+}
+
+fn inherited_weights(
+    fit: &Value,
+    section: &str,
+    mode: &str,
+    count: usize,
+) -> Result<Vec<Option<f64>>, String> {
+    let kinds = fit
+        .get(section)
+        .and_then(|value| value.get(mode))
+        .and_then(|value| value.get("kinds"))
+        .and_then(Value::as_object)
+        .ok_or_else(|| format!("参照のfit.{section}.{mode}.kindsが読めません"))?;
+    let mut weights = vec![None; count];
+    for (key, entry) in kinds {
+        let kind = key.parse::<usize>().map_err(|_| {
+            format!("参照のfit.{section}.{mode}.kindsのキー{key}が種別の番号ではありません")
+        })?;
+        if kind >= count {
+            return Err(format!(
+                "参照のfit.{section}.{mode}.kindsの種別{kind}が範囲外です（0〜{}）",
+                count - 1
+            ));
+        }
+        let w = entry
+            .get("w")
+            .and_then(Value::as_f64)
+            .ok_or_else(|| format!("参照のfit.{section}.{mode}.kinds.{kind}.wが読めません"))?;
+        if !(w.is_finite() && (0.0..=1.0).contains(&w)) {
+            return Err(format!(
+                "参照のfit.{section}.{mode}.kinds.{kind}.wが0〜1の有限の数ではありません"
+            ));
+        }
+        weights[kind] = Some(w);
+    }
+    Ok(weights)
+}
+
+impl InheritedFit {
+    /// 参照の `RiskModel`（`risk.bin` を decode したもの）から、引き継ぐ値を作る。
+    ///
+    /// # Errors
+    /// `params.fit` の形が読めないとき。
+    pub fn from_model(model: &RiskModel, source: Value) -> Result<InheritedFit, String> {
+        let fit = &model.params.fit;
+        let mut edge_w = std::array::from_fn(|_| vec![None; EDGE_KINDS]);
+        let mut cluster_w = std::array::from_fn(|_| vec![None; CLUSTER_KINDS]);
+        for mode in Mode::ALL {
+            let m = crate::domain::routing::risk::mode_index(mode);
+            edge_w[m] = inherited_weights(fit, "edges", mode.as_str(), EDGE_KINDS)?;
+            cluster_w[m] = inherited_weights(fit, "clusters", mode.as_str(), CLUSTER_KINDS)?;
+        }
+        Ok(InheritedFit {
+            source,
+            edge_w,
+            cluster_w,
+            beta: model.params.beta.clone(),
+            beta_cluster: model.params.beta_cluster.clone(),
+        })
+    }
+}
+
 /// `fit_risk` の設定。
 #[derive(Debug, Clone, PartialEq)]
 pub struct RiskFitConfig {
     /// 学習に使う `source_year`（昇順で重複なし）。
     pub train_years: Vec<u16>,
-    /// 検証に使う `source_year`。
-    pub validate_year: u16,
+    /// 検証年。`inherit` があるときは None（検証年を使わない）。
+    pub validate_year: Option<u16>,
     /// 自動車の生活道路の係数c（計画書5.5節）。
     pub c: f64,
+    /// 検証年の逸脱度で選ぶ値を、参照の推定から引き継ぐとき。
+    pub inherit: Option<InheritedFit>,
 }
 
 /// 推定の結果。
@@ -190,6 +267,8 @@ struct WFit {
     deviance_low: Option<f64>,
     deviance_high: Option<f64>,
     parent: Option<String>,
+    /// 引き継いだ W の出所（`inherited`・`inherited-parent`・`default`）。通常の推定では None。
+    w_source: Option<&'static str>,
 }
 
 impl WFit {
@@ -200,6 +279,7 @@ impl WFit {
             deviance_low: deviance,
             deviance_high: deviance,
             parent: None,
+            w_source: None,
         }
     }
 }
@@ -313,6 +393,19 @@ fn validate_input(input: &RiskFitInput<'_>, config: &RiskFitConfig) -> Result<()
     }
     if !(config.c.is_finite() && config.c >= 1.0) {
         return Err("--c は1以上の有限の数".to_owned());
+    }
+    if config.inherit.is_some() && config.validate_year.is_some() {
+        return Err("引き継ぎ（inherit）と検証年は同時に指定できません".to_owned());
+    }
+    if let Some(inherit) = &config.inherit {
+        if inherit.edge_w.iter().any(|w| w.len() != EDGE_KINDS) {
+            return Err(format!("引き継ぐ辺のWの数が{EDGE_KINDS}ではありません"));
+        }
+        if inherit.cluster_w.iter().any(|w| w.len() != CLUSTER_KINDS) {
+            return Err(format!(
+                "引き継ぐ交差点のWの数が{CLUSTER_KINDS}ではありません"
+            ));
+        }
     }
     Ok(())
 }
@@ -736,6 +829,7 @@ fn fit_weights(
             deviance_low: low,
             deviance_high: high,
             parent: None,
+            w_source: None,
         },
         None => WFit {
             w: W_GRID[0],
@@ -743,6 +837,7 @@ fn fit_weights(
             deviance_low: low,
             deviance_high: high,
             parent: None,
+            w_source: None,
         },
     }
 }
@@ -816,6 +911,7 @@ fn apply_parent_weights(
                 deviance_low: low,
                 deviance_high: high,
                 parent: Some(parent.level),
+                w_source: None,
             };
         } else {
             fits[k] = WFit {
@@ -824,6 +920,7 @@ fn apply_parent_weights(
                 deviance_low: Some(0.0),
                 deviance_high: Some(0.0),
                 parent: Some(parent.level),
+                w_source: None,
             };
         }
     }
@@ -831,6 +928,88 @@ fn apply_parent_weights(
         if lengths[k] > 0.0 {
             rows[k].a = coefficient_a(years, rows[k].r_sum(), fits[k].w);
         }
+    }
+    fits
+}
+
+/// 親の種別のうち、参照に W がある最初の値を返す。
+fn first_inherited(weights: &[Option<f64>], kinds: &[usize]) -> Option<f64> {
+    kinds
+        .iter()
+        .find_map(|&kind| weights.get(kind).copied().flatten())
+}
+
+/// 参照に W がない種別について、`apply_parent_weights` と同じ親の選び方で親をたどる。
+fn inherited_parent_weight(
+    kind: usize,
+    weights: &[Option<f64>],
+    stats: &[KindStat],
+    lengths: &[f64],
+    cluster: bool,
+) -> Option<(f64, String)> {
+    let parent = if cluster {
+        cluster_parent(kind, stats, lengths, FIT_MIN_COUNT)
+    } else {
+        edge_parent(kind, stats, lengths, FIT_MIN_COUNT)
+    };
+    if let Some(w) = first_inherited(weights, &parent.kinds) {
+        return Some((w, parent.level));
+    }
+    // 選んだ親に参照の W がなければ、より粗い親（group → all）をたどる。
+    if parent.level != "group" {
+        let group = kind / 8;
+        let group_kinds: Vec<usize> = if cluster {
+            (0..6).map(|branch| group * 8 + branch).collect()
+        } else {
+            (0..8).map(|band| group * 8 + band).collect()
+        };
+        if let Some(w) = first_inherited(weights, &group_kinds) {
+            return Some((w, "group".to_owned()));
+        }
+    }
+    if parent.level != "all" {
+        let all: Vec<usize> = (0..weights.len())
+            .filter(|&k| lengths.get(k).is_some_and(|&length| length > 0.0))
+            .collect();
+        if let Some(w) = first_inherited(weights, &all) {
+            return Some((w, "all".to_owned()));
+        }
+    }
+    None
+}
+
+/// 参照の W をそのまま使い、`a` を新しい R と年数から換算する。
+fn apply_inherited_weights(
+    rows: &mut [Row],
+    lengths: &[f64],
+    stats: &[KindStat],
+    inherited: &[Option<f64>],
+    cluster: bool,
+    years: f64,
+) -> Vec<WFit> {
+    let mut fits: Vec<WFit> = vec![WFit::empty(None); rows.len()];
+    for k in 0..rows.len() {
+        if lengths[k] <= 0.0 {
+            continue;
+        }
+        let (w, parent, w_source) = if let Some(w) = inherited.get(k).copied().flatten() {
+            (w, None, "inherited")
+        } else if let Some((w, level)) =
+            inherited_parent_weight(k, inherited, stats, lengths, cluster)
+        {
+            (w, Some(level), "inherited-parent")
+        } else {
+            (0.5, None, "default")
+        };
+        fits[k] = WFit {
+            w,
+            deviance: None,
+            deviance_low: None,
+            deviance_high: None,
+            parent,
+            w_source: Some(w_source),
+        };
+        rows[k].a = coefficient_a(years, rows[k].r_sum(), w);
     }
     fits
 }
@@ -1040,7 +1219,7 @@ pub fn fit_risk(
     for i in 0..input.accidents.len() {
         let year = input.accidents.source_year[i];
         let train = config.train_years.contains(&year);
-        let validate = year == config.validate_year;
+        let validate = config.validate_year == Some(year);
         if !train && !validate {
             continue;
         }
@@ -1185,16 +1364,30 @@ pub fn fit_risk(
         let mut rows = fill_density(&edge_stats[m], &edge_length, years, false, &mut r_pool);
         let mut s_pool = Vec::new();
         fill_severity(&edge_stats[m], &edge_length, false, &mut rows, &mut s_pool);
-        let edge_w_fits = apply_parent_weights(
-            &mut rows,
-            &edge_length,
-            &edge_stats[m],
-            &edge_entries[m],
-            false,
-            years,
-        );
-        let (beta, beta_candidates) =
-            fit_weather(&rows, &edge_length, &edge_entries[m], years, &edge_x_grid);
+        let edge_w_fits = if let Some(inherit) = &config.inherit {
+            apply_inherited_weights(
+                &mut rows,
+                &edge_length,
+                &edge_stats[m],
+                &inherit.edge_w[m],
+                false,
+                years,
+            )
+        } else {
+            apply_parent_weights(
+                &mut rows,
+                &edge_length,
+                &edge_stats[m],
+                &edge_entries[m],
+                false,
+                years,
+            )
+        };
+        let (beta, beta_candidates) = if let Some(inherit) = &config.inherit {
+            (*inherit.beta.get(mode), Vec::new())
+        } else {
+            fit_weather(&rows, &edge_length, &edge_entries[m], years, &edge_x_grid)
+        };
         betas[m] = beta;
 
         for (k, row) in rows.iter().enumerate() {
@@ -1214,21 +1407,24 @@ pub fn fit_risk(
                 continue;
             }
             let fit = &edge_w_fits[k];
-            kinds.insert(
-                k.to_string(),
-                json!({
-                    "w": fit.w,
-                    "a": row.a,
-                    "deviance": fit.deviance,
-                    "deviance_w_low": fit.deviance_low,
-                    "deviance_w_high": fit.deviance_high,
-                    "train_count": edge_stats[m][k].total_n(),
-                    "validate_count": edge_entries[m][k].iter().map(|e| e.stat.validate).sum::<f64>(),
-                    "parent": fit.parent,
-                    "length_m": edge_length[k],
-                    "r_all_cells": row.r_sum(),
-                }),
-            );
+            let mut entry = json!({
+                "w": fit.w,
+                "a": row.a,
+                "deviance": fit.deviance,
+                "deviance_w_low": fit.deviance_low,
+                "deviance_w_high": fit.deviance_high,
+                "train_count": edge_stats[m][k].total_n(),
+                "validate_count": edge_entries[m][k].iter().map(|e| e.stat.validate).sum::<f64>(),
+                "parent": fit.parent,
+                "length_m": edge_length[k],
+                "r_all_cells": row.r_sum(),
+            });
+            if let Some(source) = fit.w_source
+                && let Some(object) = entry.as_object_mut()
+            {
+                object.insert("w_source".to_owned(), json!(source));
+            }
+            kinds.insert(k.to_string(), entry);
         }
         fit_edges.insert(
             name.to_owned(),
@@ -1256,21 +1452,36 @@ pub fn fit_risk(
             &mut jrows,
             &mut js_pool,
         );
-        let cluster_w_fits = apply_parent_weights(
-            &mut jrows,
-            &cluster_count,
-            &cluster_stats[m],
-            &cluster_entries[m],
-            true,
-            years,
-        );
-        let (beta_cluster, beta_cluster_candidates) = fit_weather(
-            &jrows,
-            &cluster_count,
-            &cluster_entries[m],
-            years,
-            &cluster_x_grid,
-        );
+        let cluster_w_fits = if let Some(inherit) = &config.inherit {
+            apply_inherited_weights(
+                &mut jrows,
+                &cluster_count,
+                &cluster_stats[m],
+                &inherit.cluster_w[m],
+                true,
+                years,
+            )
+        } else {
+            apply_parent_weights(
+                &mut jrows,
+                &cluster_count,
+                &cluster_stats[m],
+                &cluster_entries[m],
+                true,
+                years,
+            )
+        };
+        let (beta_cluster, beta_cluster_candidates) = if let Some(inherit) = &config.inherit {
+            (*inherit.beta_cluster.get(mode), Vec::new())
+        } else {
+            fit_weather(
+                &jrows,
+                &cluster_count,
+                &cluster_entries[m],
+                years,
+                &cluster_x_grid,
+            )
+        };
         betas_cluster[m] = beta_cluster;
 
         for (j, row) in jrows.iter().enumerate() {
@@ -1293,21 +1504,24 @@ pub fn fit_risk(
                 continue;
             }
             let fit = &cluster_w_fits[j];
-            kinds.insert(
-                j.to_string(),
-                json!({
-                    "w": fit.w,
-                    "a": row.a,
-                    "deviance": fit.deviance,
-                    "deviance_w_low": fit.deviance_low,
-                    "deviance_w_high": fit.deviance_high,
-                    "train_count": cluster_stats[m][j].total_n(),
-                    "validate_count": cluster_entries[m][j].iter().map(|e| e.stat.validate).sum::<f64>(),
-                    "parent": fit.parent,
-                    "clusters": cluster_count[j],
-                    "r_all_cells": row.r_sum(),
-                }),
-            );
+            let mut entry = json!({
+                "w": fit.w,
+                "a": row.a,
+                "deviance": fit.deviance,
+                "deviance_w_low": fit.deviance_low,
+                "deviance_w_high": fit.deviance_high,
+                "train_count": cluster_stats[m][j].total_n(),
+                "validate_count": cluster_entries[m][j].iter().map(|e| e.stat.validate).sum::<f64>(),
+                "parent": fit.parent,
+                "clusters": cluster_count[j],
+                "r_all_cells": row.r_sum(),
+            });
+            if let Some(source) = fit.w_source
+                && let Some(object) = entry.as_object_mut()
+            {
+                object.insert("w_source".to_owned(), json!(source));
+            }
+            kinds.insert(j.to_string(), entry);
         }
         fit_clusters.insert(
             name.to_owned(),
@@ -1467,6 +1681,11 @@ pub fn fit_risk(
         "edges": {"count": edges, "sidewalk": sidewalk_edges, "no_risk": no_risk_edges},
         "clusters": {"count": clusters},
     });
+    if let Some(inherit) = &config.inherit
+        && let Some(object) = params.as_object_mut()
+    {
+        object.insert("inherited_from".to_owned(), inherit.source.clone());
+    }
     stabilize_json(&mut params);
     params = json_roundtrip(&params);
     let typed: RiskParams = serde_json::from_value(params.clone())
@@ -1493,6 +1712,12 @@ pub fn fit_risk(
         "edges": {"count": edges},
         "clusters": {"count": clusters},
     });
+    if let Some(inherit) = &config.inherit
+        && let Some(object) = audit.as_object_mut()
+    {
+        object.insert("inherited_from".to_owned(), inherit.source.clone());
+        object.insert("validate_year".to_owned(), Value::Null);
+    }
     stabilize_json(&mut audit);
     audit = json_roundtrip(&audit);
 

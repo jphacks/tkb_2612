@@ -535,6 +535,8 @@ urban（人口集中地区か）：人口集中地区の境界データは手元
 |---|---|
 | `train_source_years` | 学習に使ったsource_yearの昇順（係数の調整用は2019〜2022、本番は2019〜2025） |
 | `years` | T（学習年数） |
+| `validate_year` | 検証に使ったsource_year。検証年を使わない推定（`inherited_from` があるとき）は null |
+| `inherited_from` | 参照の推定からW・β・β_clusterを引き継いだときの参照元（ファイルのパス・SHA-256・参照の `train_source_years`）。引き継がないときはキーがない |
 | `c` | 自動車の生活道路の係数（計画書5.5節）。初期値1.0 |
 | `c_groups` | cを掛けるgroup（residential・unclassified・living_street・service＝`[5, 6, 7, 8]`） |
 | `rules_version` | `jp-risk-1` |
@@ -542,7 +544,9 @@ urban（人口集中地区か）：人口集中地区の境界データは手元
 | `beta_cluster` | 交差点の天候の縮小の母数β_cluster（手段ごと）。ないJSONでは `beta` と同じ値とする |
 | `weather_multiplier` | 天候の倍率M（`{"rain": 2, "fog": 4, "snow": 4}`。現行の値） |
 | `urban` | 14.2節の格子の大きさ・割合・件数のしきい値 |
-| `pooling`・`fit` | 種別のまとめ方、推定の監査値（逸脱度、グリッド探索の結果） |
+| `pooling`・`fit` | 種別のまとめ方、推定の監査値（逸脱度、グリッド探索の結果）。引き継いだWには `w_source`（`inherited`・`inherited-parent`・`default`）を付ける |
+
+`inherited_from` があるときは、検証年の事故を集計せず、W・β・β_clusterを参照から引き継ぎ、`a` を新しい学習年のRとTから `a = T·R·(1/W − 1)` で換算する。このとき `validate_year` は null になる。
 
 ### 14.5 リクエストごとのリスク（`RiskView`）
 
