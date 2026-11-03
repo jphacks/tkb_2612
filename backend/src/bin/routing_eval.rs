@@ -919,12 +919,87 @@ fn diagnose_unreachable(graph: &Graph, mode: Mode, start: &SnapPoint, end: &Snap
     } else {
         "one_way_or_access"
     };
-    json!({
+    let mut report = json!({
         "cause": cause,
         "reach_direction_only": direction_only,
         "reach_with_barriers": with_barriers,
         "reach_nodes_direction_only": reach_nodes,
         "reach_nodes_with_barriers": reach_nodes_barriers,
+    });
+    if cause == "barrier_node" {
+        report["pocket"] = barrier_pocket(graph, mode, &endpoints, &seeds, &goals);
+    }
+    report
+}
+
+/// 通過できないノードで囲まれた小さな領域（ポケット）の大きさと、その境の障害物ノード。
+/// 出発側（前向き）と到着側（後ろ向き）から、障害物を越えない幅優先を行い、先に尽きた方がポケット。
+fn barrier_pocket(
+    graph: &Graph,
+    mode: Mode,
+    endpoints: &Endpoints,
+    seeds: &[NodeId],
+    goals: &[NodeId],
+) -> Value {
+    const CAP: usize = 2_000_000;
+    let walk =
+        |from: &[NodeId], forward: bool, exempt: Option<NodeId>| -> (usize, Vec<NodeId>, bool) {
+            let mut seen = std::collections::HashSet::new();
+            let mut queue = std::collections::VecDeque::new();
+            for &n in from {
+                if seen.insert(n) {
+                    queue.push_back(n);
+                }
+            }
+            let mut frontier = Vec::new();
+            while let Some(v) = queue.pop_front() {
+                if seen.len() > CAP {
+                    return (seen.len(), frontier, false);
+                }
+                if graph.node_blocked(v, mode) && exempt != Some(v) {
+                    frontier.push(v);
+                    continue;
+                }
+                for &d in graph.out_dedges(v) {
+                    // 前向きなら d を進む、後ろ向きなら d の逆を進んで v に着く
+                    let arc = if forward { d } else { d.reversed() };
+                    if !graph.passable(arc, mode) {
+                        continue;
+                    }
+                    let u = graph.dedge_to(d);
+                    if seen.insert(u) {
+                        queue.push_back(u);
+                    }
+                }
+            }
+            (seen.len(), frontier, true)
+        };
+    let (fwd_nodes, fwd_frontier, fwd_done) = walk(seeds, true, endpoints.start_node());
+    let (bwd_nodes, bwd_frontier, bwd_done) = walk(goals, false, endpoints.end_node());
+    let (side, nodes, frontier) = if fwd_done && (!bwd_done || fwd_nodes <= bwd_nodes) {
+        ("origin", fwd_nodes, fwd_frontier)
+    } else {
+        ("destination", bwd_nodes, bwd_frontier)
+    };
+    let barriers: Vec<Value> = frontier
+        .iter()
+        .take(8)
+        .map(|&n| {
+            let c = graph.node_coord(n).to_latlon();
+            json!({
+                "node": n,
+                "lat": round6(c.lat),
+                "lon": round6(c.lon),
+                "flags": graph.node_flags(n),
+            })
+        })
+        .collect();
+    json!({
+        "side": side,
+        "nodes": nodes,
+        "closed": fwd_done || bwd_done,
+        "barrier_nodes_total": frontier.len(),
+        "barrier_nodes": barriers,
     })
 }
 
@@ -1356,6 +1431,13 @@ mod tests {
         let end = SnapPoint::on_edge(&graph, e12, 500);
         let barrier = diagnose_unreachable(&graph, Mode::Car, &start, &end);
         assert_eq!(barrier["cause"], "barrier_node");
+        // ポケット：障害物のノード（真ん中のノード）で止まった
+        let pocket = &barrier["pocket"];
+        assert_eq!(pocket["closed"], true);
+        assert_eq!(pocket["barrier_nodes_total"], 1);
+        assert_eq!(pocket["barrier_nodes"][0]["node"], n(1));
+        let c = graph.node_coord(n(1)).to_latlon();
+        assert!((pocket["barrier_nodes"][0]["lat"].as_f64().unwrap() - c.lat).abs() < 1e-6);
         // 歩行者は障害物を通れる
         let walk = diagnose_unreachable(&graph, Mode::Walk, &start, &end);
         assert_eq!(walk["cause"], "turn_restriction");
