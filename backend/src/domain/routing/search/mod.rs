@@ -10,8 +10,10 @@ pub mod candidates;
 pub mod ellipse;
 pub mod fastest;
 pub mod larac;
+pub mod pipeline;
 pub mod rcsp;
 pub mod reduced;
+pub mod subgraph_search;
 
 use crate::contract::Mode;
 use crate::domain::routing::RISK_SCALE;
@@ -22,11 +24,29 @@ use crate::domain::routing::topology::Topology;
 
 use self::alt::Landmarks;
 
-/// 有向辺を通るときのリスク（固定小数点）。出発・到着の辺の部分と、交差点クラスタに入るときの
-/// 加算を含めて、探索側が足し合わせる。実装は `RiskView` を包むアダプタ。
+/// 有向辺を通るときのリスク（固定小数点）。探索の外から与える。実装は `RiskView` を包むアダプタ。
+///
+/// 部分グラフの組み立て（`ellipse::assemble`）が、辺ごとに次の3つを足し合わせて `SubArc::risk_fx` にする。
+/// 探索（LARAC・RCSP など）は `SubArc::risk_fx` の和だけを見る。
+///
+/// - 通常の辺：`risk_fx(d) + cluster_entry_risk_fx(d)`。
+/// - 出発の辺（途中から通る）：`partial_risk_fx(d, ..) + cluster_entry_risk_fx(d)`。出発点から辺の終端
+///   （`d` の到着ノード）までを通るので、到着ノードのクラスタに外から入る。
+/// - 到着の辺（途中まで通る）：`partial_risk_fx(d, ..)` だけ。到着ノードには届かないので、クラスタの加算はない。
 pub trait ArcCost {
     /// 有向辺 `d` を全長通るときのリスク（`RISK_SCALE` 倍して四捨五入した値）。
     fn risk_fx(&mut self, d: DirEdge) -> u64;
+
+    /// 有向辺 `d` の辺のうち、辺の始点（`tail`）から `from_dm` 〜 `to_dm` の区間だけを通るときの
+    /// リスク。区間は向きによらず辺の始点からの距離で表す（`0 ≤ from_dm < to_dm ≤ length_dm`）。
+    /// 出発・到着の辺で使う。`RiskView::partial_edge_risk` に当たる。
+    fn partial_risk_fx(&mut self, d: DirEdge, from_dm: u32, to_dm: u32) -> u64;
+
+    /// 有向辺 `d` を通って交差点クラスタに外から入るときの、クラスタのリスク（クラスタに入らない
+    /// 辺は0）。既定は0。`Topology::entering_cluster` が `Some` の辺で `RiskView::cluster_risk` を返す。
+    fn cluster_entry_risk_fx(&mut self, _d: DirEdge) -> u64 {
+        0
+    }
 }
 
 /// リスク（`f64`）を固定小数点にする。
@@ -40,6 +60,13 @@ pub fn risk_from_fx(risk_fx: u64) -> f64 {
 }
 
 /// 探索で見つけた経路。
+///
+/// 出発・到着の辺の扱い（部分有向辺）：`dedges[0]` の辺が出発の吸着点の辺（`start.edge`）なら、
+/// 出発点から辺の終端までを通る（向き0なら `offset_dm` から辺の終点まで、向き1なら辺の始点まで
+/// `offset_dm` の長さ）。`dedges` の最後の辺が到着の吸着点の辺（`end.edge`）なら、辺の始点側から
+/// 到着点までだけを通る。それ以外の有向辺は全長を通る。吸着点が辺の端のノード（`offset_dm` が0か
+/// 辺の長さ）のときは、そのノードから出発・到着するだけで、出発・到着の辺を通るとは限らない。
+/// 出発・到着が同じ辺で `dedges` が1本のときは、その辺の2つの吸着点のあいだだけを通る。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Path {
     /// 出発の辺（途中から）から到着の辺（途中まで）までの有向辺の並び。
@@ -76,6 +103,8 @@ pub struct SearchParams {
     pub larac_iterations: u32,
     /// 楕円の切り出しで許すノード数の上限。超えたら `EllipseError::TooLarge`。
     pub ellipse_node_limit: u32,
+    /// 制約付き最短路のラベル数の上限（メモリの上限）。超えたら最良解を返し、最適とは記録しない。
+    pub rcsp_label_limit: u32,
 }
 
 impl SearchParams {
@@ -84,6 +113,7 @@ impl SearchParams {
         rcsp_budget_ms: 2000,
         larac_iterations: 10,
         ellipse_node_limit: 3_000_000,
+        rcsp_label_limit: 2_000_000,
     };
 }
 
@@ -119,5 +149,10 @@ mod tests {
         assert_eq!(risk_to_fx(0.000_000_4), 0);
         assert_eq!(risk_to_fx(0.000_000_5), 1);
         assert_eq!(risk_from_fx(2_500_000), 2.5);
+    }
+
+    #[test]
+    fn label_limit_default() {
+        assert_eq!(SearchParams::DEFAULT.rcsp_label_limit, 2_000_000);
     }
 }

@@ -5,6 +5,7 @@
 use crate::contract::CancelToken;
 use crate::domain::routing::snap::SnapPoint;
 
+use super::ArcCost;
 use super::SearchContext;
 use super::ellipse::{EllipseError, Subgraph};
 
@@ -16,6 +17,7 @@ pub fn reduced_ellipse(
     end: &SnapPoint,
     fastest_ds: u64,
     detour_ds: u64,
+    cost: &mut dyn ArcCost,
     cancel: &CancelToken,
 ) -> Result<Subgraph, EllipseError> {
     todo!("計画書6.4節：探索範囲の縮小")
