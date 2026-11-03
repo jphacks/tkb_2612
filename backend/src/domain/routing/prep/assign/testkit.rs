@@ -158,7 +158,8 @@ pub fn world(
         .iter()
         .flat_map(|&(a, b)| [TwinPair { a, b }, TwinPair { a: b, b: a }])
         .collect();
-    twin_records.sort_by_key(|t| t.a);
+    twin_records.sort_by_key(|t| (t.a, t.b));
+    twin_records.dedup();
     let words = edges.len().div_ceil(64);
     let topology = Topology {
         params: Value::Null,

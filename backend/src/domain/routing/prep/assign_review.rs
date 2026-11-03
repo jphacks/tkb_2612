@@ -261,7 +261,7 @@ fn edge_json(index: &RoadIndex<'_>, e: EdgeId) -> Value {
         "layer": attrs.layer.get(i).copied().unwrap_or(0),
         "length_m": f64::from(record.length_dm) / 10.0,
         "flags": flags,
-        "twin": index.topology().twin_of(e),
+        "twins": index.topology().twins_of(e).collect::<Vec<_>>(),
     })
 }
 
@@ -350,6 +350,8 @@ pub fn review_record(
             let mut v = edge_json(index, d.edge);
             v["dist_m"] = json!(d.dist_m);
             v["share"] = json!(d.share);
+            // 双子でつながる組の代表の辺（割り当て先は代表の辺に載る）
+            v["group"] = json!(d.group);
             others.push(v);
         }
         let mut dropped = detail.excluded_edges.clone();
@@ -641,6 +643,85 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn a_review_record_lists_every_twin_and_the_group_of_each_candidate() {
+        // 東行きの長い辺（辺0）と、反対側の2本に分かれた辺（辺1・2：東0〜100m、100〜200m）。辺0が辺1・2の双子
+        let w = world(
+            &[
+                (0.0, 0.0),
+                (0.0, 200.0),
+                (12.0, 100.0),
+                (12.0, 0.0),
+                (12.0, 200.0),
+                (12.0, 100.0),
+            ],
+            &[
+                Spec::new(0, 1, HighwayClass::Trunk).oneway().with_ref("16"),
+                Spec::new(2, 3, HighwayClass::Trunk).oneway().with_ref("16"),
+                Spec::new(4, 5, HighwayClass::Trunk).oneway().with_ref("16"),
+            ],
+            &[],
+            &[(0, 1), (0, 2)],
+        );
+        let p = at_m(2.0, 90.0);
+        let (lat, lon) = (
+            vec![f64::from(p.lat_e7) / 1e7],
+            vec![f64::from(p.lon_e7) / 1e7],
+        );
+        let attrs = vec![attr(16, 14)];
+        let input = SnapInput {
+            graph: w.graph.parts(),
+            graph_attrs: &w.attrs,
+            topology: &w.topology,
+            lat: &lat,
+            lon: &lon,
+            accident_attrs: &attrs,
+        };
+        let result = snap_accidents(&input, &AssignParams::default(), &|_| {}).unwrap();
+        let index = w.index();
+        let info = AccidentInfo {
+            lat: lat[0],
+            lon: lon[0],
+            modes: 4,
+            period: 1,
+            weather: 2,
+            deaths: 0,
+            injuries: 1,
+            source_year: 2024,
+            date: 20240101,
+        };
+        let pick = ReviewPick {
+            accident: 0,
+            stratum: "国道×単路".to_owned(),
+        };
+        let record = review_record(
+            &index,
+            &result.tables,
+            &result.assignment,
+            &pick,
+            &attrs[0],
+            &info,
+        )
+        .unwrap();
+        let targets = record["targets"].as_array().unwrap();
+        // 載るのは辺0（直接）。写しは辺1の1本。辺2は同じ組の候補で、割り当てなし
+        assert_eq!(targets.len(), 2);
+        assert_eq!(
+            (targets[0]["edge"].clone(), targets[0]["mirror"].clone()),
+            (json!(0), json!(false))
+        );
+        assert_eq!(
+            (targets[1]["edge"].clone(), targets[1]["mirror"].clone()),
+            (json!(1), json!(true))
+        );
+        assert_eq!(targets[0]["twins"], json!([1, 2]));
+        assert_eq!(targets[1]["twins"], json!([0]));
+        let others = record["others"].as_array().unwrap();
+        assert_eq!(others.len(), 1);
+        assert_eq!(others[0]["edge"], 2);
+        assert_eq!(others[0]["group"], 0, "辺2は辺0の組に属する");
     }
 
     #[test]

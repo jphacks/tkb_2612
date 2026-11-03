@@ -317,6 +317,161 @@ fn twin_edges_are_one_candidate_and_the_far_twin_gets_a_mirror() {
     assert!(!out.targets[0].is_mirror());
 }
 
+/// 東行きの長い辺（辺0。北0m、東0〜300m）と、その北12mの西行きが3本に分かれた辺（辺1〜3：東0〜100m、
+/// 100〜200m、200〜300m）。辺0と辺1・2・3が双子。
+fn long_and_cut_twins() -> testkit::World {
+    world(
+        &[
+            (0.0, 0.0),
+            (0.0, 300.0),
+            (12.0, 100.0),
+            (12.0, 0.0),
+            (12.0, 200.0),
+            (12.0, 100.0),
+            (12.0, 300.0),
+            (12.0, 200.0),
+        ],
+        &[
+            Spec::new(0, 1, TRUNK).oneway().with_ref("16"),
+            Spec::new(2, 3, TRUNK).oneway().with_ref("16"),
+            Spec::new(4, 5, TRUNK).oneway().with_ref("16"),
+            Spec::new(6, 7, TRUNK).oneway().with_ref("16"),
+        ],
+        &[],
+        &[(0, 1), (0, 2), (0, 3)],
+    )
+}
+
+#[test]
+fn a_mirror_goes_to_the_one_twin_at_the_accident_position() {
+    let w = long_and_cut_twins();
+    // 長い辺の上（2m）。反対側は辺2（100〜200m）だけが35m以内。写しは辺2の1本（辺1・3には載らない）
+    let out = assign(&w, at_m(2.0, 150.0), &attr(16, 14));
+    assert_eq!(
+        weights(&out),
+        vec![(0, 0, 1.0, false), (0, 2, 1.0, true)],
+        "{:?}",
+        weights(&out)
+    );
+    // 写しの位置は、辺2の上での位置。辺2は東200mから西へ向かうので、始点（東端）から50m
+    let mirror = out.targets[1];
+    assert!((495..=505).contains(&mirror.pos_dm), "{}", mirror.pos_dm);
+    // 西行きの辺の上（2m）。載るのは近い辺2で、写しは長い辺0の1本
+    let out = assign(&w, at_m(10.0, 150.0), &attr(16, 14));
+    assert_eq!(
+        weights(&out),
+        vec![(0, 0, 1.0, true), (0, 2, 1.0, false)],
+        "{:?}",
+        weights(&out)
+    );
+    let mirror = out.targets[0];
+    assert!((1495..=1505).contains(&mirror.pos_dm), "{}", mirror.pos_dm);
+    // 辺1と辺2の継ぎ目（東100m）の近く。辺1・辺2のどちらも35m以内の候補で、1つの組になる。
+    // 写しは、事故の投影点が端の外にはみ出さない辺1の1本だけ（辺2は端に丸められる）
+    let out = assign(&w, at_m(2.0, 90.0), &attr(16, 14));
+    assert_eq!(
+        weights(&out),
+        vec![(0, 0, 1.0, false), (0, 1, 1.0, true)],
+        "{:?}",
+        weights(&out)
+    );
+    // 辺1の端のさらに外（東−30m）でも、写し先は1本（いちばん近い辺1）
+    let out = assign(&w, at_m(2.0, -20.0), &attr(16, 14));
+    assert_eq!(
+        weights(&out),
+        vec![(0, 0, 1.0, false), (0, 1, 1.0, true)],
+        "{:?}",
+        weights(&out)
+    );
+}
+
+#[test]
+fn candidates_joined_through_twins_are_one_group() {
+    // 西行き1本（辺1、北12m）を、東行き2本（辺0＝北0m、辺2＝北24m）がはさむ。どちらの東行きも西行きの双子。
+    // 東行きどうしは双子でない。3本は1つの組になり、近い辺0（事故は北4m）に載る。写しは西行きの1本
+    let nodes = [
+        (0.0, 0.0),
+        (0.0, 200.0),
+        (12.0, 200.0),
+        (12.0, 0.0),
+        (24.0, 0.0),
+        (24.0, 200.0),
+        // 住宅街の道路（辺3）：北4m
+        (4.0, 0.0),
+        (4.0, 200.0),
+    ];
+    let edges = [
+        Spec::new(0, 1, TRUNK).oneway().with_ref("16"),
+        Spec::new(2, 3, TRUNK).oneway().with_ref("16"),
+        Spec::new(4, 5, TRUNK).oneway().with_ref("16"),
+        Spec::new(6, 7, RES),
+    ];
+    let w = world(&nodes, &edges, &[], &[(0, 1), (1, 2)]);
+    let out = assign(&w, at_m(4.0, 100.0), &attr(3000, 14));
+    // 辺0〜2の3本の組のスコアの和と、辺3（0m）のスコアで配分する
+    let detail = out.detail.as_ref().unwrap();
+    let share = |e: u32| detail.edges.iter().find(|d| d.edge == e).unwrap().share;
+    let group = share(0) + share(1) + share(2);
+    let direct: Vec<_> = out.targets.iter().filter(|t| !t.is_mirror()).collect();
+    assert_eq!(direct.len(), 2, "{:?}", weights(&out));
+    let road = direct.iter().find(|t| t.target == 3).unwrap();
+    assert!((f64::from(road.weight) - share(3)).abs() < 1e-6);
+    let pair = direct.iter().find(|t| t.target != 3).unwrap();
+    assert_eq!(pair.target, 0, "組の位置は近い辺0");
+    assert!((f64::from(pair.weight) - group).abs() < 1e-6);
+    // 写しは西行きの辺1だけ（辺2は組の一員で候補だが、載せた辺0の双子ではない）
+    let mirrors: Vec<_> = out.targets.iter().filter(|t| t.is_mirror()).collect();
+    assert_eq!(mirrors.len(), 1);
+    assert_eq!(mirrors[0].target, 1);
+    assert_eq!(mirrors[0].weight, pair.weight);
+}
+
+#[test]
+fn width_uses_the_twin_at_the_accident_position() {
+    let mut w = long_and_cut_twins();
+    // 長い辺は2車線、西行きの断片は1・3・2車線
+    for (e, lanes) in [(0, 2), (1, 1), (2, 3), (3, 2)] {
+        w.attrs.lanes[e] = lanes;
+    }
+    let index = w.index();
+    let mut xy = Vec::new();
+    let width_at = |e: u32, north: f64, east: f64, xy: &mut Vec<(f64, f64)>| {
+        let frame = LocalFrame::new(at_m(north, east));
+        index.total_width_m(e, &frame, xy)
+    };
+    let lane = 3.25;
+    // 東100〜200mの位置では、長い辺（2車線）と辺2（3車線）の和
+    let got = width_at(0, 2.0, 150.0, &mut xy).unwrap();
+    assert!((got - 5.0 * lane).abs() < 1e-9, "{got}");
+    // 東0〜100mの位置では、辺1（1車線）との和
+    let got = width_at(0, 2.0, 40.0, &mut xy).unwrap();
+    assert!((got - 3.0 * lane).abs() < 1e-9, "{got}");
+    // 西行きの断片から見ると、双子は長い辺だけ
+    let got = width_at(2, 10.0, 150.0, &mut xy).unwrap();
+    assert!((got - 5.0 * lane).abs() < 1e-9, "{got}");
+    // 双子のない辺は自分の幅員だけ。双子の幅員が不明なら、分かる方の2倍
+    let mut single = world(
+        &[(0.0, 0.0), (0.0, 200.0)],
+        &[Spec::new(0, 1, TRUNK)],
+        &[],
+        &[],
+    );
+    single.attrs.lanes[0] = 2;
+    let frame = LocalFrame::new(at_m(1.0, 50.0));
+    assert_eq!(
+        single.index().total_width_m(0, &frame, &mut xy),
+        Some(2.0 * lane)
+    );
+    w.attrs.lanes[2] = 0;
+    let index = w.index();
+    let frame = LocalFrame::new(at_m(2.0, 150.0));
+    assert_eq!(
+        index.total_width_m(0, &frame, &mut xy),
+        Some(4.0 * lane),
+        "双子の幅員が不明なら、分かる方の2倍"
+    );
+}
+
 #[test]
 fn twin_competition_uses_the_pair_not_the_edges() {
     // 上下線の双子（辺0・1）と、その間にある住宅街の道路（辺2）。双子は2本で1つの候補
@@ -633,6 +788,21 @@ fn observe_counts_only_accidents_with_a_single_candidate() {
         .observe(at_m(2.0, 100.0), &attr(16, 14), &mut scratch, &mut counts);
     assert_eq!(counts.unique_edge_accidents, 1);
     assert_eq!(counts.ref_states[0][1][0], 1, "番号のない国道は中立の状態");
+    // 双子でつながる辺（長い1本と、反対側の分かれた辺）も1つと数える
+    let cut = long_and_cut_twins();
+    let mut counts = TableCounts::default();
+    cut.index()
+        .observe(at_m(2.0, 90.0), &attr(16, 14), &mut scratch, &mut counts);
+    assert_eq!(counts.unique_edge_accidents, 1);
+    // 双子でつながらない2本が候補なら数えない
+    let mut counts = TableCounts::default();
+    parallel_world(TRUNK, TRUNK).index().observe(
+        at_m(2.0, 100.0),
+        &attr(16, 14),
+        &mut scratch,
+        &mut counts,
+    );
+    assert_eq!(counts, TableCounts::default());
     // クラスタの唯一の候補
     let cross = world(
         &[(0.0, 0.0), (100.0, 0.0), (-100.0, 0.0), (0.0, 100.0)],

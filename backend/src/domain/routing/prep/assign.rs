@@ -21,10 +21,15 @@
 //!    辺の尤度表は、路線区分×OSM種別、幅員の区分、橋・トンネル・layerと道路形状、国道の番号と
 //!    `ref`・`name`（「国道N号」）の照合。主要地方道・一般都道府県道の路線コードは県道番号ではない
 //!    通し番号なので、番号の照合はしない。
-//! 5. **双子**：上下線の双子の辺は、候補の中で1つの組にまとめる。組のスコアは2本のスコアの和、
-//!    組の位置は距離の近い方の辺（同じなら辺番号が小さい方）。重みは組の重みで、位置の近い方に載せ、もう一方
-//!    （候補に入っていなくてもよい。高速・自専道の規則を満たすものだけ）に `MIRROR` として同じ重みで写す。
-//!    写しの位置は、事故の座標を双子の辺の折れ線に投影した位置。
+//! 5. **双子**（多対多。1つの辺に双子は複数ありうる）：候補の辺のうち、双子でつながるものは1つの組に
+//!    まとめる（双子でつながる辺の連結成分）。組のスコアは、まとめた辺のスコアの和、組の位置は距離の
+//!    近い辺（同じなら辺番号が小さい辺）。重みは組の重みで、位置の近い辺に載せ、反対側の車線に1本だけ
+//!    `MIRROR` として同じ重みで写す（高速・自専道の規則を満たす辺だけ。候補に入っていなくてもよい）。
+//!    写す先は、載せた辺の双子のうち、事故の座標を折れ線に投影した点がその辺の端の外にはみ出さない
+//!    ものを優先し、その中で距離が近いもの（同じなら辺番号が小さいもの）。端の内側に投影できる双子が
+//!    なければ、距離がもっとも近いもの。写しの位置は、事故の座標を写し先の折れ線に投影した位置。
+//!    同じ事故が反対側の複数の辺に重ねて数えられることはない。幅員の判定（2本の和）に使う双子も、同じ
+//!    規則で位置に対応する1本を選ぶ。
 //! 6. **配分**：スコアの和で正規化し、重みが0.1以上の組を重みの大きい順（同じなら辺番号の小さい順）に
 //!    最大3つ残す。残した重みの合計は1以下で、再正規化はしない。残る組がなければ理由3で帰属不明。
 //! 7. **理由**：道路形状0→4。候補（距離だけで見た、35m以内の辺と交差点の事故での30m以内のクラスタ）が
@@ -57,7 +62,7 @@ use crate::domain::routing::prep::grid::{EdgeGrid, GridParams};
 use crate::domain::routing::topology::{ClusterId, Topology};
 
 /// 規則の版。変えたら `PARAMS` に記録される。
-pub const ASSIGN_RULES_VERSION: &str = "jp-assign-1";
+pub const ASSIGN_RULES_VERSION: &str = "jp-assign-2";
 
 /// 車道の辺を種別ごとに決める1車道あたりの既定の幅員（m）。`width`・`lanes` タグがないときの半幅の元。
 /// 添字は `class`（0〜15）。
@@ -133,6 +138,7 @@ impl AssignParams {
             "intersection_shapes": [1, 31],
             "general_traffic_place_shape": 0,
             "renormalize_after_cut": false,
+            "twin_rule": "many-to-many: 候補は双子でつながる辺の連結成分を1組にし、MIRRORは位置に対応する双子1本（端の内側に投影できる近い辺を優先）に写す",
         })
     }
 }
@@ -164,6 +170,16 @@ pub struct EdgeCand {
     pub dist_m: f64,
     /// 辺の始点からの位置（デシメートル）。
     pub pos_dm: u32,
+}
+
+/// 双子の1本（事故の位置に対応するもの）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TwinPick {
+    edge: EdgeId,
+    /// 事故の座標から折れ線までの距離（m）。
+    dist_m: f64,
+    /// 事故の座標を投影した、辺の始点からの位置（デシメートル）。
+    pos_dm: u32,
 }
 
 /// クラスタの候補。
@@ -461,16 +477,87 @@ impl<'a> RoadIndex<'a> {
     }
 
     /// 双子なら2本の和（片方が不明なら、分かる方の2倍）。警察の車道幅員は上下線の合計なので。
-    fn total_width_m(&self, e: EdgeId) -> Option<f64> {
+    /// 双子が複数あるときは、事故の位置に対応する1本（[`Self::twin_at`]）を使う。
+    fn total_width_m(
+        &self,
+        e: EdgeId,
+        frame: &LocalFrame,
+        xy: &mut Vec<(f64, f64)>,
+    ) -> Option<f64> {
         let own = self.own_width_m(e);
-        match self.topology.twin_of(e) {
-            None => own,
-            Some(twin) => match (own, self.own_width_m(twin)) {
-                (Some(a), Some(b)) => Some(a + b),
-                (Some(a), None) | (None, Some(a)) => Some(2.0 * a),
-                (None, None) => None,
-            },
+        if !self.topology.has_twin(e) {
+            return own;
         }
+        let twin_width = self
+            .twin_at(e, frame, xy, |_| true)
+            .and_then(|pick| self.own_width_m(pick.edge));
+        match (own, twin_width) {
+            (Some(a), Some(b)) => Some(a + b),
+            (Some(a), None) | (None, Some(a)) => Some(2.0 * a),
+            (None, None) => None,
+        }
+    }
+
+    /// 辺 `e` の双子のうち、事故の位置に対応する1本。`accept` を満たす双子だけを見る。
+    /// 事故の座標（`frame` の原点）を双子の折れ線に投影し、投影点が端の外にはみ出さない（始点・終点の
+    /// 位置に丸められない）ものを優先して、その中で距離が近いもの（同じなら辺番号が小さいもの）を選ぶ。
+    /// 端の内側に投影できる双子がなければ、距離がもっとも近いもの。
+    fn twin_at(
+        &self,
+        e: EdgeId,
+        frame: &LocalFrame,
+        xy: &mut Vec<(f64, f64)>,
+        accept: impl Fn(EdgeId) -> bool,
+    ) -> Option<TwinPick> {
+        let mut best: Option<(bool, TwinPick)> = None;
+        for twin in self.topology.twins_of(e) {
+            if !accept(twin) {
+                continue;
+            }
+            let (dist_m, pos_dm) = self.project_edge(twin, frame, xy);
+            let length = self.parts.edges[twin as usize].length_dm;
+            let overhang = pos_dm == 0 || pos_dm >= length;
+            let pick = TwinPick {
+                edge: twin,
+                dist_m,
+                pos_dm,
+            };
+            let better = best.is_none_or(|(o, b)| {
+                overhang
+                    .cmp(&o)
+                    .then(dist_m.total_cmp(&b.dist_m))
+                    .then(twin.cmp(&b.edge))
+                    .is_lt()
+            });
+            if better {
+                best = Some((overhang, pick));
+            }
+        }
+        best.map(|(_, pick)| pick)
+    }
+
+    /// 候補の辺（辺番号の昇順）を、双子でつながるものごとに組にする。返す値は候補ごとの組の番号
+    /// （組に属する候補の番号の最小値）。
+    fn twin_groups(&self, cands: &[EdgeCand]) -> Vec<usize> {
+        let mut label: Vec<usize> = (0..cands.len()).collect();
+        fn root(label: &mut [usize], mut i: usize) -> usize {
+            while label[i] != i {
+                label[i] = label[label[i]];
+                i = label[i];
+            }
+            i
+        }
+        for i in 0..cands.len() {
+            for twin in self.topology.twins_of(cands[i].edge) {
+                let Ok(j) = cands.binary_search_by_key(&twin, |c| c.edge) else {
+                    continue;
+                };
+                let (ri, rj) = (root(&mut label, i), root(&mut label, j));
+                // 番号の小さい方を根にする
+                label[ri.max(rj)] = ri.min(rj);
+            }
+        }
+        (0..cands.len()).map(|i| root(&mut label, i)).collect()
     }
 
     /// 距離のガウスの半幅（m）。
@@ -516,10 +603,17 @@ impl<'a> RoadIndex<'a> {
     }
 
     /// 辺の特徴から、距離以外の因子の対数尤度。
-    fn edge_evidence(&self, e: EdgeId, attr: &AccidentAttr, tables: &Tables) -> f64 {
+    fn edge_evidence(
+        &self,
+        e: EdgeId,
+        attr: &AccidentAttr,
+        tables: &Tables,
+        frame: &LocalFrame,
+        xy: &mut Vec<(f64, f64)>,
+    ) -> f64 {
         let record = &self.parts.edges[e as usize];
         let route_class = attr.route_class_kind().map(|c| c.code());
-        let width_bin = self.total_width_m(e).map_or(0, width_bin);
+        let width_bin = self.total_width_m(e, frame, xy).map_or(0, width_bin);
         let width_code = (attr.carriageway_width != MISSING_U8).then_some(attr.carriageway_width);
         let road_shape = (attr.road_shape != MISSING_U8).then_some(attr.road_shape);
         let ref_state = match (route_class, expected_number(attr)) {
@@ -537,10 +631,18 @@ impl<'a> RoadIndex<'a> {
         )
     }
 
-    fn edge_log_score(&self, cand: &EdgeCand, attr: &AccidentAttr, tables: &Tables) -> f64 {
+    fn edge_log_score(
+        &self,
+        cand: &EdgeCand,
+        attr: &AccidentAttr,
+        tables: &Tables,
+        frame: &LocalFrame,
+        xy: &mut Vec<(f64, f64)>,
+    ) -> f64 {
         let half = self.half_width_m(cand.edge);
         let sigma2 = self.params.sigma0_m * self.params.sigma0_m + half * half;
-        -(cand.dist_m * cand.dist_m) / (2.0 * sigma2) + self.edge_evidence(cand.edge, attr, tables)
+        -(cand.dist_m * cand.dist_m) / (2.0 * sigma2)
+            + self.edge_evidence(cand.edge, attr, tables, frame, xy)
     }
 
     fn cluster_log_score(&self, cand: &ClusterCand, attr: &AccidentAttr, tables: &Tables) -> f64 {
@@ -598,11 +700,6 @@ impl<'a> RoadIndex<'a> {
         }
     }
 
-    /// 双子の組の鍵（組の小さい方の辺番号。双子がなければ自分）。
-    fn twin_key(&self, e: EdgeId) -> EdgeId {
-        self.topology.twin_of(e).map_or(e, |t| t.min(e))
-    }
-
     /// 尤度表の推定のために、唯一の候補の事故の観測を数える。
     pub fn observe(
         &self,
@@ -626,9 +723,9 @@ impl<'a> RoadIndex<'a> {
                     [usize::from(c)] += 1;
                 counts.unique_cluster_accidents += 1;
             }
-            Gathered::Edges { cands, .. } => {
-                let first_key = self.twin_key(cands[0].edge);
-                if cands.iter().any(|c| self.twin_key(c.edge) != first_key) {
+            Gathered::Edges { cands, frame, .. } => {
+                // 双子でつながる辺は1つと数える
+                if self.twin_groups(&cands).iter().any(|&g| g != 0) {
                     return;
                 }
                 // 近い方の辺で代表させる（同じ距離なら辺番号が小さい方）
@@ -651,7 +748,9 @@ impl<'a> RoadIndex<'a> {
                     }
                 }
                 if (1..=6).contains(&attr.carriageway_width) {
-                    let bin = self.total_width_m(e).map_or(0, width_bin);
+                    let bin = self
+                        .total_width_m(e, &frame, &mut scratch.xy)
+                        .map_or(0, width_bin);
                     counts.width[bin][usize::from(attr.carriageway_width) - 1] += 1;
                 }
                 if matches!(attr.road_shape, 7 | 37 | 11 | 12 | 13 | 14 | 21 | 22 | 23) {
@@ -756,39 +855,41 @@ impl<'a> RoadIndex<'a> {
         let motorway_coded = attr.is_motorway_code();
         let ln: Vec<f64> = cands
             .iter()
-            .map(|c| self.edge_log_score(c, attr, tables))
+            .map(|c| self.edge_log_score(c, attr, tables, frame, &mut scratch.xy))
             .collect();
         let shares = normalized_shares(&ln);
 
-        // 双子の組にまとめる。鍵（組の小さい方の辺番号）の昇順
-        let mut by_key: Vec<usize> = (0..cands.len()).collect();
-        by_key.sort_by_key(|&i| (self.twin_key(cands[i].edge), cands[i].edge));
+        // 双子でつながる辺を1つの組にまとめる（組の番号は、組の最小の候補の番号の昇順）
+        let labels = self.twin_groups(cands);
         struct Group {
             primary: usize,
             share: f64,
         }
         let mut groups: Vec<Group> = Vec::new();
-        let mut last_key = None;
-        for &i in &by_key {
-            let key = self.twin_key(cands[i].edge);
-            if last_key == Some(key) {
-                let g = groups.last_mut().expect("同じ鍵の組がある");
-                g.share += shares[i];
-                let best = &cands[g.primary];
-                let better = cands[i]
-                    .dist_m
-                    .total_cmp(&best.dist_m)
-                    .then(cands[i].edge.cmp(&best.edge))
-                    .is_lt();
-                if better {
-                    g.primary = i;
+        let mut group_of_label: std::collections::HashMap<usize, usize> =
+            std::collections::HashMap::new();
+        for (i, &label) in labels.iter().enumerate() {
+            match group_of_label.get(&label) {
+                Some(&gi) => {
+                    let g = &mut groups[gi];
+                    g.share += shares[i];
+                    let best = &cands[g.primary];
+                    let better = cands[i]
+                        .dist_m
+                        .total_cmp(&best.dist_m)
+                        .then(cands[i].edge.cmp(&best.edge))
+                        .is_lt();
+                    if better {
+                        g.primary = i;
+                    }
                 }
-            } else {
-                groups.push(Group {
-                    primary: i,
-                    share: shares[i],
-                });
-                last_key = Some(key);
+                None => {
+                    group_of_label.insert(label, groups.len());
+                    groups.push(Group {
+                        primary: i,
+                        share: shares[i],
+                    });
+                }
             }
         }
         let total: f64 = groups.iter().map(|g| g.share).sum();
@@ -820,25 +921,26 @@ impl<'a> RoadIndex<'a> {
                 reserved: 0,
             });
         }
-        // 双子への写し
+        // 双子への写し：載せた辺ごとに、反対側の車線の1本だけ
         let direct_targets = targets.clone();
         for t in &direct_targets {
-            let Some(twin) = self.topology.twin_of(t.target) else {
+            if !self.topology.has_twin(t.target) {
                 continue;
-            };
-            let record = &self.parts.edges[twin as usize];
-            if !is_road_edge(record)
-                || !self.edge_eligible(twin, motorway_coded)
-                || targets
-                    .iter()
-                    .any(|x| x.kind == TargetKind::Edge.code() && x.target == twin)
+            }
+            let pick = self.twin_at(t.target, frame, &mut scratch.xy, |twin| {
+                is_road_edge(&self.parts.edges[twin as usize])
+                    && self.edge_eligible(twin, motorway_coded)
+            });
+            let Some(pick) = pick else { continue };
+            if targets
+                .iter()
+                .any(|x| x.kind == TargetKind::Edge.code() && x.target == pick.edge)
             {
                 continue;
             }
-            let (_, pos) = self.project_edge(twin, frame, &mut scratch.xy);
             targets.push(AssignTarget {
-                target: twin,
-                pos_dm: pos,
+                target: pick.edge,
+                pos_dm: pick.pos_dm,
                 weight: t.weight,
                 kind: TargetKind::Edge.code(),
                 flags: TARGET_MIRROR,
@@ -851,10 +953,12 @@ impl<'a> RoadIndex<'a> {
             edges: cands
                 .iter()
                 .zip(&shares)
-                .map(|(c, &s)| DetailEdge {
+                .zip(&labels)
+                .map(|((c, &s), label)| DetailEdge {
                     edge: c.edge,
                     dist_m: c.dist_m,
                     share: s,
+                    group: cands[groups[group_of_label[label]].primary].edge,
                     assigned: targets
                         .iter()
                         .find(|t| t.kind == TargetKind::Edge.code() && t.target == c.edge)
@@ -974,6 +1078,8 @@ pub struct DetailEdge {
     pub dist_m: f64,
     /// 候補どうしの正規化した割合（双子の組にまとめる前）。
     pub share: f64,
+    /// 双子でつながる組の代表の辺（組の中で距離がもっとも近い辺）。
+    pub group: EdgeId,
     /// 割り当てた重みと、写しかどうか。
     pub assigned: Option<(f32, bool)>,
 }

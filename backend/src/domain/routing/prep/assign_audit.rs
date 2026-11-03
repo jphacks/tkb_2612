@@ -193,42 +193,52 @@ pub fn verify_assignment(
             }
             if t.is_mirror() {
                 stats.mirror_targets += 1;
-                let source = topology.twin_of(t.target).and_then(|twin| {
-                    targets.iter().find(|x| {
-                        !x.is_mirror() && x.kind == TargetKind::Edge.code() && x.target == twin
-                    })
+                // 写しの元は、双子の関係にある、載せた辺（複数あるときは、同じ重みのもの）
+                let has_source = targets.iter().any(|x| {
+                    !x.is_mirror()
+                        && x.kind == TargetKind::Edge.code()
+                        && x.weight == t.weight
+                        && topology.are_twins(x.target, t.target)
                 });
-                match source {
-                    Some(x) if x.weight == t.weight => {}
-                    _ => fail(format!(
+                if !has_source {
+                    fail(format!(
                         "事故{i}：写しの辺{}に、双子の元の候補（同じ重み）がありません",
                         t.target
-                    )),
+                    ));
                 }
             } else {
                 max_weight = max_weight.max(t.weight);
             }
         }
         stats.max_weight_sum += f64::from(max_weight);
-        // 双子のある候補は、双子が規則を満たすなら必ず写しがある
-        for t in targets.iter().filter(|t| !t.is_mirror()) {
-            if t.kind != TargetKind::Edge.code() {
+        // 双子のある候補は、規則を満たす双子があれば、その1本以上が割り当てにある（写しがある）。
+        // 同じ事故を反対側の複数の辺に重ねて数えないよう、写しは載せた辺ごとに多くても1本
+        let mut direct_edges = 0_usize;
+        let mut mirror_edges = 0_usize;
+        for t in targets.iter().filter(|t| t.kind == TargetKind::Edge.code()) {
+            if t.is_mirror() {
+                mirror_edges += 1;
                 continue;
             }
-            let Some(twin) = topology.twin_of(t.target) else {
-                continue;
+            direct_edges += 1;
+            let eligible = |twin: &u32| {
+                let record = &graph.edges[*twin as usize];
+                is_road_edge(record) && is_motorway_edge(record) == motorway_coded
             };
-            let record = &graph.edges[twin as usize];
-            let eligible = is_road_edge(record) && is_motorway_edge(record) == motorway_coded;
-            let present = targets
-                .iter()
-                .any(|x| x.kind == TargetKind::Edge.code() && x.target == twin);
-            if eligible && !present {
-                fail(format!(
-                    "事故{i}：辺{}の双子{twin}への写しがありません",
-                    t.target
-                ));
+            if !topology.twins_of(t.target).any(|twin| eligible(&twin)) {
+                continue;
             }
+            let present = targets.iter().any(|x| {
+                x.kind == TargetKind::Edge.code() && topology.are_twins(t.target, x.target)
+            });
+            if !present {
+                fail(format!("事故{i}：辺{}の双子への写しがありません", t.target));
+            }
+        }
+        if mirror_edges > direct_edges {
+            fail(format!(
+                "事故{i}：写し{mirror_edges}本が、載せた辺{direct_edges}本より多くなっています"
+            ));
         }
     }
     if stats.assigned + stats.unassigned != stats.accidents
@@ -719,6 +729,67 @@ mod tests {
         // 元の候補がない写し
         let mut bad = a.clone();
         bad.targets[0].flags = 1;
+        assert!(verify_assignment(&bad, w.graph.parts(), &w.topology, &attrs).is_err());
+    }
+
+    #[test]
+    fn verify_accepts_one_mirror_among_many_twins_and_rejects_duplicates() {
+        // 東行きの長い辺（辺0）と、反対側が3本に分かれた辺（辺1〜3）
+        let w = world(
+            &[
+                (0.0, 0.0),
+                (0.0, 300.0),
+                (12.0, 100.0),
+                (12.0, 0.0),
+                (12.0, 200.0),
+                (12.0, 100.0),
+                (12.0, 300.0),
+                (12.0, 200.0),
+            ],
+            &[
+                Spec::new(0, 1, HighwayClass::Trunk).oneway(),
+                Spec::new(2, 3, HighwayClass::Trunk).oneway(),
+                Spec::new(4, 5, HighwayClass::Trunk).oneway(),
+                Spec::new(6, 7, HighwayClass::Trunk).oneway(),
+            ],
+            &[],
+            &[(0, 1), (0, 2), (0, 3)],
+        );
+        let p = at_m(2.0, 150.0);
+        let (lat, lon) = ([f64::from(p.lat_e7) / 1e7], [f64::from(p.lon_e7) / 1e7]);
+        let attrs = vec![attr(16, 14)];
+        let input = SnapInput {
+            graph: w.graph.parts(),
+            graph_attrs: &w.attrs,
+            topology: &w.topology,
+            lat: &lat,
+            lon: &lon,
+            accident_attrs: &attrs,
+        };
+        let a = snap_accidents(&input, &AssignParams::default(), &|_| {})
+            .unwrap()
+            .assignment;
+        // 直接は辺0、写しは辺2の1本
+        assert_eq!(
+            a.targets
+                .iter()
+                .map(|t| (t.target, t.is_mirror()))
+                .collect::<Vec<_>>(),
+            vec![(0, false), (2, true)]
+        );
+        let stats = verify_assignment(&a, w.graph.parts(), &w.topology, &attrs).unwrap();
+        assert_eq!(stats.mirror_targets, 1);
+        // 反対側の別の辺（辺1）にも重ねて写すと、載せた辺より写しが多くなる
+        let mut bad = a.clone();
+        let mut extra = bad.targets[1];
+        extra.target = 1;
+        bad.targets.insert(1, extra);
+        bad.offsets[1] = 3;
+        let err = verify_assignment(&bad, w.graph.parts(), &w.topology, &attrs).unwrap_err();
+        assert!(err.contains("写し"), "{err}");
+        // 写しの重みが元と違う
+        let mut bad = a.clone();
+        bad.targets[1].weight = 0.5;
         assert!(verify_assignment(&bad, w.graph.parts(), &w.topology, &attrs).is_err());
     }
 
