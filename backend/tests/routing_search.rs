@@ -2062,6 +2062,111 @@ fn twin_edges_are_the_same_physical_section() {
 }
 
 #[test]
+fn many_to_many_twins_count_only_the_stretch_they_run_alongside() {
+    // 東行きの長い辺 e（u→v、3000 dm）と、その北10mを西へ向かう3本の辺 t1・t2・t3（各1000 dm。東の端から順に）。
+    // e が3本すべての双子（多対多）。t1〜t3 どうしは同じ向きで、双子ではない。
+    let nodes = [
+        (35.0000, 139.0000), // 0: u
+        (35.0000, 139.0030), // 1: v
+        (35.0001, 139.0030), // 2: t3の始点
+        (35.0001, 139.0020), // 3: t3の終点＝t2の始点
+        (35.0001, 139.0010), // 4: t2の終点＝t1の始点
+        (35.0001, 139.0000), // 5: t1の終点
+    ];
+    let mut b = GraphBuilder::new();
+    for &(lat, lon) in &nodes {
+        b.add_node_deg(lat, lon);
+    }
+    let e = b.add_edge(EdgeSpec::new(0, 1).length_dm(3000).oneway());
+    let t3 = b.add_edge(EdgeSpec::new(2, 3).length_dm(1000).oneway());
+    let t2 = b.add_edge(EdgeSpec::new(3, 4).length_dm(1000).oneway());
+    let t1 = b.add_edge(EdgeSpec::new(4, 5).length_dm(1000).oneway());
+    let graph = b.build();
+    let mut topology = empty_topology(&graph);
+    topology.twins = [(e, t1), (e, t2), (e, t3)]
+        .iter()
+        .flat_map(|&(a, b)| [TwinPair { a, b }, TwinPair { a: b, b: a }])
+        .collect();
+    topology.twins.sort_by_key(|t| (t.a, t.b));
+    assert_eq!(topology.validate(&graph), Ok(()));
+    let full = |edge: EdgeId| node_path(&graph, vec![DirEdge::new(edge, false)], 100, 0);
+    let ratio = |a: &Path, b: &Path| overlap_ratio(&graph, &topology, a, b);
+    // 長い辺 e の全体に対して、短い辺は、それぞれ自分の長さの全部が重なる
+    for t in [t1, t2, t3] {
+        assert!((ratio(&full(t), &full(e)) - 1.0).abs() < 1e-9, "{t}");
+        assert!((ratio(&full(e), &full(t)) - 1.0 / 3.0).abs() < 1e-9, "{t}");
+    }
+    // 短い辺どうしは双子でない（同じ向きの別の区間）ので、重ならない
+    assert_eq!(ratio(&full(t1), &full(t2)), 0.0);
+    // 2本の短い辺（t3→t2：e の東側の 2000 dm）は、e の 2/3 を共有する。向きの違う部分を足した合計
+    let t3_t2 = node_path(
+        &graph,
+        vec![DirEdge::new(t3, false), DirEdge::new(t2, false)],
+        100,
+        0,
+    );
+    assert!((ratio(&full(e), &t3_t2) - 2.0 / 3.0).abs() < 1e-9);
+    assert!((ratio(&t3_t2, &full(e)) - 1.0).abs() < 1e-9);
+    // 3本そろえれば e の全体
+    let all = node_path(
+        &graph,
+        vec![
+            DirEdge::new(t3, false),
+            DirEdge::new(t2, false),
+            DirEdge::new(t1, false),
+        ],
+        100,
+        0,
+    );
+    assert!((ratio(&full(e), &all) - 1.0).abs() < 1e-9);
+    // 部分：e の始点から 500〜1500 dm（t1 の東側半分と t2 の西側半分）。t1 の始点側 500 dm（e の 500〜1000 に当たる）と
+    // 重なるのは 500 dm で、e のこの部分の半分。t2 は 0〜500 dm 側（e の 1500〜1000 に当たる）の 500 dm
+    let part_e = Path {
+        dedges: vec![DirEdge::new(e, false)],
+        start: snap_at(&graph, e, 500),
+        end: snap_at(&graph, e, 1500),
+        time_ds: 0,
+        risk_fx: 0,
+    };
+    let part_t1 = Path {
+        dedges: vec![DirEdge::new(t1, false)],
+        start: snap_at(&graph, t1, 0),
+        end: snap_at(&graph, t1, 500),
+        time_ds: 0,
+        risk_fx: 0,
+    };
+    assert!(
+        (ratio(&part_e, &part_t1) - 0.5).abs() < 1e-6,
+        "{}",
+        ratio(&part_e, &part_t1)
+    );
+    assert!((ratio(&part_t1, &part_e) - 1.0).abs() < 1e-6);
+    // t1 の西側 500 dm（e の 0〜500 に当たる）は、part_e（500〜1500）と重ならない
+    let t1_west = Path {
+        dedges: vec![DirEdge::new(t1, false)],
+        start: snap_at(&graph, t1, 500),
+        end: snap_at(&graph, t1, 1000),
+        time_ds: 0,
+        risk_fx: 0,
+    };
+    assert_eq!(ratio(&part_e, &t1_west), 0.0);
+    assert_eq!(ratio(&t1_west, &part_e), 0.0);
+    // 双子でなければ重ならない
+    let plain = empty_topology(&graph);
+    assert_eq!(overlap_ratio(&graph, &plain, &full(e), &full(t2)), 0.0);
+    // 選別：e と、その双子だけでできた別の候補は、80%を超えて重なるので捨てる（e が先）
+    let kept = select_candidates(
+        &graph,
+        &topology,
+        full(e),
+        full(e),
+        vec![all.clone()],
+        1_000,
+    );
+    assert_eq!(kept.len(), 1);
+}
+
+#[test]
 fn select_candidates_removes_duplicates_and_keeps_p0_and_best() {
     let w = CandidateWorld::new();
     let (g, topo) = (&w.graph, &w.topology);

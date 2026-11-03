@@ -1,11 +1,15 @@
 //! 候補の整理（形式書18章、behavior.md 5章「候補の整理」2〜5）：上限の確認・重複除去・上限6本・
 //! 所要時間の昇順。
 //!
-//! 重複の判定は「共有する物理区間の長さ」。物理区間は辺番号で判定し、双子の辺（`Topology::twin_of`）
-//! は同じ区間とみなし、出発・到着の辺の途中までの部分は重なった長さだけを数える。
+//! 重複の判定は「共有する物理区間の長さ」。物理区間は辺番号で判定し、双子の辺（`Topology::are_twins`。
+//! 1つの辺に双子は複数ありうる）は同じ区間とみなす。双子の区間は、辺の折れ線に投影して、辺のどの区間に
+//! 当たるかで数える（長い1本の反対側が短い複数の辺に分かれていても、重なった長さだけが共有になる）。
+//! 出発・到着の辺の途中までの部分は、通った部分だけを数える。
 
 use crate::contract::engine::MAX_CANDIDATES;
-use crate::domain::routing::graph::{EdgeId, Graph};
+use crate::contract::geo::METERS_PER_DEGREE;
+use crate::domain::routing::graph::{Coord, EdgeId, Graph};
+use crate::domain::routing::snap::point_on_edge;
 use crate::domain::routing::topology::Topology;
 
 use super::Path;
@@ -59,25 +63,55 @@ pub fn path_length_dm(graph: &Graph, path: &Path) -> u64 {
     path_distance_dm(graph, &path.start, &path.end, &path.dedges).unwrap_or(0)
 }
 
-/// 双子の辺 `twin` の区間を、辺 `edge` の始点からの距離（デシメートル、実数）に写す。
-/// 双子の向きは、端点の座標が近い組で決める（同じ向きなら比例、逆向きなら反転）。
-fn map_twin_interval(graph: &Graph, edge: EdgeId, twin: EdgeId, lo: u32, hi: u32) -> (f64, f64) {
-    let (e, t) = (graph.edge(edge), graph.edge(twin));
-    let near = |a: u32, b: u32| {
-        let (p, q) = (graph.node_coord(a), graph.node_coord(b));
-        let dlat = f64::from(p.lat_e7) - f64::from(q.lat_e7);
-        let dlon = f64::from(p.lon_e7) - f64::from(q.lon_e7);
-        dlat * dlat + dlon * dlon
+/// 座標 `p` を辺 `edge` の折れ線に投影した位置（辺の始点からの距離、デシメートル、実数）。
+/// 折れ線の端の外側にある点は、端に丸める。距離は折れ線の長さに対する割合を `length_dm` に直す
+/// （`snap::point_on_edge` の逆）。
+fn offset_on_edge_dm(graph: &Graph, edge: EdgeId, p: Coord) -> f64 {
+    let line = graph.edge_polyline(edge);
+    let length_dm = f64::from(graph.edge(edge).length_dm);
+    let my = METERS_PER_DEGREE / 1e7;
+    let cos_lat = (f64::from(p.lat_e7) / 1e7).to_radians().cos().max(0.05);
+    let mx = my * cos_lat;
+    let xy = |c: Coord| {
+        (
+            (f64::from(c.lon_e7) - f64::from(p.lon_e7)) * mx,
+            (f64::from(c.lat_e7) - f64::from(p.lat_e7)) * my,
+        )
     };
-    let same = near(e.tail, t.tail) + near(e.head, t.head);
-    let reversed = near(e.tail, t.head) + near(e.head, t.tail);
-    let scale = f64::from(e.length_dm) / f64::from(t.length_dm);
-    let (a, b) = (f64::from(lo) * scale, f64::from(hi) * scale);
-    if same <= reversed {
-        (a, b)
-    } else {
-        (f64::from(e.length_dm) - b, f64::from(e.length_dm) - a)
+    // (原点までの距離, そこまでの折れ線の長さ)。距離が最小の点を選ぶ
+    let mut best = (f64::INFINITY, 0.0_f64);
+    let mut walked = 0.0_f64;
+    for w in line.windows(2) {
+        let ((ax, ay), (bx, by)) = (xy(w[0]), xy(w[1]));
+        let (dx, dy) = (bx - ax, by - ay);
+        let len2 = dx * dx + dy * dy;
+        let t = if len2 > 0.0 {
+            (-(ax * dx + ay * dy) / len2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let dist = (ax + t * dx).hypot(ay + t * dy);
+        let segment = len2.sqrt();
+        if dist < best.0 {
+            best = (dist, walked + t * segment);
+        }
+        walked += segment;
     }
+    if walked > 0.0 {
+        best.1 / walked * length_dm
+    } else {
+        0.0
+    }
+}
+
+/// 双子の辺 `twin` の区間（`twin` の始点からの距離 `lo`〜`hi`、デシメートル）を、辺 `edge` の始点からの
+/// 距離（デシメートル、実数）の区間に写す。区間の両端の点を `edge` の折れ線に投影するので、向きが逆でも、
+/// 長さが違っても、双子が `edge` の一部にしか並走していなくても、`edge` のどの区間に当たるかが分かる。
+/// `edge` の端の外側に当たる部分は端に丸めるので、`edge` と並走しない部分は長さ0になる。
+fn map_twin_interval(graph: &Graph, edge: EdgeId, twin: EdgeId, lo: u32, hi: u32) -> (f64, f64) {
+    let a = offset_on_edge_dm(graph, edge, point_on_edge(graph, twin, lo));
+    let b = offset_on_edge_dm(graph, edge, point_on_edge(graph, twin, hi));
+    (a.min(b), a.max(b))
 }
 
 /// 経路 `a` の長さのうち、経路 `b` と物理区間を共有する長さの割合（0〜1）。`a` の長さが0なら0。
@@ -92,7 +126,6 @@ pub fn overlap_ratio(graph: &Graph, topology: &Topology, a: &Path, b: &Path) -> 
     }
     let mut shared = 0.0_f64;
     for &(edge, lo, hi) in &spans_a {
-        let twin = topology.twin_of(edge);
         let mut covered: Vec<(f64, f64)> = Vec::new();
         for &(other, other_lo, other_hi) in &spans_b {
             if other_lo == other_hi {
@@ -100,7 +133,7 @@ pub fn overlap_ratio(graph: &Graph, topology: &Topology, a: &Path, b: &Path) -> 
             }
             if other == edge {
                 covered.push((f64::from(other_lo), f64::from(other_hi)));
-            } else if twin == Some(other) {
+            } else if topology.are_twins(edge, other) {
                 covered.push(map_twin_interval(graph, edge, other, other_lo, other_hi));
             }
         }
