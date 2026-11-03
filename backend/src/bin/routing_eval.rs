@@ -13,6 +13,8 @@
 //! | `graph-stats` | グラフ一式（`graph.bin`・`restrictions.bin`・`topology.bin`・`odindex.bin`）を読み込んで、件数とRSSを表示する（M1の受け入れ条件） |
 //! | `fastest-batch` | ODの一覧に対して、手段ごとに吸着 → 最短時間経路を実行し、結果をJSON Linesで出す（M1.7・M1.8） |
 //! | `dump-time-model` | `graph.bin` の `TIMEMODL`（所要時間のモデル）をJSONで標準出力に書く（`--dir <DIR>`。M1.7の係数の探索用） |
+//! | `route-batch` | ODの一覧に対して、条件つきのリスクで吸着 → 探索（`find_routes`）を実行し、1件ごとの結果と計測値をJSON Linesで出す（M3b.5） |
+//! | `route-summary` | `route-batch` の結果をグループごとに集計し、JSONと人が読める表を出す（M3b.5） |
 //!
 //! `graph-stats` は `--dir <DIR>`（4つの `.bin` があるディレクトリ）を受け取る。`--parts-only true` を
 //! 付けると、`Graph::from_parts` と各 `validate` を省いて節だけを読む（検査にかかる時間の切り分け用）。
@@ -31,6 +33,18 @@
 //! `TIMEMODL` を、このJSONで置き換えて読む。係数の探索用で、P1の作り直し前の見積もりに使う）。
 //! 1件ごとに、吸着（`snap_ms`）と最短時間経路（`search_ms`）の壁時計の時間を測る。作業領域と照合器は
 //! 1スレッドの中のODをまたいで再利用する。
+//!
+//! `route-batch`：`--dir <DIR> --assignment <assignment.bin> --accidents <accidents.csv.gz>
+//! --risk <risk.bin> --ods <od.jsonl> --out <result.jsonl>`。任意：`--alt <alt.bin>`（省略時は
+//! `Landmarks::empty()`）、`--threads N`（既定4）、`--timeout-s S`（1件ごとの期限、既定35）、
+//! `--detour-min M`（既定10。ODの `detour_min` があればそちらを使う）、`--conditions random|all`
+//! （既定 `random`。ODのidと `--seed` から決まる乱数で条件を選ぶ）、`--seed S`（既定1）、
+//! `--rcsp-budget-ms MS`・`--larac-iterations N`・`--ellipse-node-limit N`・`--rcsp-label-limit N`
+//! （探索のパラメータ、既定は `SearchParams::DEFAULT`）、`--coords true|false`（候補の座標を出す、
+//! 既定false）。記録は全体の `status` と、探索の状態を `search_status` として持つ（`RouteStats.status`）。
+//!
+//! `route-summary`：`--results <result.jsonl>[,<result2.jsonl>...]`。任意：`--group-by mode|mode,region`
+//! （既定 `mode`）、`--out <summary.json>`（省略時は標準出力）。`region` は `id` の最初の `-` より前。
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -38,10 +52,15 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use accident_route_backend::contract::geo::{METERS_PER_DEGREE, straight_distance_m};
-use accident_route_backend::contract::{CancelToken, Interrupt, LatLon, Mode};
-use accident_route_backend::data::routing_files::{
-    decode_graph, decode_graph_parts, decode_odindex, decode_restrictions, decode_topology,
+use accident_route_backend::contract::{
+    CancelToken, ConditionFilter, DayType, Interrupt, LatLon, Mode, Period, Weather,
 };
+use accident_route_backend::data::load::parse_accidents;
+use accident_route_backend::data::routing_files::{
+    decode_alt, decode_assignment, decode_graph, decode_graph_parts, decode_odindex,
+    decode_restrictions, decode_risk, decode_topology,
+};
+use accident_route_backend::domain::routing::accident::EdgeAccidentIndex;
 use accident_route_backend::domain::routing::graph::restrictions::TurnAutomaton;
 use accident_route_backend::domain::routing::graph::synthetic::Rng;
 use accident_route_backend::domain::routing::graph::time::{TimeModel, turn_angle_deg};
@@ -49,19 +68,28 @@ use accident_route_backend::domain::routing::graph::{
     Coord, DirEdge, EdgeId, Graph, HighwayClass, NodeId, access, node_flags,
 };
 use accident_route_backend::domain::routing::legality::{Violation, check_path};
+use accident_route_backend::domain::routing::risk::RiskModel;
+use accident_route_backend::domain::routing::risk::RiskView;
+use accident_route_backend::domain::routing::risk::arc_cost::{RiskArcCost, path_risk};
 use accident_route_backend::domain::routing::search::endpoints::{
     Endpoints, Placement, is_same_position, path_distance_dm, path_time_ds, placement,
     travelled_lengths_dm,
 };
 use accident_route_backend::domain::routing::search::fastest::{FastestWork, fastest_path_with};
-use accident_route_backend::domain::routing::search::{SearchContext, SearchParams};
+use accident_route_backend::domain::routing::search::route::{
+    RouteError, RouteStats, find_routes, path_risk_fx,
+};
+use accident_route_backend::domain::routing::search::{
+    Path as RoutePath, SearchContext, SearchParams, SearchStatus,
+};
 use accident_route_backend::domain::routing::snap::{OdIndex, SnapPoint, point_on_edge, snap};
 use accident_route_backend::domain::routing::topology::Topology;
 use accident_route_backend::domain::routing::{Landmarks, Restrictions};
+use accident_route_backend::domain::snapshot::AccidentSnapshot;
 use rayon::prelude::*;
 use serde_json::{Value, json};
 
-const USAGE: &str = "使い方: routing_eval <legality|bench|od-sample|y-metrics|graph-stats|fastest-batch|dump-time-model> [--名前 値]...";
+const USAGE: &str = "使い方: routing_eval <legality|bench|od-sample|y-metrics|graph-stats|fastest-batch|dump-time-model|route-batch|route-summary> [--名前 値]...";
 
 /// `--名前 値` の組。名前は先頭の `--` を除いて持つ。
 struct Options(BTreeMap<String, String>);
@@ -654,6 +682,8 @@ struct Od {
     mode: Mode,
     origin: LatLon,
     dest: LatLon,
+    /// ODごとの遠回りの上限（分）。なければ `--detour-min` を使う。
+    detour_min: Option<u32>,
 }
 
 fn read_ods(path: &str) -> Result<Vec<Od>, String> {
@@ -675,11 +705,27 @@ fn read_ods(path: &str) -> Result<Vec<Od>, String> {
             .ok_or_else(bad)?;
         let origin = v.get("o").and_then(json_latlon).ok_or_else(bad)?;
         let dest = v.get("d").and_then(json_latlon).ok_or_else(bad)?;
+        let detour_min = match v.get("detour_min") {
+            None | Some(Value::Null) => None,
+            Some(value) => {
+                let minutes = value.as_f64().ok_or_else(|| {
+                    format!("{path} の {} 行目の detour_min が数ではありません", i + 1)
+                })?;
+                if !minutes.is_finite() || minutes < 0.0 || minutes > f64::from(u32::MAX) {
+                    return Err(format!(
+                        "{path} の {} 行目の detour_min が範囲外です: {minutes}",
+                        i + 1
+                    ));
+                }
+                Some(minutes.floor() as u32)
+            }
+        };
         ods.push(Od {
             id: id.to_owned(),
             mode,
             origin,
             dest,
+            detour_min,
         });
     }
     Ok(ods)
@@ -1285,6 +1331,734 @@ fn fastest_batch(options: &Options) -> Result<(), String> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------------------------
+// route-batch（M3b.5）
+// ---------------------------------------------------------------------------------------------
+
+/// ODのidから決まるシード用のハッシュ（FNV-1a。同じid・同じシードで同じ条件にする）。
+fn id_hash(text: &str) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in text.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// `--conditions random` の条件。period（なし＋5区分）・day_type（なし＋2区分）・
+/// weather（なし＋5区分）を、それぞれ一様に選ぶ。
+fn random_conditions(id: &str, seed: u64) -> ConditionFilter {
+    let mut rng = Rng::new(seed ^ id_hash(id));
+    let period = match rng.below(Period::ALL.len() + 1) {
+        0 => None,
+        i => Some(Period::ALL[i - 1]),
+    };
+    let day_type = match rng.below(DayType::ALL.len() + 1) {
+        0 => None,
+        i => Some(DayType::ALL[i - 1]),
+    };
+    let weather = match rng.below(Weather::ALL.len() + 1) {
+        0 => None,
+        i => Some(Weather::ALL[i - 1]),
+    };
+    ConditionFilter {
+        period,
+        day_type,
+        weather,
+    }
+}
+
+/// 記録に書く条件（日本語のラベル。指定なしは null）。
+fn conditions_json(filter: ConditionFilter) -> Value {
+    json!({
+        "period": filter.period.map(|p| p.label()),
+        "day_type": filter.day_type.map(|d| d.label()),
+        "weather": filter.weather.map(|w| w.label()),
+    })
+}
+
+/// `RouteStats.status` の文字列。
+fn search_status_str(status: SearchStatus) -> &'static str {
+    match status {
+        SearchStatus::Optimal => "optimal",
+        SearchStatus::Bounded => "bounded",
+        SearchStatus::Reduced => "reduced",
+        SearchStatus::FastestOnly => "fastest_only",
+    }
+}
+
+/// `RouteStats` の全項目を記録に入れる。探索しなかった場合は null（候補は空）。
+fn insert_route_stats(rec: &mut serde_json::Map<String, Value>, stats: Option<&RouteStats>) {
+    let value = |f: fn(&RouteStats) -> Value| stats.map_or(Value::Null, f);
+    rec.insert("fastest_ms".into(), value(|s| json!(s.fastest_ms)));
+    rec.insert("ellipse_ms".into(), value(|s| json!(s.ellipse_ms)));
+    rec.insert("search_ms".into(), value(|s| json!(s.search_ms)));
+    rec.insert("select_ms".into(), value(|s| json!(s.select_ms)));
+    rec.insert(
+        "ellipse_nodes".into(),
+        value(|s| s.ellipse_nodes.map_or(Value::Null, |n| json!(n))),
+    );
+    rec.insert(
+        "ellipse_arcs".into(),
+        value(|s| s.ellipse_arcs.map_or(Value::Null, |n| json!(n))),
+    );
+    rec.insert("reduced".into(), value(|s| json!(s.reduced)));
+    rec.insert("fastest_only".into(), value(|s| json!(s.fastest_only)));
+    rec.insert(
+        "search_status".into(),
+        value(|s| json!(search_status_str(s.status))),
+    );
+    rec.insert("gap".into(), value(|s| json!(s.gap)));
+    rec.insert("rcsp_completed".into(), value(|s| json!(s.rcsp_completed)));
+}
+
+/// 経路の道のり（m）。形が正しくないときは NaN。
+fn route_distance_m(graph: &Graph, path: &RoutePath) -> f64 {
+    path_distance_dm(graph, &path.start, &path.end, &path.dedges)
+        .map_or(f64::NAN, |dm| dm as f64 / 10.0)
+}
+
+/// `p0`・`best` の記録。
+fn route_path_json(graph: &Graph, path: &RoutePath, risk: f64) -> Value {
+    json!({
+        "time_s": path.time_ds as f64 / 10.0,
+        "distance_m": route_distance_m(graph, path),
+        "risk": risk,
+    })
+}
+
+/// 1件のODを、吸着 → 探索 → 候補の整理まで処理する。
+struct RouteRunner<'a> {
+    data: &'a Data,
+    automata: &'a [Option<TurnAutomaton>; 3],
+    components: &'a [Option<Components>; 3],
+    landmarks: &'a Landmarks,
+    risk: &'a RiskModel,
+    accidents: &'a EdgeAccidentIndex,
+    snapshot: &'a AccidentSnapshot,
+    timeout: Duration,
+    coords: bool,
+    random_conditions: bool,
+    seed: u64,
+    default_detour_min: u32,
+    params: SearchParams,
+}
+
+impl RouteRunner<'_> {
+    fn run(&self, od: &Od) -> Value {
+        let data = self.data;
+        let graph = &data.graph;
+        let mode = od.mode;
+        let total_started = Instant::now();
+        let detour_min = od.detour_min.unwrap_or(self.default_detour_min);
+        let filter = if self.random_conditions {
+            random_conditions(&od.id, self.seed)
+        } else {
+            ConditionFilter::default()
+        };
+        let mut rec = serde_json::Map::new();
+        rec.insert("id".into(), json!(od.id));
+        rec.insert("mode".into(), json!(mode.as_str()));
+        rec.insert("origin".into(), latlon_json(od.origin));
+        rec.insert("dest".into(), latlon_json(od.dest));
+        rec.insert(
+            "straight_m".into(),
+            json!((straight_distance_m(od.origin, od.dest) * 10.0).round() / 10.0),
+        );
+        rec.insert("detour_min".into(), json!(detour_min));
+        rec.insert("conditions".into(), conditions_json(filter));
+
+        let snap_started = Instant::now();
+        let start = snap(graph, &data.topology, &data.odindex, od.origin, mode);
+        let end = snap(graph, &data.topology, &data.odindex, od.dest, mode);
+        rec.insert(
+            "snap_ms".into(),
+            json!(snap_started.elapsed().as_secs_f64() * 1e3),
+        );
+
+        // 探索しなかった場合も、集計側が同じ形で読めるように欄を埋める。
+        let finish = |mut rec: serde_json::Map<String, Value>, status: &str| {
+            for key in ["budget_ds", "p0", "best"] {
+                rec.entry(key).or_insert(Value::Null);
+            }
+            rec.entry("candidates")
+                .or_insert_with(|| Value::Array(Vec::new()));
+            rec.insert("status".into(), json!(status));
+            // 成功した場合は find_routes の直後に入れてある（検証の時間を含めない）。
+            rec.entry("total_ms")
+                .or_insert_with(|| json!(total_started.elapsed().as_secs_f64() * 1e3));
+            Value::Object(rec)
+        };
+
+        let (Some(start), Some(end)) = (start, end) else {
+            insert_route_stats(&mut rec, None);
+            let status = if start.is_none() {
+                "no_snap_origin"
+            } else {
+                "no_snap_dest"
+            };
+            return finish(rec, status);
+        };
+        if is_same_position(graph, &start, &end) {
+            insert_route_stats(&mut rec, None);
+            return finish(rec, "same_position");
+        }
+        if let Some(components) = &self.components[mode_slot(mode)] {
+            let (root_o, _) = components.of_edge(graph, start.edge);
+            let (root_d, _) = components.of_edge(graph, end.edge);
+            if root_o != root_d {
+                insert_route_stats(&mut rec, None);
+                return finish(rec, "no_route");
+            }
+        }
+
+        let automaton = self.automata[mode_slot(mode)]
+            .as_ref()
+            .expect("手段の照合器を作った");
+        let ctx = SearchContext {
+            graph,
+            topology: &data.topology,
+            automaton,
+            landmarks: self.landmarks,
+            mode,
+            params: self.params,
+        };
+        let cancel = CancelToken::with_timeout(self.timeout);
+        let mut view = RiskView::new(
+            self.risk,
+            graph,
+            &data.topology,
+            self.accidents,
+            self.snapshot,
+            mode,
+            filter,
+        );
+        let result = {
+            let mut cost = RiskArcCost::new(&mut view);
+            find_routes(&ctx, &mut cost, &start, &end, detour_min, &cancel)
+        };
+        let search_done_ms = total_started.elapsed().as_secs_f64() * 1e3;
+        let result = match result {
+            Ok(result) => result,
+            Err(error) => {
+                insert_route_stats(&mut rec, None);
+                let status = match error {
+                    RouteError::NoRoute => "no_route",
+                    RouteError::RouteTooLong => "route_too_long",
+                    RouteError::Interrupted => "interrupted",
+                };
+                return finish(rec, status);
+            }
+        };
+
+        insert_route_stats(&mut rec, Some(&result.stats));
+        rec.insert("total_ms".into(), json!(search_done_ms));
+        rec.insert("budget_ds".into(), json!(result.budget_ds));
+        let p0_risk = path_risk(&mut view, &result.p0);
+        let best_risk = path_risk(&mut view, &result.best);
+        let candidate_risks: Vec<f64> = result
+            .candidates
+            .iter()
+            .map(|path| path_risk(&mut view, path))
+            .collect();
+        let risk_fx_matches: Vec<bool> = {
+            let mut cost = RiskArcCost::new(&mut view);
+            result
+                .candidates
+                .iter()
+                .map(|path| path_risk_fx(graph, &mut cost, path) == path.risk_fx)
+                .collect()
+        };
+        rec.insert("p0".into(), route_path_json(graph, &result.p0, p0_risk));
+        rec.insert(
+            "best".into(),
+            route_path_json(graph, &result.best, best_risk),
+        );
+        let mut candidates = Vec::with_capacity(result.candidates.len());
+        for (i, path) in result.candidates.iter().enumerate() {
+            let violations: Vec<Value> = check_path(graph, &data.restrictions, mode, &path.dedges)
+                .iter()
+                .map(violation_json)
+                .collect();
+            let mut candidate = serde_json::Map::new();
+            candidate.insert("time_s".into(), json!(path.time_ds as f64 / 10.0));
+            candidate.insert("distance_m".into(), json!(route_distance_m(graph, path)));
+            candidate.insert("risk".into(), json!(candidate_risks[i]));
+            candidate.insert("dedge_count".into(), json!(path.dedges.len()));
+            candidate.insert("violations".into(), Value::Array(violations));
+            candidate.insert(
+                "within_budget".into(),
+                json!(path.time_ds <= result.budget_ds),
+            );
+            candidate.insert("risk_fx_matches".into(), json!(risk_fx_matches[i]));
+            if self.coords {
+                let coords = route_coords(graph, &path.start, &path.end, &path.dedges);
+                candidate.insert("coords".into(), coords_json(&coords));
+            }
+            candidates.push(Value::Object(candidate));
+        }
+        rec.insert("candidates".into(), Value::Array(candidates));
+        finish(rec, "ok")
+    }
+}
+
+/// ODの一覧に対して、条件つきのリスクで吸着 → 探索を実行し、結果をJSON Linesで出す。
+fn route_batch(options: &Options) -> Result<(), String> {
+    let dir = dir_option(options)?;
+    let assignment_path = options
+        .0
+        .get("assignment")
+        .map(Path::new)
+        .ok_or("--assignment が必要です")?;
+    let accidents_path = options
+        .0
+        .get("accidents")
+        .map(Path::new)
+        .ok_or("--accidents が必要です")?;
+    let risk_path = options
+        .0
+        .get("risk")
+        .map(Path::new)
+        .ok_or("--risk が必要です")?;
+    let ods_path = options.0.get("ods").ok_or("--ods が必要です")?;
+    let out_path = options.0.get("out").ok_or("--out が必要です")?;
+    let alt_path = options.0.get("alt").map(Path::new);
+    let threads: usize = number_option(options, "threads", Some(4))?;
+    let timeout_s: f64 = number_option(options, "timeout-s", Some(35.0))?;
+    let detour_min: u32 = number_option(options, "detour-min", Some(10))?;
+    let seed: u64 = number_option(options, "seed", Some(1))?;
+    let coords = bool_option(options, "coords", false)?;
+    let random_conditions = match options
+        .0
+        .get("conditions")
+        .map(String::as_str)
+        .unwrap_or("random")
+    {
+        "random" => true,
+        "all" => false,
+        value => {
+            return Err(format!("--conditions は random か all です: {value}"));
+        }
+    };
+    if threads == 0 {
+        return Err("--threads は1以上です".to_owned());
+    }
+    if !timeout_s.is_finite() || timeout_s <= 0.0 {
+        return Err(format!("--timeout-s は正の数です: {timeout_s}"));
+    }
+    let params = SearchParams {
+        rcsp_budget_ms: number_option(
+            options,
+            "rcsp-budget-ms",
+            Some(SearchParams::DEFAULT.rcsp_budget_ms),
+        )?,
+        larac_iterations: number_option(
+            options,
+            "larac-iterations",
+            Some(SearchParams::DEFAULT.larac_iterations),
+        )?,
+        ellipse_node_limit: number_option(
+            options,
+            "ellipse-node-limit",
+            Some(SearchParams::DEFAULT.ellipse_node_limit),
+        )?,
+        rcsp_label_limit: number_option(
+            options,
+            "rcsp-label-limit",
+            Some(SearchParams::DEFAULT.rcsp_label_limit),
+        )?,
+    };
+
+    let started = Instant::now();
+    let report = |label: &str| {
+        let (rss, hwm) = memory_mb();
+        eprintln!(
+            "[{:>6.1}s] {label:<32} VmRSS={rss:.0}MB VmHWM={hwm:.0}MB",
+            started.elapsed().as_secs_f64()
+        );
+    };
+
+    let data = load_data(dir, None, true)?;
+    report("グラフ一式を読んだ");
+    let edge_count = data.graph.edge_count();
+    let cluster_count = data.topology.cluster_count();
+
+    let bytes = std::fs::read(assignment_path)
+        .map_err(|e| format!("{} を読めません: {e}", assignment_path.display()))?;
+    let assignment = decode_assignment(&bytes).map_err(|e| e.to_string())?.value;
+    assignment.validate(edge_count, cluster_count)?;
+    let accidents = EdgeAccidentIndex::build(&assignment, edge_count, cluster_count);
+    drop(assignment);
+    drop(bytes);
+    report("assignment.binを読み、索引を作った");
+
+    let gzip = std::fs::read(accidents_path)
+        .map_err(|e| format!("{} を読めません: {e}", accidents_path.display()))?;
+    let columns = parse_accidents(&gzip).map_err(|e| e.to_string())?;
+    let snapshot = AccidentSnapshot::new(columns);
+    drop(gzip);
+    report("accidents.csv.gzを読んだ");
+
+    let bytes = std::fs::read(risk_path)
+        .map_err(|e| format!("{} を読めません: {e}", risk_path.display()))?;
+    let risk = decode_risk(&bytes).map_err(|e| e.to_string())?.value;
+    if risk.edge_k.len() != edge_count {
+        return Err(format!(
+            "risk.binのEDGEKの長さ{}が辺の数{edge_count}と違います",
+            risk.edge_k.len()
+        ));
+    }
+    if risk.cluster_j.len() != cluster_count {
+        return Err(format!(
+            "risk.binのCLUSJの長さ{}がクラスタの数{cluster_count}と違います",
+            risk.cluster_j.len()
+        ));
+    }
+    drop(bytes);
+    report("risk.binを読んだ");
+
+    let landmarks = match alt_path {
+        Some(path) => {
+            let bytes =
+                std::fs::read(path).map_err(|e| format!("{} を読めません: {e}", path.display()))?;
+            decode_alt(&bytes).map_err(|e| e.to_string())?.value
+        }
+        None => Landmarks::empty(),
+    };
+    report("alt.binを読んだ（省略時は空）");
+
+    let ods = read_ods(ods_path)?;
+    let mut automata: [Option<TurnAutomaton>; 3] = [None, None, None];
+    let mut components: [Option<Components>; 3] = [None, None, None];
+    for mode in Mode::ALL {
+        if ods.iter().any(|od| od.mode == mode) {
+            automata[mode_slot(mode)] = Some(TurnAutomaton::build(&data.restrictions, mode));
+            components[mode_slot(mode)] = Some(Components::build(&data.graph, mode));
+        }
+    }
+    report("照合器と連結成分を作った");
+    eprintln!(
+        "[{:.1}s] {} 組を {threads} スレッドで処理します",
+        started.elapsed().as_secs_f64(),
+        ods.len()
+    );
+
+    let runner = RouteRunner {
+        data: &data,
+        automata: &automata,
+        components: &components,
+        landmarks: &landmarks,
+        risk: &risk,
+        accidents: &accidents,
+        snapshot: &snapshot,
+        timeout: Duration::from_secs_f64(timeout_s),
+        coords,
+        random_conditions,
+        seed,
+        default_detour_min: detour_min,
+        params,
+    };
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let batch_started = Instant::now();
+    let results: Vec<Value> = pool.install(|| ods.par_iter().map(|od| runner.run(od)).collect());
+    let batch_s = batch_started.elapsed().as_secs_f64();
+    let mut text = String::new();
+    for record in results {
+        text.push_str(&record.to_string());
+        text.push('\n');
+    }
+    std::fs::write(out_path, text).map_err(|e| format!("{out_path} に書けません: {e}"))?;
+    let (rss, hwm) = memory_mb();
+    eprintln!(
+        "[{:.1}s] {} 組を {batch_s:.1}秒で処理し、{out_path} に書きました VmRSS={rss:.0}MB VmHWM={hwm:.0}MB",
+        started.elapsed().as_secs_f64(),
+        ods.len()
+    );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// route-summary（M3b.5）
+// ---------------------------------------------------------------------------------------------
+
+/// 集計のグループ（手段と、任意で地域）。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct GroupKey {
+    mode: String,
+    region: Option<String>,
+}
+
+/// ODのidの接頭辞（最初の `-` より前）。`-` がなければid全体。
+fn region_of(id: &str) -> &str {
+    id.split_once('-').map_or(id, |(region, _)| region)
+}
+
+/// 昇順に並べた値の `ceil(q·n)` 番目（1始まり）。空なら `None`。
+fn quantile(sorted: &[f64], q: f64) -> Option<f64> {
+    if sorted.is_empty() {
+        return None;
+    }
+    let rank = (q * sorted.len() as f64).ceil() as usize;
+    Some(sorted[rank.clamp(1, sorted.len()) - 1])
+}
+
+/// 整数の分位点（`ceil(q·n)` 番目、1始まり）。
+fn quantile_u64(sorted: &[u64], q: f64) -> Option<u64> {
+    if sorted.is_empty() {
+        return None;
+    }
+    let rank = (q * sorted.len() as f64).ceil() as usize;
+    Some(sorted[rank.clamp(1, sorted.len()) - 1])
+}
+
+/// f64 の値を昇順に並べる（NaNは末尾）。
+fn sorted_f64(values: &[f64]) -> Vec<f64> {
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    sorted
+}
+
+/// 1つのグループの集計。
+fn summarize_group(key: &GroupKey, records: &[Value]) -> Value {
+    let mut status_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut search_status_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut candidate_counts: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut total_ms = Vec::new();
+    let mut ellipse_nodes = Vec::new();
+    let mut rcsp_completed = 0_usize;
+    let mut reduced = 0_usize;
+    let mut fastest_only = 0_usize;
+    let mut best_differs = 0_usize;
+    let mut risk_reductions = Vec::new();
+    let mut extra_times = Vec::new();
+    let mut violations = 0_usize;
+    let mut within_budget_false = 0_usize;
+    let mut risk_fx_matches_false = 0_usize;
+    let mut ok_count = 0_usize;
+
+    for record in records {
+        let status = record["status"].as_str().unwrap_or("unknown");
+        *status_counts.entry(status.to_owned()).or_default() += 1;
+        if status != "ok" {
+            continue;
+        }
+        ok_count += 1;
+        if let Some(ms) = record["total_ms"].as_f64() {
+            total_ms.push(ms);
+        }
+        if let Some(nodes) = record["ellipse_nodes"].as_u64() {
+            ellipse_nodes.push(nodes);
+        }
+        if record["rcsp_completed"].as_bool() == Some(true) {
+            rcsp_completed += 1;
+        }
+        if record["reduced"].as_bool() == Some(true) {
+            reduced += 1;
+        }
+        if record["fastest_only"].as_bool() == Some(true) {
+            fastest_only += 1;
+        }
+        let search_status = record["search_status"].as_str().unwrap_or("unknown");
+        *search_status_counts
+            .entry(search_status.to_owned())
+            .or_default() += 1;
+
+        let candidates = record["candidates"]
+            .as_array()
+            .map_or(&[][..], |c| c.as_slice());
+        *candidate_counts.entry(candidates.len()).or_default() += 1;
+        for candidate in candidates {
+            violations += candidate["violations"].as_array().map_or(0, |v| v.len());
+            if candidate["within_budget"].as_bool() == Some(false) {
+                within_budget_false += 1;
+            }
+            if candidate["risk_fx_matches"].as_bool() == Some(false) {
+                risk_fx_matches_false += 1;
+            }
+        }
+
+        let p0 = &record["p0"];
+        let best = &record["best"];
+        if p0 != best {
+            best_differs += 1;
+        }
+        let p0_risk = p0["risk"].as_f64().unwrap_or(0.0);
+        let best_risk = best["risk"].as_f64().unwrap_or(0.0);
+        if p0_risk > 0.0 && best_risk.is_finite() {
+            risk_reductions.push((p0_risk - best_risk) / p0_risk);
+            let p0_time = p0["time_s"].as_f64().unwrap_or(0.0);
+            let best_time = best["time_s"].as_f64().unwrap_or(0.0);
+            extra_times.push(best_time - p0_time);
+        }
+    }
+
+    let sorted_total = sorted_f64(&total_ms);
+    let mut sorted_nodes = ellipse_nodes.clone();
+    sorted_nodes.sort_unstable();
+    let rate = |n: usize| {
+        if ok_count == 0 {
+            Value::Null
+        } else {
+            json!(n as f64 / ok_count as f64)
+        }
+    };
+    let optional = |v: Option<f64>| v.map_or(Value::Null, |x| json!(x));
+    let optional_u64 = |v: Option<u64>| v.map_or(Value::Null, |x| json!(x));
+    let total_summary = json!({
+        "median": optional(quantile(&sorted_total, 0.5)),
+        "p95": optional(quantile(&sorted_total, 0.95)),
+        "p99": optional(quantile(&sorted_total, 0.99)),
+        "max": optional(quantile(&sorted_total, 1.0)),
+    });
+    let node_summary = json!({
+        "median": optional_u64(quantile_u64(&sorted_nodes, 0.5)),
+        "p95": optional_u64(quantile_u64(&sorted_nodes, 0.95)),
+        "max": optional_u64(quantile_u64(&sorted_nodes, 1.0)),
+    });
+    let sorted_reductions = sorted_f64(&risk_reductions);
+    let sorted_extra = sorted_f64(&extra_times);
+
+    json!({
+        "mode": key.mode,
+        "region": key.region,
+        "count": records.len(),
+        "status_counts": status_counts,
+        "ok_count": ok_count,
+        "total_ms": total_summary,
+        "ellipse_nodes": node_summary,
+        "rcsp_completed_rate": rate(rcsp_completed),
+        "reduced_rate": rate(reduced),
+        "fastest_only_rate": rate(fastest_only),
+        "search_status_counts": search_status_counts,
+        "candidate_count_distribution": candidate_counts
+            .into_iter()
+            .map(|(count, n)| (count.to_string(), json!(n)))
+            .collect::<serde_json::Map<String, Value>>(),
+        "best_differs_p0_rate": rate(best_differs),
+        "risk_reduction_median": optional(quantile(&sorted_reductions, 0.5)),
+        "extra_time_median_s": optional(quantile(&sorted_extra, 0.5)),
+        "violations": violations,
+        "within_budget_false": within_budget_false,
+        "risk_fx_matches_false": risk_fx_matches_false,
+    })
+}
+
+/// 人が読める表の1行。
+fn summary_line(group: &Value) -> String {
+    let number = |v: &Value| v.as_f64().map_or("-".to_owned(), |x| format!("{x:.1}"));
+    let optional_number = |v: &Value| v.as_f64().map_or("-".to_owned(), |x| format!("{x:.2}"));
+    let rate = |v: &Value| match v.as_f64() {
+        Some(x) => format!("{:.1}%", x * 100.0),
+        None => "-".to_owned(),
+    };
+    let key = match group["region"].as_str() {
+        Some(region) => format!("{}/{}", group["mode"].as_str().unwrap_or("?"), region),
+        None => group["mode"].as_str().unwrap_or("?").to_owned(),
+    };
+    format!(
+        "{key:<18} n={:<5} ok={:<5} total_ms p50/p95/p99/max={}/{}/{}/{} nodes p50/p95/max={}/{}/{} rcsp={} reduced={} fastest_only={} best!=p0={} risk_reduction={} extra_s={} violations={} over_budget={} fx_mismatch={}",
+        group["count"].as_u64().unwrap_or(0),
+        group["ok_count"].as_u64().unwrap_or(0),
+        number(&group["total_ms"]["median"]),
+        number(&group["total_ms"]["p95"]),
+        number(&group["total_ms"]["p99"]),
+        number(&group["total_ms"]["max"]),
+        number(&group["ellipse_nodes"]["median"]),
+        number(&group["ellipse_nodes"]["p95"]),
+        number(&group["ellipse_nodes"]["max"]),
+        rate(&group["rcsp_completed_rate"]),
+        rate(&group["reduced_rate"]),
+        rate(&group["fastest_only_rate"]),
+        rate(&group["best_differs_p0_rate"]),
+        optional_number(&group["risk_reduction_median"]),
+        optional_number(&group["extra_time_median_s"]),
+        group["violations"].as_u64().unwrap_or(0),
+        group["within_budget_false"].as_u64().unwrap_or(0),
+        group["risk_fx_matches_false"].as_u64().unwrap_or(0),
+    )
+}
+
+/// `route-batch` の結果をグループごとに集計する。
+fn route_summary(options: &Options) -> Result<(), String> {
+    let results = options.0.get("results").ok_or("--results が必要です")?;
+    let group_by = options
+        .0
+        .get("group-by")
+        .map(String::as_str)
+        .unwrap_or("mode");
+    let with_region = match group_by {
+        "mode" => false,
+        "mode,region" => true,
+        value => {
+            return Err(format!("--group-by は mode か mode,region です: {value}"));
+        }
+    };
+    let out_path = options.0.get("out").map(Path::new);
+
+    let mut groups: BTreeMap<GroupKey, Vec<Value>> = BTreeMap::new();
+    let mut records = 0_usize;
+    for path in results.split(',') {
+        let text =
+            std::fs::read_to_string(path).map_err(|e| format!("{path} を読めません: {e}"))?;
+        for (i, line) in text
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| !line.trim().is_empty())
+        {
+            let record: Value = serde_json::from_str(line)
+                .map_err(|e| format!("{path} の {} 行目がJSONではありません: {e}", i + 1))?;
+            let id = record["id"]
+                .as_str()
+                .ok_or_else(|| format!("{path} の {} 行目にidがありません", i + 1))?;
+            let mode = record["mode"]
+                .as_str()
+                .ok_or_else(|| format!("{path} の {} 行目にmodeがありません", i + 1))?;
+            let key = GroupKey {
+                mode: mode.to_owned(),
+                region: with_region.then(|| region_of(id).to_owned()),
+            };
+            groups.entry(key).or_default().push(record);
+            records += 1;
+        }
+    }
+
+    let summaries: Vec<Value> = groups
+        .iter()
+        .map(|(key, records)| summarize_group(key, records))
+        .collect();
+    let summary = json!({
+        "group_by": group_by,
+        "records": records,
+        "groups": summaries,
+    });
+    let text = serde_json::to_string_pretty(&summary).map_err(|e| e.to_string())?;
+    match out_path {
+        Some(path) => {
+            std::fs::write(path, format!("{text}\n"))
+                .map_err(|e| format!("{} に書けません: {e}", path.display()))?;
+        }
+        None => println!("{text}"),
+    }
+
+    eprintln!(
+        "グループ {} 件、記録 {records} 件（group_by={group_by}）",
+        summaries.len()
+    );
+    for group in &summaries {
+        eprintln!("{}", summary_line(group));
+        eprintln!(
+            "  状態: {} / 探索: {} / 候補本数: {}",
+            group["status_counts"],
+            group["search_status_counts"],
+            group["candidate_count_distribution"],
+        );
+    }
+    Ok(())
+}
+
 /// リスク指標の評価。
 fn y_metrics(options: &Options) -> Result<(), String> {
     let _ = options;
@@ -1305,6 +2079,8 @@ fn main() -> ExitCode {
         Some("graph-stats") => graph_stats,
         Some("fastest-batch") => fastest_batch,
         Some("dump-time-model") => dump_time_model,
+        Some("route-batch") => route_batch,
+        Some("route-summary") => route_summary,
         _ => {
             eprintln!(
                 "不明なサブコマンドです: {}\n{USAGE}",
