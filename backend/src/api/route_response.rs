@@ -297,15 +297,12 @@ fn check_candidate(
     ) {
         return violation(format!("{id}: risk_per_kmがweighted_risk/距離と一致しない"));
     }
+    // weighted_riskは検査しない。新方式（schema 3）のモデルの値は、事故0件の経路でも正になる
+    // （behavior.md 7章「リスクの値」）。旧方式では事故0件ならスコアも0になる。
     if c.totals.accident_count == 0
-        && (c.weighted_risk != 0.0
-            || c.high_risk_total != 0
-            || c.totals.deaths != 0
-            || c.totals.injuries != 0)
+        && (c.high_risk_total != 0 || c.totals.deaths != 0 || c.totals.injuries != 0)
     {
-        return violation(format!(
-            "{id}: 事故0件なのにリスク・死傷者・高リスク区間がある"
-        ));
+        return violation(format!("{id}: 事故0件なのに死傷者・高リスク区間がある"));
     }
     let points = (c.totals.accident_count as usize).min(MAX_ACCIDENT_POINTS);
     if c.accident_points.len() != points {

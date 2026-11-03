@@ -384,6 +384,8 @@ fn selection_and_rounding_correlations_are_checked() {
             c.accident_points.clear();
             c.high_risk_total = 0;
             c.high_risk_sections.clear();
+            // weighted_riskは事故0件でも正になり得る（新方式）ので、死傷者を残して壊す
+            c.totals.injuries = 1;
         }),
     ];
     for (expected, edit) in cases {
