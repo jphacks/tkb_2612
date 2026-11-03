@@ -19,8 +19,8 @@
 //! | `package` | P9 | `metadata.json` とreleaseディレクトリ |
 //!
 //! 実装済み：`osm-graph`（P1）・`restrictions`（P2）・`topology`（P3）・`accident-attrs`（P4）・
-//! `accident-snap`（P5）・`od-index`（P7）・`alt`（P8）。残り（`risk-fit`・`package`）は骨組みのまま
-//! （`todo!()`）。
+//! `accident-snap`（P5）・`risk-fit`（P6）・`od-index`（P7）・`alt`（P8）。残り（`package`）は
+//! 骨組みのまま（`todo!()`）。
 //!
 //! | サブコマンド | 引数 |
 //! |---|---|
@@ -28,6 +28,7 @@
 //! | `restrictions` | `--pbf <PBF> --graph <graph.bin> --attrs <graph_attrs.bin> --output <restrictions.bin>`：監査は `<output>` の拡張子を `audit.json` にしたもの |
 //! | `topology` | `--graph <graph.bin> --attrs <graph_attrs.bin> --output <topology.bin> [--scc-min-nodes N] [--threads N]`（`--scc-min-nodes` の既定は200。小さなグラフのテスト用） |
 //! | `accident-snap` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --accidents <accidents.csv.gz> --output <assignment.bin> [--sigma0 M] [--threads N] [--review-dir DIR --review-count N --review-seed N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--review-dir` を付けると人手判定用の `review_sample.json` を書く |
+//! | `risk-fit` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --accidents <accidents.csv.gz> --output <risk.bin> [--train-years 2019-2022] [--validate-year 2023] [--c 1.0] [--threads N]`：監査は `<output>` の拡張子を `audit.json` にしたもの |
 //! | `od-index` | `--graph <graph.bin> --output <odindex.bin> [--threads N]` |
 //! | `alt` | `--graph <graph.bin> --output <alt.bin> [--modes car,bike,walk] [--landmarks 16] [--unit-ds 40] [--with-to false] [--start-node N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--modes` の既定は `car` |
 
@@ -642,10 +643,264 @@ fn accident_snap(options: &Options) -> Result<(), String> {
     Ok(())
 }
 
-/// P6：リスクの係数を推定して `risk.bin` を作る（形式書14章）。
+/// `--train-years` を読む。`2019-2022` の範囲か、`2019,2020,2021,2022` の列。
+fn parse_train_years(value: &str) -> Result<Vec<u16>, String> {
+    let mut years = Vec::new();
+    if let Some((from, to)) = value.split_once('-') {
+        let from = from
+            .trim()
+            .parse::<u16>()
+            .map_err(|_| "--train-years の開始年が整数ではありません".to_owned())?;
+        let to = to
+            .trim()
+            .parse::<u16>()
+            .map_err(|_| "--train-years の終了年が整数ではありません".to_owned())?;
+        if from > to {
+            return Err("--train-years の開始年が終了年より大きい".to_owned());
+        }
+        years.extend(from..=to);
+    } else {
+        for part in value.split(',') {
+            years.push(
+                part.trim()
+                    .parse::<u16>()
+                    .map_err(|_| "--train-years の年が整数ではありません".to_owned())?,
+            );
+        }
+    }
+    years.sort_unstable();
+    years.dedup();
+    if years.is_empty() || years.iter().any(|&y| !(1900..=2100).contains(&y)) {
+        return Err("--train-years は1900〜2100の年".to_owned());
+    }
+    if years.windows(2).any(|w| w[0] == w[1]) {
+        return Err("--train-years に同じ年が重複しています".to_owned());
+    }
+    Ok(years)
+}
+
+/// P6：リスクの係数を推定して `risk.bin` を作る（形式書14章、作業書M3b.1）。
+///
+/// 入力の `DEPS` が渡した実ファイルのSHA-256と一致しなければ失敗する。書いたあとに読み直して、
+/// 推定したモデルと同じになることを確かめる。
 fn risk_fit(options: &Options) -> Result<(), String> {
-    let _ = options;
-    todo!("P6 risk-fit")
+    use accident_route_backend::data::load::parse_accidents;
+    use accident_route_backend::data::release::{
+        ACCIDENT_ATTRS_FILE, ACCIDENTS_FILE, ASSIGNMENT_FILE, GRAPH_FILE, RISK_FILE, TOPOLOGY_FILE,
+    };
+    use accident_route_backend::data::routing_files::{
+        Deps, decode_accident_attrs, decode_assignment, decode_graph_attrs, decode_graph_parts,
+        decode_risk, decode_topology, encode_risk, required_deps,
+    };
+    use accident_route_backend::domain::routing::prep::risk_fit::{
+        RiskFitConfig, RiskFitInput, fit_risk,
+    };
+
+    const USAGE: &str = "使い方: routing_prep risk-fit --graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --accidents <accidents.csv.gz> --output <risk.bin> [--train-years 2019-2022] [--validate-year 2023] [--c 1.0] [--threads N]";
+    const KNOWN: [&str; 11] = [
+        "graph",
+        "attrs",
+        "topology",
+        "accident-attrs",
+        "assignment",
+        "accidents",
+        "output",
+        "train-years",
+        "validate-year",
+        "c",
+        "threads",
+    ];
+    if let Some(unknown) = options.0.keys().find(|k| !KNOWN.contains(&k.as_str())) {
+        return Err(format!("不明な引数です: --{unknown}\n{USAGE}"));
+    }
+    setup_threads(options)?;
+    let started = Instant::now();
+    let graph_path = options.path("graph").map_err(|e| format!("{e}\n{USAGE}"))?;
+    let attrs_path = options.path("attrs").map_err(|e| format!("{e}\n{USAGE}"))?;
+    let topology_path = options
+        .path("topology")
+        .map_err(|e| format!("{e}\n{USAGE}"))?;
+    let accident_attrs_path = options
+        .path("accident-attrs")
+        .map_err(|e| format!("{e}\n{USAGE}"))?;
+    let assignment_path = options
+        .path("assignment")
+        .map_err(|e| format!("{e}\n{USAGE}"))?;
+    let accidents_path = options
+        .path("accidents")
+        .map_err(|e| format!("{e}\n{USAGE}"))?;
+    let output = options
+        .path("output")
+        .map_err(|e| format!("{e}\n{USAGE}"))?;
+    let train_years = match options.0.get("train-years") {
+        Some(value) => parse_train_years(value)?,
+        None => vec![2019, 2020, 2021, 2022],
+    };
+    let validate_year = match options.0.get("validate-year") {
+        Some(value) => value
+            .parse::<u16>()
+            .map_err(|_| "--validate-year は整数".to_owned())?,
+        None => 2023,
+    };
+    let c = match options.0.get("c") {
+        Some(value) => value
+            .parse::<f64>()
+            .ok()
+            .filter(|x| x.is_finite() && *x >= 1.0)
+            .ok_or_else(|| "--c は1以上の有限の数".to_owned())?,
+        None => 1.0,
+    };
+
+    log("入力を読む");
+    let graph_bytes = read_file(&graph_path)?;
+    let graph_hash = sha256_hex(&graph_bytes);
+    let parts = decode_graph_parts(&graph_bytes)
+        .map_err(|e| e.to_string())?
+        .value;
+    let graph_len = graph_bytes.len();
+    drop(graph_bytes);
+    let attrs_bytes = read_file(&attrs_path)?;
+    let graph_attrs = decode_graph_attrs(&attrs_bytes).map_err(|e| e.to_string())?;
+    drop(attrs_bytes);
+    let topology_bytes = read_file(&topology_path)?;
+    let topology_hash = sha256_hex(&topology_bytes);
+    let topology = decode_topology(&topology_bytes).map_err(|e| e.to_string())?;
+    let topology_len = topology_bytes.len();
+    drop(topology_bytes);
+    let accident_attrs_bytes = read_file(&accident_attrs_path)?;
+    let accident_attrs_hash = sha256_hex(&accident_attrs_bytes);
+    let accident_attrs = decode_accident_attrs(&accident_attrs_bytes).map_err(|e| e.to_string())?;
+    let accident_attrs_len = accident_attrs_bytes.len();
+    drop(accident_attrs_bytes);
+    let assignment_bytes = read_file(&assignment_path)?;
+    let assignment_hash = sha256_hex(&assignment_bytes);
+    let assignment = decode_assignment(&assignment_bytes).map_err(|e| e.to_string())?;
+    let assignment_len = assignment_bytes.len();
+    drop(assignment_bytes);
+    let accidents_bytes = read_file(&accidents_path)?;
+    let accidents_hash = sha256_hex(&accidents_bytes);
+    let columns = parse_accidents(&accidents_bytes).map_err(|e| e.to_string())?;
+    let accidents_len = accidents_bytes.len();
+    drop(accidents_bytes);
+    log(&format!(
+        "  ノード{} 辺{} クラスタ{} 事故{} {}",
+        parts.node_ll.len(),
+        parts.edges.len(),
+        topology.value.clusters.len(),
+        columns.len(),
+        memory_summary()
+    ));
+
+    let expect = |what: &str, deps: &Deps, key: &str, hash: &str| -> Result<(), String> {
+        match deps.get(key) {
+            Some(h) if h == hash => Ok(()),
+            _ => Err(format!(
+                "{what}のDEPSの{key}が、渡された実ファイルのSHA-256と一致しません（別の版を混ぜていないか確かめてください）"
+            )),
+        }
+    };
+    expect("assignment.bin", &assignment.deps, GRAPH_FILE, &graph_hash)?;
+    expect(
+        "assignment.bin",
+        &assignment.deps,
+        TOPOLOGY_FILE,
+        &topology_hash,
+    )?;
+    expect(
+        "assignment.bin",
+        &assignment.deps,
+        ACCIDENT_ATTRS_FILE,
+        &accident_attrs_hash,
+    )?;
+    expect(
+        "assignment.bin",
+        &assignment.deps,
+        ACCIDENTS_FILE,
+        &accidents_hash,
+    )?;
+    expect(
+        "accident_attrs.bin",
+        &accident_attrs.deps,
+        ACCIDENTS_FILE,
+        &accidents_hash,
+    )?;
+
+    let input = RiskFitInput {
+        graph: &parts,
+        graph_attrs: &graph_attrs.value,
+        topology: &topology.value,
+        accident_attrs: &accident_attrs.value,
+        assignment: &assignment.value,
+        accidents: &columns,
+    };
+    let config = RiskFitConfig {
+        train_years,
+        validate_year,
+        c,
+    };
+    let result = fit_risk(&input, &config, &log)?;
+    log(&format!("推定完了 {}", memory_summary()));
+
+    let deps = Deps::from([
+        (GRAPH_FILE.to_owned(), graph_hash.clone()),
+        (TOPOLOGY_FILE.to_owned(), topology_hash.clone()),
+        (ACCIDENT_ATTRS_FILE.to_owned(), accident_attrs_hash.clone()),
+        (ASSIGNMENT_FILE.to_owned(), assignment_hash.clone()),
+        (ACCIDENTS_FILE.to_owned(), accidents_hash.clone()),
+    ]);
+    for key in required_deps(RISK_FILE) {
+        if !deps.contains_key(*key) {
+            return Err(format!("risk.binのDEPSに{key}がありません"));
+        }
+    }
+    let bytes = encode_risk(&result.model, &deps);
+    write_file(&output, &bytes)?;
+    let output_hash = sha256_hex(&bytes);
+
+    log("書いたファイルを読み直して検査する");
+    let decoded = decode_risk(&bytes).map_err(|e| e.to_string())?;
+    if decoded.value != result.model {
+        return Err("書いたrisk.binを読み直した結果が、推定したモデルと一致しません".to_owned());
+    }
+    if decoded.deps != deps {
+        return Err("書いたrisk.binのDEPSが、入力のハッシュと一致しません".to_owned());
+    }
+
+    let file_info = |path: &Path, bytes: usize, hash: &str| json!({ "file": path.display().to_string(), "bytes": bytes, "sha256": hash });
+    let mut audit = result.audit;
+    if let Value::Object(ref mut map) = audit {
+        map.insert("command".to_owned(), Value::String("risk-fit".to_owned()));
+        map.insert(
+            "elapsed_seconds".to_owned(),
+            json!(started.elapsed().as_secs_f64()),
+        );
+        map.insert("memory".to_owned(), Value::String(memory_summary()));
+        map.insert(
+            "output".to_owned(),
+            file_info(&output, bytes.len(), &output_hash),
+        );
+        map.insert(
+            "inputs".to_owned(),
+            json!({
+                "graph": file_info(&graph_path, graph_len, &graph_hash),
+                "topology": file_info(&topology_path, topology_len, &topology_hash),
+                "accident_attrs": file_info(&accident_attrs_path, accident_attrs_len, &accident_attrs_hash),
+                "assignment": file_info(&assignment_path, assignment_len, &assignment_hash),
+                "accidents": file_info(&accidents_path, accidents_len, &accidents_hash),
+            }),
+        );
+        map.insert("params".to_owned(), result.model.raw_params.clone());
+    }
+    write_json(&audit_path(&output), &audit)?;
+    log(&format!(
+        "完了 {:.1}秒 {} risk.bin {}バイト 辺{} クラスタ{}",
+        started.elapsed().as_secs_f64(),
+        memory_summary(),
+        bytes.len(),
+        result.model.edge_k.len(),
+        result.model.cluster_j.len()
+    ));
+    Ok(())
 }
 
 /// P7：吸着の格子 `odindex.bin` を作る（形式書11章）。

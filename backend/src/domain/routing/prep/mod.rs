@@ -23,6 +23,7 @@ pub mod graph_build;
 pub mod grid;
 pub mod odindex;
 pub mod restrict;
+pub mod risk_fit;
 pub mod time_defaults;
 pub mod topo;
 pub mod view;
