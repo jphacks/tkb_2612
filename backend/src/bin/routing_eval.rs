@@ -1180,15 +1180,15 @@ impl Runner<'_> {
             let mut seen = std::collections::BTreeSet::new();
             let mut lines = Vec::new();
             for d in &path.dedges {
-                if let Some(twin) = data.topology.twin_of(d.edge())
-                    && seen.insert(twin)
-                {
-                    lines.push(json!({
-                        "edge": d.edge(),
-                        "twin": twin,
-                        "class": graph.edge(twin).class,
-                        "coords": coords_json(&graph.edge_polyline(twin)),
-                    }));
+                for twin in data.topology.twins_of(d.edge()) {
+                    if seen.insert(twin) {
+                        lines.push(json!({
+                            "edge": d.edge(),
+                            "twin": twin,
+                            "class": graph.edge(twin).class,
+                            "coords": coords_json(&graph.edge_polyline(twin)),
+                        }));
+                    }
                 }
             }
             rec.insert("twin_lines".into(), Value::Array(lines));
