@@ -655,7 +655,8 @@ backend/src/domain/routing/
   snap/mod.rs     OdIndex（11章）・SnapPoint・snap
   accident/mod.rs AccidentAttr・RouteClass（12章）、Assignment・AssignTarget・UnassignedReason（13章）、
                   EdgeAccidentIndex（起動時の索引）
-  risk/mod.rs     RiskModel・CoefRecord・RiskParams（14章）、RiskView、道路種別k・交差点種別jの計算
+  risk/mod.rs     RiskModel・CoefRecord・RiskParams（14章）、RiskView、道路種別k・交差点種別jの計算、
+                  RiskVariant（評価用の Standard・no-eb・edge-severity・expected-count）
   search/
     mod.rs        Path・SearchStatus・SearchParams・ArcCost・SearchContext
     fastest.rs    最短時間経路（ノード単位の双方向A*、直前の辺を状態に持つ探索）
@@ -663,6 +664,7 @@ backend/src/domain/routing/
     larac.rs      larac
     rcsp.rs       bounded_rcsp
     alt.rs        Landmarks（15章）
+    eval_cost.rs  評価用の ArcCost（length・random）と道路種別ごとの長さ（route-batch の --objective・--paths）
     candidates.rs 候補の整理（重複除去・上限6本・並べ替え）
     reduced.rs    探索範囲が大きすぎる場合（計画書6.4節）
   legality/mod.rs check_path・Violation
@@ -680,3 +682,30 @@ backend/src/bin/
 ```
 
 依存方向は既存の規則（`backend/README.md`）に従う。`domain::routing` は `contract` と `domain` の既存モジュール（`navigation`・`rounding`・`snapshot`・`corridor` の75m分割）だけを使い、`data` に依存しない。ファイルの読み書きは `data` に置く。
+
+### 18.1 `route-batch` の評価用の引数
+
+`routing_eval route-batch` の評価用の引数（M5.4〜M5.7）。既定は今までと同じで、サーバのエンジンと `risk-fit` の動作は変えない。
+
+| 引数 | 値 | 内容 |
+|---|---|---|
+| `--paths` | `true`・`false`（既定 `false`） | `true` なら `candidates` の各要素に `path`（`start`・`end` の `edge`・`offset_dm` と `dedges`）と `class_lengths_m`（道路種別 `HighwayClass::code` ごとの通った長さ、m）を足す。`time_s`・`distance_m` は既存の欄を使う。記録の最上位に `p0_index`・`best_index`（候補の中で `p0`・`best` と同じ経路の添字。見つからなければ null）を足す。 |
+| `--objective` | `risk`・`length`・`random`（既定 `risk`） | `risk` は今までどおり `RiskArcCost`。`length` は辺のリスクの代わりに長さ（m）を使う（部分辺は通った長さ、クラスタの加算は0）。`random` は辺eのコストを `長さ(m) × u(e)` にする。`u(e)` は `--seed` と辺番号から決まる0.5〜2.0の一様乱数で、部分辺も同じ `u(e)` を使う。`length`・`random` でも、記録の `p0`・`best`・候補の `risk` は `RiskView` で計算し直す。記録に `objective` を入れる。 |
+| `--risk-variant` | `standard`・`no-eb`・`edge-severity`・`expected-count`（既定 `standard`。`expected-count` は S・c・天候の項を掛けない推定件数 `(1−W)·μ + W·n` で、較正に使う） | リスクの計算の切り替え（`RiskVariant`、14.5節の式の評価用の変形）。`objective=risk` のときは探索にもこの計算を使う。記録に `risk_variant` を入れる。 |
+| `--rcsp-budget-ms` | ミリ秒（既定は `SearchParams::DEFAULT`） | `0` のときは RCSP を1ラベルも展開せず、LARACの暫定解（予算内）をそのまま使う（「LARACだけ」）。正のときの動作は変えない。 |
+
+`RiskVariant` の式（`R`・`μ`・`W`・`n`・`S`・`c`・`ρ`・`M` は14.5節と同じ）：
+
+```text
+no-eb（経験ベイズなし、W=1）：
+  risk_e = c_k · S · (n_e + (M_w − 1)·n_e^w)
+  risk_v = S_v · (n_v + (M_w − 1)·n_v^w)
+
+edge-severity（深刻度を事故単位、sev_i = 10×死者 + 負傷者）：
+  risk_e = c_k · [ (1−W)·μ_e·S + W·Σ a_i·sev_i ]
+                 · [ 1 + (M_w − 1)·((1−W_w)·μ_e·ρ·S + W_w·Σ_{天候w} a_i·sev_i)
+                              / ((1−W)·μ_e·S + W·Σ a_i·sev_i) ]
+  risk_v = 同じ形（ℓ=1、β の代わりに β_cluster、c_k は掛けない）
+```
+
+固定小数点は `RISK_SCALE=1e6` のまま。長さは最大80,000m なので、`length` の固定小数点は最大 8e10、`random` でも最大 1.6e11 で `u64` に収まり、0.1m は 1e5 なので長さの丸めで0にならない。
