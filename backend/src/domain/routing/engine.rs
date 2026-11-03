@@ -1,16 +1,37 @@
 //! `RouteEngine` の実装（schema 3、形式書18章）。
 //!
-//! 骨組みの段階では、`collect_candidates` はルーターを呼ばず空の `CandidateSet` を返し、
-//! `evaluate` は未実装。
+//! `collect_candidates` はルーターを呼ばず空の `CandidateSet` を返し、`evaluate` が
+//! 吸着・探索・集計・選定・文面までを行う。探索の部品は `evaluate` モジュールに置く。
 use std::sync::Arc;
 
 use crate::contract::{
-    BoxFuture, CancelToken, CandidateSet, DatasetInfo, EngineError, RouteEngine, RouteOutcome,
-    RouteQuery, Router,
+    BoxFuture, CancelToken, CandidateSet, DatasetInfo, EngineError, Mode, RouteEngine,
+    RouteOutcome, RouteQuery, Router,
 };
 use crate::domain::AccidentSnapshot;
 
 use super::RoutingData;
+use super::graph::restrictions::TurnAutomaton;
+use super::search::SearchParams;
+
+/// 新方式のエンジンが使う探索の設定（M3b.md 4章の決定）。
+///
+/// `SearchParams::DEFAULT` は既存のテストが固定しているので変えず、エンジンではこちらを使う。
+pub const ENGINE_SEARCH_PARAMS: SearchParams = SearchParams {
+    rcsp_budget_ms: 1_000,
+    larac_iterations: 10,
+    ellipse_node_limit: 1_000_000,
+    rcsp_label_limit: 2_000_000,
+};
+
+/// 手段の添字（walk・bike・car）。
+fn mode_slot(mode: Mode) -> usize {
+    match mode {
+        Mode::Walk => 0,
+        Mode::Bike => 1,
+        Mode::Car => 2,
+    }
+}
 
 /// 自前の道路グラフで候補を探すエンジン。
 #[derive(Debug, Clone)]
@@ -18,6 +39,9 @@ pub struct RoutingEngine {
     data: Arc<RoutingData>,
     snapshot: Arc<AccidentSnapshot>,
     dataset: DatasetInfo,
+    params: SearchParams,
+    /// 手段ごとの右左折禁止の照合器（walk・bike・car）。
+    automata: [TurnAutomaton; 3],
 }
 
 impl RoutingEngine {
@@ -26,11 +50,24 @@ impl RoutingEngine {
         snapshot: Arc<AccidentSnapshot>,
         dataset: DatasetInfo,
     ) -> Self {
+        let automata = [
+            TurnAutomaton::build(&data.restrictions, Mode::Walk),
+            TurnAutomaton::build(&data.restrictions, Mode::Bike),
+            TurnAutomaton::build(&data.restrictions, Mode::Car),
+        ];
         Self {
             data,
             snapshot,
             dataset,
+            params: ENGINE_SEARCH_PARAMS,
+            automata,
         }
+    }
+
+    /// 探索の設定を差し替える（テスト用）。
+    pub fn with_params(mut self, params: SearchParams) -> Self {
+        self.params = params;
+        self
     }
 
     pub fn data(&self) -> &RoutingData {
@@ -39,6 +76,14 @@ impl RoutingEngine {
 
     pub fn snapshot(&self) -> &AccidentSnapshot {
         &self.snapshot
+    }
+
+    pub(crate) fn params(&self) -> SearchParams {
+        self.params
+    }
+
+    pub(crate) fn automaton(&self, mode: Mode) -> &TurnAutomaton {
+        &self.automata[mode_slot(mode)]
     }
 }
 
@@ -64,10 +109,10 @@ impl RouteEngine for RoutingEngine {
 
     fn evaluate(
         &self,
-        _query: &RouteQuery,
+        query: &RouteQuery,
         _candidates: CandidateSet,
-        _cancel: &CancelToken,
+        cancel: &CancelToken,
     ) -> Result<RouteOutcome, EngineError> {
-        todo!("探索・リスク集計・選定（作業書M3b以降）")
+        super::evaluate::evaluate(self, query, cancel)
     }
 }

@@ -141,23 +141,38 @@ pub fn path_risk_fx(graph: &Graph, cost: &mut dyn ArcCost, path: &Path) -> u64 {
 
 /// behavior.md 5章 手順2〜8を1回で行う。`max_detour_min` は遠回りの上限（分）。
 ///
-/// 1. 2点が同じ位置なら [`RouteError::NoRoute`]。
-/// 2. 最短時間経路 p0 を求める。到達できなければ [`RouteError::NoRoute`]、距離が80,000m超なら
-///    [`RouteError::RouteTooLong`]。
-/// 3. p0 のリスクを [`path_risk_fx`] で計算する。
-/// 4. `B = T0 + 600 × max_detour_min`。
-/// 5. 楕円の部分グラフを作る。大きすぎれば縮小し、それでも大きすぎる（または到達できない）なら
-///    p0 だけにする。
-/// 6. 部分グラフがあれば [`search_subgraph`] で事故考慮経路と代替経路を求める。見つからなければ
-///    p0 だけにする。
-/// 7. [`select_candidates`] で候補を整理する。
-/// 8. すべての候補が `time_ds ≤ B` であることを `debug_assert!` で確かめる。
+/// `max_detour_min` が整数のときだけ使う。小数の遠回りの上限は [`find_routes_ds`] を直接呼ぶ。
 pub fn find_routes(
     ctx: &SearchContext<'_>,
     cost: &mut dyn ArcCost,
     start: &SnapPoint,
     end: &SnapPoint,
     max_detour_min: u32,
+    cancel: &CancelToken,
+) -> Result<RouteSearch, RouteError> {
+    let detour_ds = 600_u64.saturating_mul(u64::from(max_detour_min));
+    find_routes_ds(ctx, cost, start, end, detour_ds, cancel)
+}
+
+/// behavior.md 5章 手順2〜8を1回で行う。`detour_ds` は遠回りの上限（デシ秒）。
+///
+/// 1. 2点が同じ位置なら [`RouteError::NoRoute`]。
+/// 2. 最短時間経路 p0 を求める。到達できなければ [`RouteError::NoRoute`]、距離が80,000m超なら
+///    [`RouteError::RouteTooLong`]。
+/// 3. p0 のリスクを [`path_risk_fx`] で計算する。
+/// 4. `B = T0 + detour_ds`。
+/// 5. 楕円の部分グラフを作る。大きすぎれば縮小し、それでも大きすぎる（または到達できない）なら
+///    p0 だけにする。
+/// 6. 部分グラフがあれば [`search_subgraph`] で事故考慮経路と代替経路を求める。見つからなければ
+///    p0 だけにする。
+/// 7. [`select_candidates`] で候補を整理する。
+/// 8. すべての候補が `time_ds ≤ B` であることを `debug_assert!` で確かめる。
+pub fn find_routes_ds(
+    ctx: &SearchContext<'_>,
+    cost: &mut dyn ArcCost,
+    start: &SnapPoint,
+    end: &SnapPoint,
+    detour_ds: u64,
     cancel: &CancelToken,
 ) -> Result<RouteSearch, RouteError> {
     let graph = ctx.graph;
@@ -177,7 +192,6 @@ pub fn find_routes(
     cancel.check()?;
 
     // 手順4：時間の上限。
-    let detour_ds = 600_u64.saturating_mul(u64::from(max_detour_min));
     let budget_ds = p0.time_ds.saturating_add(detour_ds);
 
     // 手順5：楕円の切り出しと縮小。
