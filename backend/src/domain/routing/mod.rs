@@ -7,6 +7,7 @@
 
 pub mod accident;
 pub mod engine;
+pub mod eval;
 pub mod evaluate;
 pub mod graph;
 pub mod legality;

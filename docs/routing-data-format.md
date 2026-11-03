@@ -668,9 +668,11 @@ backend/src/domain/routing/
     candidates.rs 候補の整理（重複除去・上限6本・並べ替え）
     reduced.rs    探索範囲が大きすぎる場合（計画書6.4節）
   legality/mod.rs check_path・Violation
+  eval/region.rs  評価地域の行政界（M5.1・M5.2）：リングの組み立て・内外判定・GeoJSONの読み書き
   engine.rs       RoutingEngine（RouteEngine の実装。collect_candidates は空の CandidateSet を返す）
 backend/src/data/
   binfile.rs      3章の容器形式の読み書き（M0で実装済み）
+  osm/admin.rs    行政界のrelation・way・nodeの読込（M5.1。全国PBFを3回走査する）
   routing_files.rs  8ファイルと Graph などの型の相互変換（encode_* / decode_*）
   release.rs      ROUTING_FILES・SCHEMA_VERSION_ROUTING・routing_release_id（M0で実装済み）
   load.rs         schema 3の読込（load_routing_engine）
@@ -678,7 +680,8 @@ backend/src/data/
 backend/src/bin/
   routing_prep.rs   P1〜P9のサブコマンド（osm-graph、restrictions、topology、accident-attrs、
                     accident-snap、risk-fit、od-index、alt、package）
-  routing_eval.rs   評価と計測のサブコマンド
+  routing_eval.rs   評価と計測のサブコマンド。`admin-boundary` は評価地域の行政界をGeoJSONに書き、
+                    `od-sample --region/--region-id` は地域内の道路ノードからODを抽出する（M5.1・M5.2）
 ```
 
 依存方向は既存の規則（`backend/README.md`）に従う。`domain::routing` は `contract` と `domain` の既存モジュール（`navigation`・`rounding`・`snapshot`・`corridor` の75m分割）だけを使い、`data` に依存しない。ファイルの読み書きは `data` に置く。
