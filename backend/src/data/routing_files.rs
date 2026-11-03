@@ -28,9 +28,9 @@ use crate::domain::routing::topology::{ClusterRecord, SidewalkParent, Topology, 
 use super::LoadError;
 use super::binfile::{BinFile, BinFileWriter, DEPS_SECTION, PARAMS_SECTION};
 use super::release::{
-    ACCIDENT_ATTRS_FILE, ASSIGNMENT_FILE, ASSIGNMENT_MAGIC, GRAPH_ATTRS_MAGIC, GRAPH_FILE,
-    GRAPH_MAGIC, ODINDEX_FILE, ODINDEX_MAGIC, RESTRICTIONS_FILE, RESTRICTIONS_MAGIC, RISK_FILE,
-    TOPOLOGY_FILE, TOPOLOGY_MAGIC, routing_file_spec,
+    ACCIDENT_ATTRS_FILE, ALT_FILE, ALT_MAGIC, ASSIGNMENT_FILE, ASSIGNMENT_MAGIC, GRAPH_ATTRS_MAGIC,
+    GRAPH_FILE, GRAPH_MAGIC, ODINDEX_FILE, ODINDEX_MAGIC, RESTRICTIONS_FILE, RESTRICTIONS_MAGIC,
+    RISK_FILE, TOPOLOGY_FILE, TOPOLOGY_MAGIC, routing_file_spec,
 };
 
 /// `DEPS` 節：入力ファイル名→SHA-256（小文字hex）。
@@ -922,13 +922,169 @@ pub fn decode_risk(bytes: &[u8]) -> Result<Decoded<RiskModel>, LoadError> {
     todo!("形式書14章")
 }
 
-/// `alt.bin`（形式書15章）。
-pub fn encode_alt(landmarks: &Landmarks, deps: &Deps) -> Vec<u8> {
-    todo!("形式書15章")
+/// `alt.bin` の節名に使う手段の記号（形式書15章。`walk`→`FOT`・`bike`→`BIK`・`car`→`CAR`）。
+fn alt_mode_name(mode: crate::contract::Mode) -> &'static str {
+    match mode {
+        crate::contract::Mode::Walk => "FOT",
+        crate::contract::Mode::Bike => "BIK",
+        crate::contract::Mode::Car => "CAR",
+    }
 }
 
+/// `alt.bin`（形式書15章）。節は `DEPS`・`PARAMS`・手段ごとの `LM_<M>`・`FR_<M>`（と `TO_<M>`）の順。
+///
+/// `PARAMS` は `landmarks.raw_params` を書き、`AltParams` の値（`landmarks.params`）で上書きする。
+/// こうすると、`AltParams` に入らないキー（選び方の始点など）も保ちつつ、型付きの値を変えた結果が
+/// 必ず反映される。`LM_<M>` は `u32`、`FR_<M>`・`TO_<M>` は `u16`。
+pub fn encode_alt(landmarks: &Landmarks, deps: &Deps) -> Vec<u8> {
+    use crate::contract::Mode;
+
+    let mut params = match &landmarks.raw_params {
+        Value::Object(map) => map.clone(),
+        _ => Map::new(),
+    };
+    if let Value::Object(typed) = serde_json::to_value(&landmarks.params).expect("JSONに書ける")
+    {
+        params.extend(typed);
+    }
+    let mut w = BinFileWriter::new(ALT_MAGIC, format_version_of(ALT_FILE));
+    w.add_json(DEPS_SECTION, &deps_json(deps));
+    w.add_json(PARAMS_SECTION, &Value::Object(params));
+    for mode in Mode::ALL {
+        let Some(table) = landmarks.tables[crate::domain::routing::risk::mode_index(mode)].as_ref()
+        else {
+            continue;
+        };
+        let name = alt_mode_name(mode);
+        w.add_values(&format!("LM_{name}"), &table.nodes);
+        w.add_values(&format!("FR_{name}"), &table.from);
+        if let Some(to) = &table.to {
+            w.add_values(&format!("TO_{name}"), to);
+        }
+    }
+    w.finish()
+}
+
+/// `alt.bin` を読む。形式書15章のとおり、マジックナンバー・`format_version`・`DEPS` の
+/// `graph.bin` を確かめ、`PARAMS` の `landmarks`・`directions` と節の有無の一致、`unit_ds ≥ 1`、
+/// `FR_<M>` の件数（Lの倍数・全手段で同じノード数N）、`TO_<M>` の件数（`FR_<M>` と同じ）を検査する。
 pub fn decode_alt(bytes: &[u8]) -> Result<Decoded<Landmarks>, LoadError> {
-    todo!("形式書15章")
+    use crate::contract::Mode;
+
+    let invalid = |message: String| LoadError::Invalid(format!("alt.bin: {message}"));
+    let (file, deps) = open(
+        bytes,
+        ALT_FILE,
+        ALT_MAGIC,
+        format_version_of(ALT_FILE),
+        required_deps(ALT_FILE),
+    )?;
+    let raw_params = file.json(PARAMS_SECTION)?;
+    let params: crate::domain::routing::search::alt::AltParams =
+        serde_json::from_value(raw_params.clone())
+            .map_err(|_| invalid("PARAMSが距離表の形として読めない".to_owned()))?;
+    if params.unit_ds == 0 {
+        return Err(invalid("PARAMSのunit_dsが1未満".to_owned()));
+    }
+    for key in params.landmarks.keys().chain(params.directions.keys()) {
+        if Mode::parse(key).is_none() {
+            return Err(invalid(format!(
+                "PARAMSの{key}が手段（car・bike・walk）でない"
+            )));
+        }
+    }
+
+    let mut tables: [Option<crate::domain::routing::search::alt::ModeLandmarks>; 3] =
+        [None, None, None];
+    // 表を持つ手段で共通のノード数N。L=0の表はNを決めない。
+    let mut expected_nodes: Option<u64> = None;
+    for mode in Mode::ALL {
+        let key = mode.as_str();
+        let name = alt_mode_name(mode);
+        let (lm_name, fr_name, to_name) = (
+            format!("LM_{name}"),
+            format!("FR_{name}"),
+            format!("TO_{name}"),
+        );
+        let count = params.landmarks.get(key).copied();
+        let directions = params.directions.get(key);
+        let (Some(count), Some(directions)) = (count, directions) else {
+            if count.is_some() || directions.is_some() {
+                return Err(invalid(format!(
+                    "PARAMSの{key}のlandmarksとdirectionsの有無が一致しない"
+                )));
+            }
+            for section in [&lm_name, &fr_name, &to_name] {
+                if file.section(section).is_some() {
+                    return Err(invalid(format!("PARAMSに{key}がないのに節{section}がある")));
+                }
+            }
+            continue;
+        };
+        let with_to = match directions.as_slice() {
+            [from] if from == "from" => false,
+            [from, to] if from == "from" && to == "to" => true,
+            _ => {
+                return Err(invalid(format!(
+                    "PARAMSの{key}のdirectionsが[\"from\"]か[\"from\",\"to\"]でない"
+                )));
+            }
+        };
+
+        let lm_section = file.require(&lm_name)?;
+        lm_section.expect_count(u64::from(count))?;
+        let nodes = lm_section.u32s()?;
+
+        let fr_section = file.require(&fr_name)?;
+        if count == 0 {
+            fr_section.expect_count(0)?;
+        } else {
+            if fr_section.count % u64::from(count) != 0 {
+                return Err(invalid(format!(
+                    "節{fr_name}の件数がランドマークの数{count}の倍数でない"
+                )));
+            }
+            let n = fr_section.count / u64::from(count);
+            if n == 0 {
+                return Err(invalid(format!(
+                    "節{fr_name}のノード数が0（ランドマークがあるのに表が空）"
+                )));
+            }
+            match expected_nodes {
+                Some(expected) if expected != n => {
+                    return Err(invalid(format!(
+                        "節{fr_name}のノード数{n}が他の手段の{expected}と一致しない"
+                    )));
+                }
+                None => expected_nodes = Some(n),
+                _ => {}
+            }
+        }
+        let from = fr_section.u16s()?;
+
+        let to = if with_to {
+            let to_section = file.require(&to_name)?;
+            to_section.expect_count(fr_section.count)?;
+            Some(to_section.u16s()?)
+        } else {
+            if file.section(&to_name).is_some() {
+                return Err(invalid(format!(
+                    "PARAMSの{key}のdirectionsにtoがないのに節{to_name}がある"
+                )));
+            }
+            None
+        };
+        tables[crate::domain::routing::risk::mode_index(mode)] =
+            Some(crate::domain::routing::search::alt::ModeLandmarks { nodes, from, to });
+    }
+    Ok(Decoded {
+        value: Landmarks {
+            params,
+            raw_params,
+            tables,
+        },
+        deps,
+    })
 }
 
 #[cfg(test)]
@@ -1494,5 +1650,142 @@ mod tests {
         let mut a = sample_assignment();
         a.unassigned.clear();
         assert!(decode_assignment(&encode_assignment(&a, &deps)).is_err());
+    }
+
+    // --- alt.bin ---
+
+    fn alt_car_table(nodes: Vec<u32>, from: Vec<u16>, to: Option<Vec<u16>>) -> Landmarks {
+        use crate::domain::routing::search::alt::ModeLandmarks;
+
+        let mut tables: [Option<ModeLandmarks>; 3] = [None, None, None];
+        tables[2] = Some(ModeLandmarks { nodes, from, to });
+        Landmarks::from_tables(40, tables)
+    }
+
+    #[test]
+    fn alt_round_trips_with_no_table_car_only_and_to() {
+        let deps = deps_of(b"graph");
+        let cases = [
+            ("表なし", Landmarks::empty()),
+            ("carだけ", alt_car_table(vec![1], vec![0, 1, 2, 3], None)),
+            (
+                "toあり",
+                alt_car_table(
+                    vec![0, 3],
+                    vec![0, 1, 2, 3, 4, 5, 6, 7],
+                    Some(vec![7, 6, 5, 4, 3, 2, 1, 0]),
+                ),
+            ),
+        ];
+        for (what, mut landmarks) in cases {
+            // `AltParams` に入らないキーも `PARAMS` に残る
+            if let Value::Object(params) = &mut landmarks.raw_params {
+                params.insert(
+                    "selection".to_owned(),
+                    json!({"method": "farthest", "start_nodes": {"car": 0}}),
+                );
+            }
+            let bytes = encode_alt(&landmarks, &deps);
+            let decoded = decode_alt(&bytes).unwrap();
+            assert_eq!(decoded.value.params, landmarks.params, "{what}");
+            assert_eq!(decoded.value.tables, landmarks.tables, "{what}");
+            assert_eq!(decoded.deps, deps, "{what}");
+            assert_eq!(bytes, encode_alt(&decoded.value, &decoded.deps), "{what}");
+            // 型付きの `AltParams` と、それに入らないキーの両方が `PARAMS` にある
+            assert_eq!(
+                decoded.value.raw_params["selection"], landmarks.raw_params["selection"],
+                "{what}"
+            );
+            assert_eq!(
+                decoded.value.raw_params["unit_ds"],
+                json!(landmarks.params.unit_ds),
+                "{what}"
+            );
+
+            let file = BinFile::parse(&bytes).unwrap();
+            file.expect(*b"TKRALT__", 1).unwrap();
+            let counts = file.section_counts();
+            match what {
+                "表なし" => {
+                    assert!(!counts.contains_key("LM_CAR"), "{what}");
+                    assert!(!counts.contains_key("FR_CAR"), "{what}");
+                }
+                "carだけ" => {
+                    assert_eq!(counts["LM_CAR"], 1, "{what}");
+                    assert_eq!(counts["FR_CAR"], 4, "{what}");
+                    assert!(!counts.contains_key("TO_CAR"), "{what}");
+                    assert!(!counts.contains_key("LM_BIK"), "{what}");
+                }
+                "toあり" => {
+                    assert_eq!(counts["LM_CAR"], 2, "{what}");
+                    assert_eq!(counts["FR_CAR"], 8, "{what}");
+                    assert_eq!(counts["TO_CAR"], 8, "{what}");
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    #[test]
+    fn alt_decode_rejects_inconsistent_sections_and_params() {
+        use crate::domain::routing::search::alt::ModeLandmarks;
+
+        let deps = deps_of(b"graph");
+        let good = alt_car_table(
+            vec![0, 3],
+            vec![0, 1, 2, 3, 4, 5, 6, 7],
+            Some(vec![7, 6, 5, 4, 3, 2, 1, 0]),
+        );
+        assert!(decode_alt(&encode_alt(&good, &deps)).is_ok());
+
+        // DEPSにgraph.binがない
+        assert!(decode_alt(&encode_alt(&good, &Deps::new())).is_err());
+
+        // unit_dsが0
+        let mut bad = good.clone();
+        bad.params.unit_ds = 0;
+        assert!(decode_alt(&encode_alt(&bad, &deps)).is_err());
+
+        // PARAMSにcarがあるのに節がない
+        let mut bad = good.clone();
+        bad.tables[2] = None;
+        assert!(decode_alt(&encode_alt(&bad, &deps)).is_err());
+
+        // directionsにtoがないのにTO_CARがある
+        let mut bad = good.clone();
+        bad.params
+            .directions
+            .insert("car".to_owned(), vec!["from".to_owned()]);
+        assert!(decode_alt(&encode_alt(&bad, &deps)).is_err());
+
+        // FR_CARの件数がLの倍数でない
+        let bad = alt_car_table(vec![0, 3], vec![0, 1, 2], None);
+        assert!(decode_alt(&encode_alt(&bad, &deps)).is_err());
+
+        // 手段ごとにNが違う
+        let mut tables: [Option<ModeLandmarks>; 3] = [None, None, None];
+        tables[1] = Some(ModeLandmarks {
+            nodes: vec![1],
+            from: vec![0, 1, 2],
+            to: None,
+        });
+        tables[2] = good.tables[2].clone();
+        let bad = Landmarks::from_tables(40, tables);
+        assert!(decode_alt(&encode_alt(&bad, &deps)).is_err());
+
+        // TO_CARの件数がFR_CARと違う
+        let mut table = good.tables[2].clone().unwrap();
+        table.to = Some(vec![0, 1, 2]);
+        let mut tables = [None, None, None];
+        tables[2] = Some(table);
+        let bad = Landmarks::from_tables(40, tables);
+        assert!(decode_alt(&encode_alt(&bad, &deps)).is_err());
+
+        // 表を持つ手段がPARAMSにない（directionsだけある）
+        let mut bad = Landmarks::empty();
+        bad.params
+            .directions
+            .insert("car".to_owned(), vec!["from".to_owned()]);
+        assert!(decode_alt(&encode_alt(&bad, &deps)).is_err());
     }
 }

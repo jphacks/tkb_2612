@@ -113,10 +113,12 @@ impl Landmarks {
     ///
     /// 表があれば `unit_ds × (q_from[L][t] − q_from[L][v] − 1)` と
     /// `unit_ds × (q_to[L][v] − q_to[L][t] − 1)` のうち最大のもの（負なら0）を、`UNREACHABLE_Q` でない
-    /// ランドマークについて取る。表がない手段は、直線距離÷その手段の最高速度。
+    /// ランドマークについて取る。それが0になる（ランドマークから届かない島など）ときは、直線距離÷
+    /// その手段の最高速度の下界を使う。表がない手段も直線距離÷最高速度。
     pub fn lower_bound_ds(&self, graph: &Graph, mode: Mode, v: NodeId, t: NodeId) -> u32 {
+        let straight = straight_lower_bound_ds(graph, mode, v, t);
         let Some(table) = self.table(mode) else {
-            return straight_lower_bound_ds(graph, mode, v, t);
+            return straight;
         };
         let count = table.count();
         let unit = i64::from(self.params.unit_ds);
@@ -134,7 +136,15 @@ impl Landmarks {
                 }
             }
         }
-        u32::try_from(best).unwrap_or(u32::MAX)
+        let table_bound = u32::try_from(best).unwrap_or(u32::MAX);
+        // ランドマークから届かない島（北海道・沖縄など）では表の下界が0になるので、直線距離の
+        // 下界で補う。表の下界が正のときは、既存の表の値をそのまま使う（表の下界は量子化の分だけ
+        // 直線距離より小さくなることがあるが、どちらも正しい下界である）。
+        if table_bound == 0 {
+            straight
+        } else {
+            table_bound
+        }
     }
 }
 
@@ -222,6 +232,7 @@ fn choose_landmarks(
     mode: Mode,
     count: usize,
     start: NodeId,
+    mut selected: impl FnMut(usize, NodeId),
 ) -> (Vec<NodeId>, Vec<Vec<u32>>) {
     let n = graph.node_count();
     let mut nodes: Vec<NodeId> = Vec::new();
@@ -248,6 +259,7 @@ fn choose_landmarks(
             *slot = (*slot).min(d);
         }
         columns.push(column);
+        selected(nodes.len() - 1, landmark);
         next = (0..n)
             .filter(|&v| eligible(v) && !nodes.contains(&(v as NodeId)))
             .max_by_key(|&v| (nearest[v], Reverse(v)))
@@ -258,7 +270,7 @@ fn choose_landmarks(
 
 /// ランドマークを最遠点法で選ぶ（`choose_landmarks` の規則）。
 pub fn select_landmarks(graph: &Graph, mode: Mode, count: usize, start: NodeId) -> Vec<NodeId> {
-    choose_landmarks(graph, mode, count, start).0
+    choose_landmarks(graph, mode, count, start, |_, _| {}).0
 }
 
 /// 1つの手段の距離表（`FR_<M>`、`with_to` なら `TO_<M>` も）を作る（前処理P8）。ランドマークは
@@ -272,9 +284,23 @@ pub fn farthest_landmark_table(
     unit_ds: u32,
     with_to: bool,
 ) -> ModeLandmarks {
+    farthest_landmark_table_with_progress(graph, mode, count, start, unit_ds, with_to, |_, _| {})
+}
+
+/// [`farthest_landmark_table`] と同じ。ランドマークを1つ選ぶたびに `selected(番号, ノード)` を呼ぶ
+/// （前処理P8の進捗表示用。`番号` は0から）。
+pub fn farthest_landmark_table_with_progress(
+    graph: &Graph,
+    mode: Mode,
+    count: usize,
+    start: NodeId,
+    unit_ds: u32,
+    with_to: bool,
+    selected: impl FnMut(usize, NodeId),
+) -> ModeLandmarks {
     assert!(unit_ds > 0, "unit_dsは1以上でなければなりません");
     let n = graph.node_count();
-    let (nodes, columns) = choose_landmarks(graph, mode, count, start);
+    let (nodes, columns) = choose_landmarks(graph, mode, count, start, selected);
     let l = nodes.len();
     let mut from = vec![UNREACHABLE_Q; n * l];
     for (i, column) in columns.iter().enumerate() {
@@ -294,4 +320,38 @@ pub fn farthest_landmark_table(
         to
     });
     ModeLandmarks { nodes, from, to }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::routing::graph::synthetic::{EdgeSpec, GraphBuilder};
+
+    /// ランドマークから届かない島（北海道・沖縄など）では、表の下界が0にならず、直線距離の下界になる。
+    #[test]
+    fn lower_bound_uses_the_straight_bound_for_an_unreachable_island() {
+        let mut b = GraphBuilder::new();
+        for i in 0..5 {
+            b.add_node_deg(35.0, 139.0 + 0.001 * f64::from(i));
+        }
+        // 0→1→2 の一方通行と、離れた 3-4。
+        b.add_edge(EdgeSpec::new(0, 1).length_dm(1000).oneway());
+        b.add_edge(EdgeSpec::new(1, 2).length_dm(1000).oneway());
+        b.add_edge(EdgeSpec::new(3, 4).length_dm(1000));
+        let graph = b.build();
+
+        let table = farthest_landmark_table(&graph, Mode::Car, 2, 0, 40, false);
+        let mut tables = [None, None, None];
+        tables[2] = Some(table);
+        let landmarks = Landmarks::from_tables(40, tables);
+        let straight = straight_lower_bound_ds(&graph, Mode::Car, 3, 4);
+        assert!(straight > 0);
+        assert_eq!(
+            landmarks.lower_bound_ds(&graph, Mode::Car, 3, 4),
+            straight,
+            "島では表の下界が0になるので、直線距離の下界を使う"
+        );
+        // 島のノードは、表の下界が0でも下界として0を返さない。
+        assert!(landmarks.lower_bound_ds(&graph, Mode::Car, 4, 3) > 0);
+    }
 }
