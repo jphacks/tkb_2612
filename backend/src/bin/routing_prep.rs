@@ -28,7 +28,7 @@
 //! | `restrictions` | `--pbf <PBF> --graph <graph.bin> --attrs <graph_attrs.bin> --output <restrictions.bin>`：監査は `<output>` の拡張子を `audit.json` にしたもの |
 //! | `topology` | `--graph <graph.bin> --attrs <graph_attrs.bin> --output <topology.bin> [--scc-min-nodes N] [--threads N]`（`--scc-min-nodes` の既定は200。小さなグラフのテスト用） |
 //! | `accident-snap` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --accidents <accidents.csv.gz> --output <assignment.bin> [--sigma0 M] [--threads N] [--review-dir DIR --review-count N --review-seed N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--review-dir` を付けると人手判定用の `review_sample.json` を書く |
-//! | `risk-fit` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --accidents <accidents.csv.gz> --output <risk.bin> [--train-years 2019-2022] [--validate-year 2023] [--c 1.0] [--threads N]`：監査は `<output>` の拡張子を `audit.json` にしたもの |
+//! | `risk-fit` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --accidents <accidents.csv.gz> --output <risk.bin> [--train-years 2019-2022] [--validate-year 2023] [--inherit-from <参照のrisk.bin>] [--c 1.0] [--threads N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--inherit-from` を付けると、W・β・β_clusterを参照から引き継ぎ、検証年を使わない |
 //! | `od-index` | `--graph <graph.bin> --output <odindex.bin> [--threads N]` |
 //! | `alt` | `--graph <graph.bin> --output <alt.bin> [--modes car,bike,walk] [--landmarks 16] [--unit-ds 40] [--with-to false] [--start-node N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--modes` の既定は `car` |
 
@@ -693,11 +693,11 @@ fn risk_fit(options: &Options) -> Result<(), String> {
         decode_risk, decode_topology, encode_risk, required_deps,
     };
     use accident_route_backend::domain::routing::prep::risk_fit::{
-        RiskFitConfig, RiskFitInput, fit_risk,
+        InheritedFit, RiskFitConfig, RiskFitInput, fit_risk,
     };
 
-    const USAGE: &str = "使い方: routing_prep risk-fit --graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --accidents <accidents.csv.gz> --output <risk.bin> [--train-years 2019-2022] [--validate-year 2023] [--c 1.0] [--threads N]";
-    const KNOWN: [&str; 11] = [
+    const USAGE: &str = "使い方: routing_prep risk-fit --graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --accidents <accidents.csv.gz> --output <risk.bin> [--train-years 2019-2022] [--validate-year 2023] [--inherit-from <参照のrisk.bin>] [--c 1.0] [--threads N]";
+    const KNOWN: [&str; 12] = [
         "graph",
         "attrs",
         "topology",
@@ -707,6 +707,7 @@ fn risk_fit(options: &Options) -> Result<(), String> {
         "output",
         "train-years",
         "validate-year",
+        "inherit-from",
         "c",
         "threads",
     ];
@@ -736,11 +737,19 @@ fn risk_fit(options: &Options) -> Result<(), String> {
         Some(value) => parse_train_years(value)?,
         None => vec![2019, 2020, 2021, 2022],
     };
-    let validate_year = match options.0.get("validate-year") {
-        Some(value) => value
-            .parse::<u16>()
-            .map_err(|_| "--validate-year は整数".to_owned())?,
-        None => 2023,
+    let inherit_from = options.0.get("inherit-from").map(PathBuf::from);
+    if inherit_from.is_some() && options.0.contains_key("validate-year") {
+        return Err("--inherit-from と --validate-year は同時に指定できません".to_owned());
+    }
+    let validate_year = if inherit_from.is_some() {
+        None
+    } else {
+        Some(match options.0.get("validate-year") {
+            Some(value) => value
+                .parse::<u16>()
+                .map_err(|_| "--validate-year は整数".to_owned())?,
+            None => 2023,
+        })
     };
     let c = match options.0.get("c") {
         Some(value) => value
@@ -825,6 +834,27 @@ fn risk_fit(options: &Options) -> Result<(), String> {
         &accidents_hash,
     )?;
 
+    let inherit = match &inherit_from {
+        Some(path) => {
+            log("参照のrisk.binを読む");
+            let bytes = read_file(path)?;
+            let hash = sha256_hex(&bytes);
+            let reference = decode_risk(&bytes)
+                .map_err(|e| format!("参照のrisk.binを読めません: {e}"))?
+                .value;
+            let source = json!({
+                "file": path.display().to_string(),
+                "sha256": hash,
+                "train_source_years": reference.params.train_source_years.clone(),
+            });
+            let inherited = InheritedFit::from_model(&reference, source)?;
+            drop(reference);
+            drop(bytes);
+            Some(inherited)
+        }
+        None => None,
+    };
+
     let input = RiskFitInput {
         graph: &parts,
         graph_attrs: &graph_attrs.value,
@@ -837,6 +867,7 @@ fn risk_fit(options: &Options) -> Result<(), String> {
         train_years,
         validate_year,
         c,
+        inherit,
     };
     let result = fit_risk(&input, &config, &log)?;
     log(&format!("推定完了 {}", memory_summary()));
