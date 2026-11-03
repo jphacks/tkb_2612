@@ -233,18 +233,51 @@ fn load_engine_rejects_other_schema_versions() {
     ));
 }
 
-#[test]
-fn load_engine_routes_schema_3_to_the_routing_loader() {
-    // 骨組みの段階では load_routing_engine は todo!() なので、schema 3 だけがそこに到達して止まる
-    let dir = release_dir_with_metadata(r#"{"schema_version": 3}"#);
-    let result = std::panic::catch_unwind(|| data::load_engine(dir.path()).map(|_| ()));
-    let payload = result.expect_err("schema 3 は load_routing_engine に進む");
-    let message = payload
-        .downcast_ref::<String>()
-        .cloned()
-        .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_owned()))
-        .unwrap_or_default();
-    assert!(message.contains("schema 3"), "{message}");
+#[tokio::test]
+async fn load_engine_routes_schema_3_to_the_routing_loader() {
+    // M0.6の人工release：schema 3を実際に読み、候補が空の検索から応答まで通す。
+    use accident_route_backend::api::route_response::{check_detour, render_route_response};
+    use accident_route_backend::contract::{CancelToken, ConditionFilter, RouteQuery};
+    use accident_route_backend::testing::ScriptedRouter;
+    use accident_route_backend::testing::TestRelease;
+    use accident_route_backend::testing::fixtures::check_outcome_invariants;
+
+    let (release, query) = TestRelease::routing();
+    let engine = data::load_engine(release.path()).expect("schema 3の人工releaseを読める");
+    assert_eq!(engine.dataset().release_id, release.ids.release_id);
+    assert_eq!(engine.dataset().dataset_id, release.ids.dataset_id);
+    assert_eq!(engine.dataset().accidents, 3);
+    assert_eq!(engine.dataset().data_years, vec![2025]);
+
+    let request = RouteQuery::new(
+        query.origin,
+        query.dest,
+        query.mode,
+        10.0,
+        ConditionFilter::default(),
+    )
+    .expect("人工releaseの座標は妥当");
+    let router = ScriptedRouter::new(vec![]);
+    let candidates = engine
+        .collect_candidates(&router, &request, &CancelToken::unbounded())
+        .await
+        .expect("候補取得");
+    assert!(candidates.routes.is_empty());
+    assert!(candidates.warnings.is_empty());
+
+    let outcome = engine
+        .evaluate(&request, candidates, &CancelToken::unbounded())
+        .expect("経路を評価できる");
+    check_outcome_invariants(&outcome).expect("相関制約");
+    check_detour(&outcome, 10.0).expect("遠回りの上限");
+    render_route_response(&outcome).expect("応答JSONにできる");
+    assert!(
+        outcome
+            .candidates
+            .iter()
+            .any(|candidate| candidate.totals.accident_count > 0),
+        "人工releaseの候補に事故が載る"
+    );
 }
 
 #[test]

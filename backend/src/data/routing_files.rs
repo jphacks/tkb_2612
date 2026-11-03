@@ -12,6 +12,7 @@
 #![allow(unused_variables)]
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use serde_json::{Map, Value};
 
@@ -26,7 +27,7 @@ use crate::domain::routing::snap::{OdIndex, OdIndexParams};
 use crate::domain::routing::topology::{ClusterRecord, SidewalkParent, Topology, TwinPair};
 
 use super::LoadError;
-use super::binfile::{BinFile, BinFileWriter, DEPS_SECTION, PARAMS_SECTION};
+use super::binfile::{BinFile, BinFileReader, BinFileWriter, DEPS_SECTION, PARAMS_SECTION};
 use super::release::{
     ACCIDENT_ATTRS_FILE, ALT_FILE, ALT_MAGIC, ASSIGNMENT_FILE, ASSIGNMENT_MAGIC, GRAPH_ATTRS_MAGIC,
     GRAPH_FILE, GRAPH_MAGIC, ODINDEX_FILE, ODINDEX_MAGIC, RESTRICTIONS_FILE, RESTRICTIONS_MAGIC,
@@ -301,6 +302,211 @@ pub fn decode_graph(bytes: &[u8]) -> Result<Decoded<Graph>, LoadError> {
     let Decoded { value, deps } = decode_graph_parts(bytes)?;
     let graph = Graph::from_parts(value).map_err(|e| invalid(e.to_string()))?;
     Ok(Decoded { value: graph, deps })
+}
+
+/// `graph.bin` を、ファイル全体を `Vec<u8>` に読まずに節ごとに読む。
+///
+/// 容器・マジックナンバー・`format_version`・`DEPS`・`PARAMS` と各節の件数の検査は
+/// [`decode_graph_parts`] と同じ。節の本体は必要な型の `Vec` に直接読み込む。
+pub fn decode_graph_from_file(path: &Path) -> Result<Decoded<Graph>, LoadError> {
+    let mut reader = BinFileReader::open(path)?;
+    reader.expect(GRAPH_MAGIC, format_version_of(GRAPH_FILE))?;
+    let deps = reader.deps()?;
+    for key in required_deps(GRAPH_FILE) {
+        if !deps.contains_key(*key) {
+            return Err(invalid(format!("{GRAPH_FILE}のDEPSに{key}がない")));
+        }
+    }
+    let params = reader.json(PARAMS_SECTION)?;
+    let nodes = require_param_u64(&params, "nodes")?;
+    let edges = require_param_u64(&params, "edges")?;
+    let shape_points = require_param_u64(&params, "shape_points")?;
+    let time_model = TimeModel::from_json(&reader.json("TIMEMODL")?)
+        .map_err(|_| invalid("TIMEMODLが所要時間のモデルとして読めない"))?;
+
+    let node_ofs_section = reader.require("NODEOFS")?;
+    node_ofs_section.expect_count(nodes + 1)?;
+    let node_ofs = reader.read_values::<u32>(&node_ofs_section)?;
+
+    let adj_section = reader.require("ADJ")?;
+    adj_section.expect_count(edges * 2)?;
+    adj_section.expect_elem_size(4)?;
+    let adj: Vec<DirEdge> = reader
+        .read_values::<u32>(&adj_section)?
+        .into_iter()
+        .map(DirEdge)
+        .collect();
+
+    let ll_section = reader.require("NODELL")?;
+    ll_section.expect_count(nodes)?;
+    let node_ll: Vec<Coord> = reader.read_mapped(&ll_section, Coord::SIZE as u32, |r| {
+        Coord::new(le_i32(r, 0), le_i32(r, 4))
+    })?;
+
+    let flags_section = reader.require("NODEFLG")?;
+    flags_section.expect_count(nodes)?;
+    let node_flags = reader.read_values::<u8>(&flags_section)?;
+
+    let edge_section = reader.require("EDGE")?;
+    edge_section.expect_count(edges)?;
+    let edge_records: Vec<EdgeRecord> =
+        reader.read_mapped(&edge_section, EdgeRecord::SIZE as u32, |r| EdgeRecord {
+            tail: le_u32(r, 0),
+            head: le_u32(r, 4),
+            length_dm: le_u32(r, 8),
+            class: r[12],
+            access: r[13],
+            flags: r[14],
+            maxspeed_kmh: r[15],
+        })?;
+
+    let shape_ofs_section = reader.require("SHPOFS")?;
+    shape_ofs_section.expect_count(edges + 1)?;
+    let shape_ofs = reader.read_values::<u32>(&shape_ofs_section)?;
+
+    let shape_section = reader.require("SHAPE")?;
+    shape_section.expect_count(shape_points)?;
+    let shape: Vec<ShapePoint> =
+        reader.read_mapped(&shape_section, ShapePoint::SIZE as u32, |r| ShapePoint {
+            dlat_e7: le_i16(r, 0),
+            dlon_e7: le_i16(r, 2),
+        })?;
+
+    let parts = GraphParts {
+        params,
+        time_model,
+        node_ofs,
+        adj,
+        node_ll,
+        node_flags,
+        edges: edge_records,
+        shape_ofs,
+        shape,
+    };
+    let graph = Graph::from_parts(parts).map_err(|e| invalid(e.to_string()))?;
+    Ok(Decoded { value: graph, deps })
+}
+
+/// `alt.bin` を、ファイル全体を `Vec<u8>` に読まずに節ごとに読む。
+///
+/// `PARAMS` と節の有無・件数の検査は [`decode_alt`] と同じ。
+pub fn decode_alt_from_file(path: &Path) -> Result<Decoded<Landmarks>, LoadError> {
+    use crate::contract::Mode;
+
+    let invalid = |message: String| LoadError::Invalid(format!("alt.bin: {message}"));
+    let mut reader = BinFileReader::open(path)?;
+    reader.expect(ALT_MAGIC, format_version_of(ALT_FILE))?;
+    let deps = reader.deps()?;
+    for key in required_deps(ALT_FILE) {
+        if !deps.contains_key(*key) {
+            return Err(invalid(format!("DEPSに{key}がない")));
+        }
+    }
+    let raw_params = reader.json(PARAMS_SECTION)?;
+    let params: crate::domain::routing::search::alt::AltParams =
+        serde_json::from_value(raw_params.clone())
+            .map_err(|_| invalid("PARAMSが距離表の形として読めない".to_owned()))?;
+    if params.unit_ds == 0 {
+        return Err(invalid("PARAMSのunit_dsが1未満".to_owned()));
+    }
+    for key in params.landmarks.keys().chain(params.directions.keys()) {
+        if Mode::parse(key).is_none() {
+            return Err(invalid(format!(
+                "PARAMSの{key}が手段（car・bike・walk）でない"
+            )));
+        }
+    }
+
+    let mut tables: [Option<crate::domain::routing::search::alt::ModeLandmarks>; 3] =
+        [None, None, None];
+    let mut expected_nodes: Option<u64> = None;
+    for mode in Mode::ALL {
+        let key = mode.as_str();
+        let name = alt_mode_name(mode);
+        let (lm_name, fr_name, to_name) = (
+            format!("LM_{name}"),
+            format!("FR_{name}"),
+            format!("TO_{name}"),
+        );
+        let count = params.landmarks.get(key).copied();
+        let directions = params.directions.get(key);
+        let (Some(count), Some(directions)) = (count, directions) else {
+            if count.is_some() || directions.is_some() {
+                return Err(invalid(format!(
+                    "PARAMSの{key}のlandmarksとdirectionsの有無が一致しない"
+                )));
+            }
+            for section in [&lm_name, &fr_name, &to_name] {
+                if reader.section(section).is_some() {
+                    return Err(invalid(format!("PARAMSに{key}がないのに節{section}がある")));
+                }
+            }
+            continue;
+        };
+        let with_to = match directions.as_slice() {
+            [from] if from == "from" => false,
+            [from, to] if from == "from" && to == "to" => true,
+            _ => {
+                return Err(invalid(format!(
+                    "PARAMSの{key}のdirectionsが[\"from\"]か[\"from\",\"to\"]でない"
+                )));
+            }
+        };
+
+        let lm_section = reader.require(&lm_name)?;
+        lm_section.expect_count(u64::from(count))?;
+        let nodes = reader.read_values::<u32>(&lm_section)?;
+
+        let fr_section = reader.require(&fr_name)?;
+        if count == 0 {
+            fr_section.expect_count(0)?;
+        } else {
+            if fr_section.count % u64::from(count) != 0 {
+                return Err(invalid(format!(
+                    "節{fr_name}の件数がランドマークの数{count}の倍数でない"
+                )));
+            }
+            let n = fr_section.count / u64::from(count);
+            if n == 0 {
+                return Err(invalid(format!(
+                    "節{fr_name}のノード数が0（ランドマークがあるのに表が空）"
+                )));
+            }
+            match expected_nodes {
+                Some(expected) if expected != n => {
+                    return Err(invalid(format!(
+                        "節{fr_name}のノード数{n}が他の手段の{expected}と一致しない"
+                    )));
+                }
+                None => expected_nodes = Some(n),
+                _ => {}
+            }
+        }
+        let from = reader.read_values::<u16>(&fr_section)?;
+
+        let to = if with_to {
+            let to_section = reader.require(&to_name)?;
+            to_section.expect_count(fr_section.count)?;
+            Some(reader.read_values::<u16>(&to_section)?)
+        } else {
+            if reader.section(&to_name).is_some() {
+                return Err(invalid(format!(
+                    "PARAMSの{key}のdirectionsにtoがないのに節{to_name}がある"
+                )));
+            }
+            None
+        };
+        tables[crate::domain::routing::risk::mode_index(mode)] =
+            Some(crate::domain::routing::search::alt::ModeLandmarks { nodes, from, to });
+    }
+    Ok(Decoded {
+        value: Landmarks {
+            params,
+            raw_params,
+            tables,
+        },
+        deps,
+    })
 }
 
 /// `graph_attrs.bin`（形式書16章、中間生成物）。節は `WAYID`・`NODEID`（形式書16章への追加）・`REF`・
