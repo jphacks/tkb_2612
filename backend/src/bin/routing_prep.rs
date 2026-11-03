@@ -19,8 +19,7 @@
 //! | `package` | P9 | `metadata.json` とreleaseディレクトリ |
 //!
 //! 実装済み：`osm-graph`（P1）・`restrictions`（P2）・`topology`（P3）・`accident-attrs`（P4）・
-//! `accident-snap`（P5）・`risk-fit`（P6）・`od-index`（P7）・`alt`（P8）。残り（`package`）は
-//! 骨組みのまま（`todo!()`）。
+//! `accident-snap`（P5）・`risk-fit`（P6）・`od-index`（P7）・`alt`（P8）・`package`（P9）。
 //!
 //! | サブコマンド | 引数 |
 //! |---|---|
@@ -31,6 +30,7 @@
 //! | `risk-fit` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --accidents <accidents.csv.gz> --output <risk.bin> [--train-years 2019-2022] [--validate-year 2023] [--c 1.0] [--threads N]`：監査は `<output>` の拡張子を `audit.json` にしたもの |
 //! | `od-index` | `--graph <graph.bin> --output <odindex.bin> [--threads N]` |
 //! | `alt` | `--graph <graph.bin> --output <alt.bin> [--modes car,bike,walk] [--landmarks 16] [--unit-ds 40] [--with-to false] [--start-node N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--modes` の既定は `car` |
+//! | `package` | `--base-release <schema2のrelease> --graph <graph.bin> --restrictions <restrictions.bin> --topology <topology.bin> --odindex <odindex.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --risk <risk.bin> --alt <alt.bin> --output <出力の根>`：`<output>/releases/<release_id>/` に11ファイルを作る |
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -1159,9 +1159,89 @@ fn alt(options: &Options) -> Result<(), String> {
 }
 
 /// P9：schema 2のreleaseに8つの `.bin` を加え、`metadata.json`（schema 3）を作る（形式書2章・4章）。
+///
+/// 出力の根の `staging/` で11ファイルを作ってから `releases/<release_id>/` へ移し、読み取り専用にする。
+/// `current` は変えない。同じ `release_id` のreleaseがあれば上書きしない。
 fn package(options: &Options) -> Result<(), String> {
-    let _ = options;
-    todo!("P9 package")
+    use accident_route_backend::data::routing_package::{PackageInputs, package_routing_release};
+
+    const USAGE: &str = "使い方: routing_prep package --base-release <schema2のrelease> --graph <graph.bin> --restrictions <restrictions.bin> --topology <topology.bin> --odindex <odindex.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --risk <risk.bin> --alt <alt.bin> --output <出力の根>";
+    const KNOWN: [&str; 10] = [
+        "base-release",
+        "graph",
+        "restrictions",
+        "topology",
+        "odindex",
+        "accident-attrs",
+        "assignment",
+        "risk",
+        "alt",
+        "output",
+    ];
+    if let Some(unknown) = options.0.keys().find(|k| !KNOWN.contains(&k.as_str())) {
+        return Err(format!("不明な引数です: --{unknown}\n{USAGE}"));
+    }
+    let base_release = options
+        .path("base-release")
+        .map_err(|e| format!("{e}\n{USAGE}"))?;
+    let routing_files = [
+        options.path("graph").map_err(|e| format!("{e}\n{USAGE}"))?,
+        options
+            .path("restrictions")
+            .map_err(|e| format!("{e}\n{USAGE}"))?,
+        options
+            .path("topology")
+            .map_err(|e| format!("{e}\n{USAGE}"))?,
+        options
+            .path("odindex")
+            .map_err(|e| format!("{e}\n{USAGE}"))?,
+        options
+            .path("accident-attrs")
+            .map_err(|e| format!("{e}\n{USAGE}"))?,
+        options
+            .path("assignment")
+            .map_err(|e| format!("{e}\n{USAGE}"))?,
+        options.path("risk").map_err(|e| format!("{e}\n{USAGE}"))?,
+        options.path("alt").map_err(|e| format!("{e}\n{USAGE}"))?,
+    ];
+    let output = options
+        .path("output")
+        .map_err(|e| format!("{e}\n{USAGE}"))?;
+
+    // 既存の prepare_release と同じく、現在時刻をタイムゾーン付きの RFC 3339 で記録する。
+    // 明示的に JST（UTC+9）にする。
+    let jst = chrono::FixedOffset::east_opt(9 * 3600).expect("UTC+9は有効なオフセット");
+    let generated_at = chrono::Local::now().with_timezone(&jst).to_rfc3339();
+    let inputs = PackageInputs {
+        base_release,
+        routing_files,
+        generated_at,
+    };
+
+    let started = Instant::now();
+    log("入力を検査してschema 3のreleaseを作る");
+    let summary = package_routing_release(&inputs, &output)
+        .map_err(|e| format!("packageに失敗しました: {e}"))?;
+    let elapsed = started.elapsed().as_secs_f64();
+    let value = json!({
+        "release_dir": summary.release_dir.display().to_string(),
+        "release_id": summary.release_id,
+        "dataset_id": summary.dataset_id,
+        "rows": summary.metadata["rows"],
+        "elapsed_seconds": elapsed,
+        "memory": memory_summary(),
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&value).expect("JSONに書ける値")
+    );
+    log(&format!(
+        "完了 {:.1}秒 {} {}",
+        elapsed,
+        memory_summary(),
+        summary.release_dir.display()
+    ));
+    Ok(())
 }
 
 fn main() -> ExitCode {

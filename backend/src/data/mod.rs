@@ -15,6 +15,7 @@ pub mod osm;
 pub mod preprocess;
 pub mod release;
 pub mod routing_files;
+pub mod routing_package;
 
 use std::fmt;
 use std::path::Path;
