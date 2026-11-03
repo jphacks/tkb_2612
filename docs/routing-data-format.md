@@ -665,6 +665,9 @@ backend/src/domain/routing/
     candidates.rs 候補の整理（重複除去・上限6本・並べ替え）
     reduced.rs    探索範囲が大きすぎる場合（計画書6.4節）
   legality/mod.rs check_path・Violation
+  eval/
+    metrics.rs    Y1・Y2・Y3（M5.4）
+    matching.rs   現行方式の経路の折れ線を有向辺の列に写す（M5.4）
   engine.rs       RoutingEngine（RouteEngine の実装。collect_candidates は空の CandidateSet を返す）
 backend/src/data/
   binfile.rs      3章の容器形式の読み書き（M0で実装済み）
@@ -679,3 +682,61 @@ backend/src/bin/
 ```
 
 依存方向は既存の規則（`backend/README.md`）に従う。`domain::routing` は `contract` と `domain` の既存モジュール（`navigation`・`rounding`・`snapshot`・`corridor` の75m分割）だけを使い、`data` に依存しない。ファイルの読み書きは `data` に置く。
+
+## 18.1 `routing_eval` の評価用サブコマンド（M5.4）
+
+経路の共通の形式は、1行1件のJSONで `id`・`mode`（`walk|bike|car`）・`candidates` の配列を持つ。
+各候補の `path` は `{"start": {"edge", "offset_dm"}, "end": {"edge", "offset_dm"}, "dedges": [...]}`。
+`dedges` は `DirEdge` の数値（`edge*2+reverse`）。`path` がない・null の候補は探索に失敗したODなどで、
+`y-metrics` はその候補の `y` を null にする。
+
+### `y-metrics`
+
+```sh
+routing_eval y-metrics --dir <グラフ一式> --assignment <assignment.bin> \
+  --accidents <accidents.csv.gz> --routes <in.jsonl> --out <out.jsonl> \
+  --years 2024,2025 [--threads N]
+```
+
+入力の各行の各候補に `"y": {"y1", "y2", "y3", "length_m"}` を足し、ほかの欄はそのまま
+行の順を保って書き出す。数える事故は `source_year` が `--years` に含まれ、その手段が関与した
+（`modes & mode.mask() != 0`）ものだけで、時間帯・曜日・天候では絞らない。
+
+- Y1：経路の折れ線（出発・到着の部分辺を含む）から15m以内の事故。距離は `contract::geo` と
+  同じ局所平面近似で測り、事故の0.001度格子で近くの事故だけを調べる。
+- Y2：各事故を、35m以内の車道の辺（`HighwayClass` のコード0〜15で、歩道の親を持たない辺。
+  手段によらない）のうち最も近い1本に割り当てる（同じ距離なら辺番号の小さい方）。経路が通る辺に
+  割り当て先の辺が入る事故を数える。出発・到着の部分辺では、事故を辺に投影した位置が実際に通る
+  範囲に入る場合だけ数える。歩道の辺を通るときは親の車道の辺全体を通るものとして数える。
+  割り当ては評価年の事故について1回だけ作り、全経路で使い回す。
+- Y3：`EdgeAccidentIndex` の辺の割り当て（`MIRROR` を含む）の重みの和と、経路が外から入る
+  交差点クラスタの割り当ての重みの和。出発・到着の部分辺は `pos_dm` が通る範囲に入るものだけ。
+  到着の部分辺ではクラスタを数えない（`path_risk` と同じ規則）。歩道の辺は、歩道の通る範囲を
+  親の辺の長さに対する同じ割合の範囲に写して、親の辺の割り当てを数える。
+- `length_m`：経路の道のり（m）。
+
+標準エラーに、評価年×手段ごとの事故の件数、Y2で辺に割り当てた割合、読み込みと処理の時間を出す。
+
+### `match-routes`
+
+```sh
+routing_eval match-routes --dir <グラフ一式> --in <current.jsonl> \
+  --out <matched.jsonl> [--corridor-m 20] [--threads N]
+```
+
+入力は現行方式のAPIの応答を整形した1行1件のJSONで、`id`・`mode`・`status`・`candidates` を持つ。
+各候補は `coordinates`（GeoJSONの順、経度・緯度）・`duration_s`・`distance_m` などを持つ。
+`status` が `ok` でない行は `candidates` を空にして書き出す。
+
+1. 折れ線の始点・終点を、その手段の `snap` で吸着する。吸着できなければ `path` を null にし、
+   `match.error` に理由を書く。
+2. 折れ線から `--corridor-m`（既定20m）以内に、有向辺の折れ線の点（両端と形状点、長い区間は
+   10mおきに補う）の80%以上が入る有向辺を「回廊の辺」とする。辺の向きと折れ線の向きの差が
+   120°超になる点は数えない。
+3. その手段で通れる有向辺だけを使い、回廊の辺は辺の時間、それ以外は辺の時間の20倍をコストに
+   したノード単位のDijkstraで、始点から終点への最短経路を求める。右左折禁止・右左折コストは
+   考えない。出発・到着の部分辺は `Path` の規則に合わせる。
+4. 経路を共通の形式の `path` にし、`time_s`（`path_time_ds` の正本）、`distance_m`、
+   `class_lengths_m`（道路種別のコードごとの実際に通る長さ。0は出さない）、
+   `match`（`osrm_distance_m`・`matched_distance_m`・`outside_m`・`max_dev_m`・`error`）を足す。
+5. 入力の欄（`route_id`・`duration_s`・`weighted_risk` など）と最上位の欄はそのまま残す。
