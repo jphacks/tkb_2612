@@ -41,14 +41,32 @@
 //!
 //! `Path::dedges` は `NO_DEDGE` を含まない。出発・到着の辺の部分は `Path` のドキュメントの規則
 //! （先頭の有向辺が出発の辺なら出発点から、最後の有向辺が到着の辺なら到着点まで）で決まる。
+//! 出発・到着の位置の種別、部分有向辺の長さと時間は [`endpoints`](super::endpoints) が正本で、
+//! ここはそれを仮想ノードの辺に写す。
+//!
+//! # 楕円の切り出し（behavior.md 5章 手順4）
+//!
+//! 辺の時間だけの出発からの最短時間 `df` と、到着までの最短時間 `db` について、
+//! `df(u) + t(e) + db(v) ≤ B` の有向辺 `e = (u→v)` だけを残す（`B = 最短時間 + 許容時間`）。右左折禁止・ノードの
+//! 加算・右左折コストは時間を増やす方向にしか働かないので、この切り出しは上限を満たす経路を落とさない。
+//! `df`・`db` は、到着（出発）までの下界（直線距離と、距離表があればALT）を使う前向き・後ろ向きのA*で、
+//! キーが `B` 以下のノードだけを拡張して求める。下界が許容的（実際の値以下）であれば、`B` 以下の
+//! 経路上のノードは、すべてのノードのキーが `B` 以下なので、ラベルが正確な値になる（再拡張を許す）。
+//! 触れたノードの表はハッシュ表で、全体グラフの大きさの配列は持たない。
+
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 
 use crate::contract::{CancelToken, Interrupt};
-use crate::domain::routing::graph::time::{edge_time_ds, partial_edge_time_ds};
+use crate::domain::routing::graph::time::edge_time_ds;
 use crate::domain::routing::graph::{DirEdge, NodeId};
 use crate::domain::routing::snap::SnapPoint;
 
 use super::ArcCost;
 use super::SearchContext;
+use super::alt::straight_lower_bound_ds;
+use super::endpoints::{Endpoints, Placement};
+use super::turn_dijkstra::IdMap;
 
 /// 直前の有向辺を持たない出発・到着を表す印（`SubArc::dedge`）。実在の有向辺の番号とは重ならない。
 pub const NO_DEDGE: DirEdge = DirEdge(u32::MAX);
@@ -153,6 +171,7 @@ impl Proto {
 }
 
 /// 出発・到着の吸着点から、仮想ノードにつなぐ辺を作る（モジュールのドキュメントの規則）。
+/// 吸着点が不正、または2点が同じ位置なら、辺は作らない（到達できない部分グラフになる）。
 fn endpoint_arcs(
     ctx: &SearchContext<'_>,
     start: &SnapPoint,
@@ -160,83 +179,81 @@ fn endpoint_arcs(
     cost: &mut dyn ArcCost,
 ) -> EndpointArcs {
     let graph = ctx.graph;
-    let mode = ctx.mode;
     let mut from_source = Vec::new();
     let mut into_target = Vec::new();
+    let Some(ep) = Endpoints::new(graph, ctx.mode, start, end) else {
+        return EndpointArcs {
+            from_source,
+            into_target,
+        };
+    };
+    let start_len = graph.edge(start.edge).length_dm;
+    let end_len = graph.edge(end.edge).length_dm;
 
-    let start_record = graph.edge(start.edge);
-    let start_len = start_record.length_dm;
-    let s = start.offset_dm.min(start_len);
-    let end_record = graph.edge(end.edge);
-    let end_len = end_record.length_dm;
-    let t = end.offset_dm.min(end_len);
-    let start_interior = s > 0 && s < start_len;
-    let end_interior = t > 0 && t < end_len;
-
-    if s == 0 {
-        from_source.push((Some(start_record.tail), Proto::node_arc()));
-    } else if s == start_len {
-        from_source.push((Some(start_record.head), Proto::node_arc()));
-    } else {
-        for reverse in [false, true] {
-            let d = DirEdge::new(start.edge, reverse);
-            let (from_dm, to_dm) = if reverse { (0, s) } else { (s, start_len) };
-            let Some(time_ds) = partial_edge_time_ds(graph, d, mode, to_dm - from_dm) else {
-                continue;
-            };
-            let risk_fx = cost
-                .partial_risk_fx(d, from_dm, to_dm)
-                .saturating_add(cost.cluster_entry_risk_fx(d));
-            from_source.push((
-                Some(graph.dedge_to(d)),
-                Proto {
-                    dedge: d,
-                    time_ds,
-                    risk_fx,
-                },
-            ));
+    match ep.start_placement {
+        Placement::AtNode(node) => from_source.push((Some(node), Proto::node_arc())),
+        Placement::Inside => {
+            for a in &ep.departures {
+                // 向き0は吸着点から終点まで、向き1は始点まで（辺の始点からの距離で表す）。
+                let (from_dm, to_dm) = if a.dedge.is_reverse() {
+                    (0, start.offset_dm)
+                } else {
+                    (start.offset_dm, start_len)
+                };
+                let risk_fx = cost
+                    .partial_risk_fx(a.dedge, from_dm, to_dm)
+                    .saturating_add(cost.cluster_entry_risk_fx(a.dedge));
+                from_source.push((
+                    Some(a.to),
+                    Proto {
+                        dedge: a.dedge,
+                        time_ds: a.time_ds,
+                        risk_fx,
+                    },
+                ));
+            }
         }
     }
 
-    if t == 0 {
-        into_target.push((end_record.tail, Proto::node_arc()));
-    } else if t == end_len {
-        into_target.push((end_record.head, Proto::node_arc()));
-    } else {
-        for reverse in [false, true] {
-            let d = DirEdge::new(end.edge, reverse);
-            let (from_dm, to_dm) = if reverse { (t, end_len) } else { (0, t) };
-            let Some(time_ds) = partial_edge_time_ds(graph, d, mode, to_dm - from_dm) else {
-                continue;
-            };
-            let risk_fx = cost.partial_risk_fx(d, from_dm, to_dm);
-            into_target.push((
-                graph.dedge_from(d),
-                Proto {
-                    dedge: d,
-                    time_ds,
-                    risk_fx,
-                },
-            ));
+    match ep.end_placement {
+        Placement::AtNode(node) => into_target.push((node, Proto::node_arc())),
+        Placement::Inside => {
+            for a in &ep.arrivals {
+                // 向き0は始点から吸着点まで、向き1は終点から吸着点まで。
+                let (from_dm, to_dm) = if a.dedge.is_reverse() {
+                    (end.offset_dm, end_len)
+                } else {
+                    (0, end.offset_dm)
+                };
+                let risk_fx = cost.partial_risk_fx(a.dedge, from_dm, to_dm);
+                into_target.push((
+                    a.from,
+                    Proto {
+                        dedge: a.dedge,
+                        time_ds: a.time_ds,
+                        risk_fx,
+                    },
+                ));
+            }
         }
     }
 
     // 同じ辺の途中から途中へ、辺の中だけで着く場合。
-    if start.edge == end.edge && start_interior && end_interior && s != t {
-        let reverse = t < s;
-        let d = DirEdge::new(start.edge, reverse);
-        let (from_dm, to_dm) = if reverse { (t, s) } else { (s, t) };
-        if let Some(time_ds) = partial_edge_time_ds(graph, d, mode, to_dm - from_dm) {
-            let risk_fx = cost.partial_risk_fx(d, from_dm, to_dm);
-            from_source.push((
-                None,
-                Proto {
-                    dedge: d,
-                    time_ds,
-                    risk_fx,
-                },
-            ));
-        }
+    if let Some(a) = ep.direct {
+        let (from_dm, to_dm) = if a.dedge.is_reverse() {
+            (end.offset_dm, start.offset_dm)
+        } else {
+            (start.offset_dm, end.offset_dm)
+        };
+        let risk_fx = cost.partial_risk_fx(a.dedge, from_dm, to_dm);
+        from_source.push((
+            None,
+            Proto {
+                dedge: a.dedge,
+                time_ds: a.time_ds,
+                risk_fx,
+            },
+        ));
     }
 
     EndpointArcs {
@@ -381,10 +398,256 @@ pub fn whole_graph_subgraph(
     )
 }
 
-/// 楕円の部分グラフを切り出す。`fastest_ds` は最短時間、`detour_ds` は許容する追加時間。
+/// 触れたノードの片側（前向きまたは後ろ向き）のA*：ラベルは辺の時間だけの最短時間の上界。
+#[derive(Default)]
+struct Half {
+    dist: IdMap<NodeId, u64>,
+    /// （キー = 時間 + 下界, 時間, ノード）。小さい順。
+    heap: BinaryHeap<Reverse<(u64, u64, NodeId)>>,
+}
+
+impl Half {
+    /// 時間 `g` のラベルが今より良ければ更新してキューに入れる。更新したら `true`。
+    fn relax(&mut self, v: NodeId, g: u64, h: u64) -> bool {
+        if self.dist.get(&v).is_some_and(|&old| old <= g) {
+            return false;
+        }
+        self.dist.insert(v, g);
+        self.heap.push(Reverse((g.saturating_add(h), g, v)));
+        true
+    }
+
+    /// 古い項目を捨てた、先頭のキー。空なら `None`。
+    fn peek_key(&mut self) -> Option<u64> {
+        while let Some(&Reverse((key, g, v))) = self.heap.peek() {
+            if self.dist.get(&v) == Some(&g) {
+                return Some(key);
+            }
+            self.heap.pop();
+        }
+        None
+    }
+
+    fn pop(&mut self) -> Option<(u64, NodeId)> {
+        self.peek_key()?;
+        self.heap.pop().map(|Reverse((_, g, v))| (g, v))
+    }
+}
+
+/// ノードから反対側の端までの時間の下界（辺の時間だけ）。目標のノードごとに、残りの時間を足して最小を取る。
+struct Potential<'a> {
+    ctx: &'a SearchContext<'a>,
+    /// 前向きなら到着側の（ノード, そこから到着までの時間）、後ろ向きなら出発側の（ノード, 出発からそこまでの時間）。
+    targets: &'a [(NodeId, u64)],
+    forward: bool,
+}
+
+impl Potential<'_> {
+    /// `a` から `b` までの辺の時間だけの最短時間の下界（直線距離と、距離表があればALTの大きい方）。
+    fn between(&self, a: NodeId, b: NodeId) -> u64 {
+        let straight = straight_lower_bound_ds(self.ctx.graph, self.ctx.mode, a, b);
+        let bound = if self.ctx.landmarks.table(self.ctx.mode).is_some() {
+            straight.max(
+                self.ctx
+                    .landmarks
+                    .lower_bound_ds(self.ctx.graph, self.ctx.mode, a, b),
+            )
+        } else {
+            straight
+        };
+        u64::from(bound)
+    }
+
+    fn at(&self, v: NodeId) -> u64 {
+        self.targets
+            .iter()
+            .map(|&(t, extra)| {
+                let lb = if self.forward {
+                    self.between(v, t)
+                } else {
+                    self.between(t, v)
+                };
+                lb + extra
+            })
+            .min()
+            .unwrap_or(0)
+    }
+}
+
+/// 約1024回の拡張ごとに取り消しを確かめる。
+const TICK_MASK: u32 = 1023;
+
+/// 楕円（`df + t + db ≤ B` の有向辺）を切り出す共通の処理。`allow` が偽の有向辺は使わない
+/// （縮小で使う。楕円は常に真）。
+#[allow(clippy::too_many_arguments)]
+pub(super) fn cut(
+    ctx: &SearchContext<'_>,
+    start: &SnapPoint,
+    end: &SnapPoint,
+    fastest_ds: u64,
+    detour_ds: u64,
+    cost: &mut dyn ArcCost,
+    cancel: &CancelToken,
+    allow: &dyn Fn(DirEdge) -> bool,
+) -> Result<Subgraph, EllipseError> {
+    cancel.check()?;
+    let graph = ctx.graph;
+    let mode = ctx.mode;
+    let budget = fastest_ds.saturating_add(detour_ds);
+    let Some(ep) = Endpoints::new(graph, mode, start, end) else {
+        return Err(EllipseError::Unreachable);
+    };
+    let from_start: Vec<(NodeId, u64)> = match ep.start_node() {
+        Some(n) => vec![(n, 0)],
+        None => ep
+            .departures
+            .iter()
+            .map(|a| (a.to, u64::from(a.time_ds)))
+            .collect(),
+    };
+    let to_end: Vec<(NodeId, u64)> = match ep.end_node() {
+        Some(n) => vec![(n, 0)],
+        None => ep
+            .arrivals
+            .iter()
+            .map(|a| (a.from, u64::from(a.time_ds)))
+            .collect(),
+    };
+    let pot_f = Potential {
+        ctx,
+        targets: &to_end,
+        forward: true,
+    };
+    let pot_b = Potential {
+        ctx,
+        targets: &from_start,
+        forward: false,
+    };
+
+    let limit = ctx.params.ellipse_node_limit as usize;
+    let mut fwd = Half::default();
+    let mut bwd = Half::default();
+    // 両側のラベルの和が B 以下になったノード（ラベルは上界なので、一度入れば和は増えない）。
+    let mut member: IdMap<NodeId, ()> = IdMap::default();
+    let note_member = |v: NodeId, fwd: &Half, bwd: &Half, member: &mut IdMap<NodeId, ()>| {
+        if let (Some(&a), Some(&b)) = (fwd.dist.get(&v), bwd.dist.get(&v))
+            && a.saturating_add(b) <= budget
+        {
+            member.insert(v, ());
+        }
+    };
+    for &(n, g) in &from_start {
+        let h = pot_f.at(n);
+        if g.saturating_add(h) <= budget {
+            fwd.relax(n, g, h);
+        }
+    }
+    for &(n, g) in &to_end {
+        let h = pot_b.at(n);
+        if g.saturating_add(h) <= budget {
+            bwd.relax(n, g, h);
+        }
+    }
+    for &(n, _) in from_start.iter().chain(&to_end) {
+        note_member(n, &fwd, &bwd, &mut member);
+    }
+
+    let mut ticks: u32 = 0;
+    loop {
+        let kf = fwd.peek_key().filter(|&k| k <= budget);
+        let kb = bwd.peek_key().filter(|&k| k <= budget);
+        let forward = match (kf, kb) {
+            (None, None) => break,
+            (Some(_), None) => true,
+            (None, Some(_)) => false,
+            (Some(a), Some(b)) => a <= b,
+        };
+        ticks = ticks.wrapping_add(1);
+        if ticks & TICK_MASK == 0 {
+            cancel.check()?;
+        }
+        let (me, pot) = if forward {
+            (&mut fwd, &pot_f)
+        } else {
+            (&mut bwd, &pot_b)
+        };
+        let (g, v) = me.pop().expect("peek_keyで確かめた");
+        let mut touched: Vec<NodeId> = Vec::new();
+        for &d in graph.out_dedges(v) {
+            // 前向きは出る有向辺、後ろ向きは入る有向辺（逆向きにたどる）。
+            let arc = if forward { d } else { d.reversed() };
+            if !allow(arc) {
+                continue;
+            }
+            let Some(w) = edge_time_ds(graph, arc, mode) else {
+                continue;
+            };
+            let u = graph.dedge_to(d);
+            let next = g + u64::from(w);
+            let h = pot.at(u);
+            if next.saturating_add(h) <= budget && me.relax(u, next, h) {
+                touched.push(u);
+            }
+        }
+        for u in touched {
+            note_member(u, &fwd, &bwd, &mut member);
+        }
+        if member.len() > limit {
+            return Err(EllipseError::TooLarge {
+                nodes: member.len() as u64,
+            });
+        }
+    }
+
+    let direct_ok = ep.direct.is_some_and(|a| u64::from(a.time_ds) <= budget);
+    if member.is_empty() && !direct_ok {
+        return Err(EllipseError::Unreachable);
+    }
+    // 局所番号は元のノード番号の昇順（再現できる）。
+    let mut nodes: Vec<NodeId> = member.keys().copied().collect();
+    nodes.sort_unstable();
+    let local: IdMap<NodeId, u32> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, &n)| (n, i as u32))
+        .collect();
+    let keep = |d: DirEdge| {
+        if !allow(d) {
+            return false;
+        }
+        let (u, v) = (graph.dedge_from(d), graph.dedge_to(d));
+        match (
+            fwd.dist.get(&u),
+            bwd.dist.get(&v),
+            edge_time_ds(graph, d, mode),
+        ) {
+            (Some(&a), Some(&b), Some(t)) => {
+                a.saturating_add(u64::from(t)).saturating_add(b) <= budget
+            }
+            _ => false,
+        }
+    };
+    let subgraph = assemble(
+        ctx,
+        start,
+        end,
+        fastest_ds,
+        budget,
+        nodes,
+        &|n| local.get(&n).copied(),
+        &keep,
+        cost,
+        cancel,
+    )?;
+    Ok(subgraph)
+}
+
+/// 楕円の部分グラフを切り出す（behavior.md 5章 手順4）。`fastest_ds` は最短時間、`detour_ds` は
+/// 許容する追加時間、`cost` は辺のリスク（残した辺についてだけ呼ぶ）。
 ///
-/// 第2段階で実装する（`search::endpoints` と `fastest_path` の統合後）。
-#[allow(unused_variables)]
+/// 確定したノード数（両側のラベルの和が `fastest_ds + detour_ds` 以下のノード）が
+/// `SearchParams::ellipse_node_limit` を超えたら `EllipseError::TooLarge`（`reduced_ellipse` で縮小する）。
+/// 出発から到着へ辺の時間だけでも届かない、吸着点が不正、2点が同じ位置なら `Unreachable`。
 pub fn ellipse_subgraph(
     ctx: &SearchContext<'_>,
     start: &SnapPoint,
@@ -394,5 +657,14 @@ pub fn ellipse_subgraph(
     cost: &mut dyn ArcCost,
     cancel: &CancelToken,
 ) -> Result<Subgraph, EllipseError> {
-    todo!("形式書18章：楕円の切り出し")
+    cut(
+        ctx,
+        start,
+        end,
+        fastest_ds,
+        detour_ds,
+        cost,
+        cancel,
+        &|_| true,
+    )
 }

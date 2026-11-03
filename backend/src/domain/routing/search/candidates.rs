@@ -9,6 +9,7 @@ use crate::domain::routing::graph::{EdgeId, Graph};
 use crate::domain::routing::topology::Topology;
 
 use super::Path;
+use super::endpoints::{Placement, path_distance_dm, placement};
 
 /// 重複とみなす共有の割合の境界。候補の長さに対して、すでに残した候補と共有する長さが
 /// この割合を **超える** ものを捨てる（80%ちょうどは残す）。
@@ -17,8 +18,12 @@ pub const OVERLAP_THRESHOLD: f64 = 0.8;
 /// 返す候補の距離の上限（デシメートル）。80,000m（behavior.md 5章。契約の `ROUTE_MAX_DISTANCE_M`）。
 pub const MAX_ROUTE_DISTANCE_DM: u64 = 800_000;
 
-/// 経路が通る辺の区間（`Path` のドキュメントの規則）：辺番号と、辺の始点からの距離（デシメートル）の範囲。
+/// 経路が通る辺の区間：辺番号と、辺の始点からの距離（デシメートル）の範囲。出発・到着の吸着点が辺の
+/// 途中（`endpoints::Placement::Inside`）のときだけ、最初・最後の有向辺は通った部分になる
+/// （`endpoints::travelled_lengths_dm` と同じ規則）。
 fn spans(graph: &Graph, path: &Path) -> Vec<(EdgeId, u32, u32)> {
+    let start_inside = placement(graph, &path.start) == Some(Placement::Inside);
+    let end_inside = placement(graph, &path.end) == Some(Placement::Inside);
     let last = path.dedges.len().saturating_sub(1);
     path.dedges
         .iter()
@@ -27,7 +32,7 @@ fn spans(graph: &Graph, path: &Path) -> Vec<(EdgeId, u32, u32)> {
             let edge = d.edge();
             let length = graph.edge(edge).length_dm;
             let (mut lo, mut hi) = (0, length);
-            if i == 0 && edge == path.start.edge {
+            if i == 0 && start_inside && edge == path.start.edge {
                 let offset = path.start.offset_dm.min(length);
                 if d.is_reverse() {
                     hi = offset;
@@ -35,7 +40,7 @@ fn spans(graph: &Graph, path: &Path) -> Vec<(EdgeId, u32, u32)> {
                     lo = offset;
                 }
             }
-            if i == last && edge == path.end.edge {
+            if i == last && end_inside && edge == path.end.edge {
                 let offset = path.end.offset_dm.min(length);
                 if d.is_reverse() {
                     lo = lo.max(offset);
@@ -48,12 +53,10 @@ fn spans(graph: &Graph, path: &Path) -> Vec<(EdgeId, u32, u32)> {
         .collect()
 }
 
-/// 経路の長さ（デシメートル）：通った辺の長さの和。出発・到着の辺は通った部分だけ。
+/// 経路の長さ（デシメートル）：通った辺の長さの和。出発・到着の辺は通った部分だけ
+/// （`endpoints::path_distance_dm`）。経路の形が正しくなければ0。
 pub fn path_length_dm(graph: &Graph, path: &Path) -> u64 {
-    spans(graph, path)
-        .iter()
-        .map(|&(_, lo, hi)| u64::from(hi - lo))
-        .sum()
+    path_distance_dm(graph, &path.start, &path.end, &path.dedges).unwrap_or(0)
 }
 
 /// 双子の辺 `twin` の区間を、辺 `edge` の始点からの距離（デシメートル、実数）に写す。
@@ -141,8 +144,11 @@ pub fn select_candidates(
         && best.start.offset_dm == p0.start.offset_dm
         && best.end.edge == p0.end.edge
         && best.end.offset_dm == p0.end.offset_dm;
-    let within_limits =
-        |p: &Path| p.time_ds <= budget_ds && path_length_dm(graph, p) <= MAX_ROUTE_DISTANCE_DM;
+    let within_limits = |p: &Path| {
+        p.time_ds <= budget_ds
+            && path_distance_dm(graph, &p.start, &p.end, &p.dedges)
+                .is_some_and(|dm| dm <= MAX_ROUTE_DISTANCE_DM)
+    };
     let mut kept: Vec<Path> = vec![p0];
     if !same_as_p0 && within_limits(&best) {
         kept.push(best);

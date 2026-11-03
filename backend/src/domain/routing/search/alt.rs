@@ -15,6 +15,8 @@ use crate::contract::geo::straight_distance_m;
 use crate::domain::routing::graph::time::edge_time_ds;
 use crate::domain::routing::graph::{Graph, NodeId};
 
+use super::fastest::STRAIGHT_FACTOR;
+
 /// 「到達できない、または表せない」（`FR_*`・`TO_*` の値、形式書15章）。そのランドマークは下界に使わない。
 pub const UNREACHABLE_Q: u16 = 0xFFFF;
 
@@ -139,8 +141,9 @@ impl Landmarks {
 /// 直線距離÷その手段の最高速度による、辺の時間だけの最短時間の下界（デシ秒）。
 ///
 /// 最高速度は、そのモデルの種類ごとの既定速度の最大（carは `maxspeed` による上限の倍率も考える）。
-/// 直線距離は `straight_distance_m`（平均緯度での局所近似）で、道のりの近似と少しずれるので、
-/// 1%の余裕を引く。モデルに速度がなければ0。
+/// 直線距離は `straight_distance_m`（平均緯度での局所近似）で、辺の長さの丸め（0.1m）や道のりの近似と
+/// 少しずれるので、最短時間経路の下界と同じ安全率 [`STRAIGHT_FACTOR`] を掛ける（許容的）。
+/// モデルに速度がなければ0。
 pub fn straight_lower_bound_ds(graph: &Graph, mode: Mode, v: NodeId, t: NodeId) -> u32 {
     let model = graph.time_model();
     let mut fastest_kmh = model
@@ -159,7 +162,7 @@ pub fn straight_lower_bound_ds(graph: &Graph, mode: Mode, v: NodeId, t: NodeId) 
         graph.node_coord(t).to_latlon(),
     );
     let seconds = meters / (fastest_kmh / 3.6);
-    let ds = (seconds * 10.0 * 0.99).floor();
+    let ds = (seconds * 10.0 * STRAIGHT_FACTOR).floor();
     if ds >= f64::from(u32::MAX) {
         u32::MAX
     } else {
