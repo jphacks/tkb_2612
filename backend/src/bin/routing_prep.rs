@@ -18,14 +18,15 @@
 //! | `alt` | P8 | `alt.bin` |
 //! | `package` | P9 | `metadata.json` とreleaseディレクトリ |
 //!
-//! 実装済み：`osm-graph`（P1）・`restrictions`（P2）・`topology`（P3）・`od-index`（P7）。
-//! 残りは骨組みのまま（`todo!()`）。
+//! 実装済み：`osm-graph`（P1）・`restrictions`（P2）・`topology`（P3）・`accident-attrs`（P4）・
+//! `accident-snap`（P5）・`od-index`（P7）。残りは骨組みのまま（`todo!()`）。
 //!
 //! | サブコマンド | 引数 |
 //! |---|---|
 //! | `osm-graph` | `--pbf <PBF> --output-dir <DIR> [--threads N]`：`graph.bin`・`graph_attrs.bin`・`graph.audit.json` |
 //! | `restrictions` | `--pbf <PBF> --graph <graph.bin> --attrs <graph_attrs.bin> --output <restrictions.bin>`：監査は `<output>` の拡張子を `audit.json` にしたもの |
 //! | `topology` | `--graph <graph.bin> --attrs <graph_attrs.bin> --output <topology.bin> [--scc-min-nodes N] [--threads N]`（`--scc-min-nodes` の既定は200。小さなグラフのテスト用） |
+//! | `accident-snap` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --accidents <accidents.csv.gz> --output <assignment.bin> [--sigma0 M] [--threads N] [--review-dir DIR --review-count N --review-seed N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--review-dir` を付けると人手判定用の `review_sample.json` を書く |
 //! | `od-index` | `--graph <graph.bin> --output <odindex.bin> [--threads N]` |
 
 use std::collections::BTreeMap;
@@ -367,10 +368,272 @@ fn accident_attrs(options: &Options) -> Result<(), String> {
     Ok(())
 }
 
-/// P5：事故を道路に割り当てて `assignment.bin` を作る（形式書13章）。
+/// P5：事故を道路に割り当てて `assignment.bin` を作る（形式書13章、作業書M2b）。
+///
+/// 入力のファイルの `DEPS` が、渡した実ファイルのハッシュと一致しなければ失敗する。書いたあとに
+/// 読み直して、同じ割り当てになること、`verify_assignment`（全件の検査）に通ることを確かめる。
 fn accident_snap(options: &Options) -> Result<(), String> {
-    let _ = options;
-    todo!("P5 accident-snap")
+    use accident_route_backend::data::load::parse_accidents;
+    use accident_route_backend::data::release::{
+        ACCIDENT_ATTRS_FILE, ACCIDENTS_FILE, TOPOLOGY_FILE,
+    };
+    use accident_route_backend::data::routing_files::{
+        decode_accident_attrs, decode_assignment, decode_topology, encode_assignment,
+    };
+    use accident_route_backend::domain::routing::prep::assign::{
+        AssignParams, RoadIndex, SnapInput, snap_accidents,
+    };
+    use accident_route_backend::domain::routing::prep::assign_audit::{
+        summarize, verify_assignment,
+    };
+    use accident_route_backend::domain::routing::prep::assign_review::{
+        AccidentInfo, pick_review, review_record,
+    };
+
+    const USAGE: &str = "使い方: routing_prep accident-snap --graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --accidents <accidents.csv.gz> --output <assignment.bin> [--sigma0 M] [--threads N] [--review-dir DIR --review-count N --review-seed N]";
+    const KNOWN: [&str; 12] = [
+        "graph",
+        "attrs",
+        "topology",
+        "accident-attrs",
+        "accidents",
+        "output",
+        "sigma0",
+        "threads",
+        "review-dir",
+        "review-count",
+        "review-seed",
+        "audit",
+    ];
+    if let Some(unknown) = options.0.keys().find(|k| !KNOWN.contains(&k.as_str())) {
+        return Err(format!("不明な引数です: --{unknown}\n{USAGE}"));
+    }
+    setup_threads(options)?;
+    let started = Instant::now();
+    let graph_path = options.path("graph").map_err(|e| format!("{e}\n{USAGE}"))?;
+    let attrs_path = options.path("attrs").map_err(|e| format!("{e}\n{USAGE}"))?;
+    let topology_path = options
+        .path("topology")
+        .map_err(|e| format!("{e}\n{USAGE}"))?;
+    let accident_attrs_path = options
+        .path("accident-attrs")
+        .map_err(|e| format!("{e}\n{USAGE}"))?;
+    let accidents_path = options
+        .path("accidents")
+        .map_err(|e| format!("{e}\n{USAGE}"))?;
+    let output = options
+        .path("output")
+        .map_err(|e| format!("{e}\n{USAGE}"))?;
+    let mut params = AssignParams::default();
+    if let Some(v) = options.0.get("sigma0") {
+        params.sigma0_m = v
+            .parse::<f64>()
+            .ok()
+            .filter(|x| x.is_finite() && *x > 0.0)
+            .ok_or_else(|| "--sigma0 は正の数".to_owned())?;
+    }
+    let parse_usize = |name: &str, default: usize| -> Result<usize, String> {
+        match options.0.get(name) {
+            Some(v) => v.parse::<usize>().map_err(|_| format!("--{name} は整数")),
+            None => Ok(default),
+        }
+    };
+    let review_dir = options.0.get("review-dir").map(PathBuf::from);
+    let review_count = parse_usize("review-count", 200)?;
+    let review_seed = parse_usize("review-seed", 1)? as u64;
+
+    log("入力を読む");
+    let graph_bytes = read_file(&graph_path)?;
+    let graph_hash = sha256_hex(&graph_bytes);
+    let parts = decode_graph_parts(&graph_bytes)
+        .map_err(|e| e.to_string())?
+        .value;
+    drop(graph_bytes);
+    let attrs_bytes = read_file(&attrs_path)?;
+    let graph_attrs = decode_graph_attrs(&attrs_bytes).map_err(|e| e.to_string())?;
+    drop(attrs_bytes);
+    let topology_bytes = read_file(&topology_path)?;
+    let topology_hash = sha256_hex(&topology_bytes);
+    let topology = decode_topology(&topology_bytes).map_err(|e| e.to_string())?;
+    drop(topology_bytes);
+    let accident_attrs_bytes = read_file(&accident_attrs_path)?;
+    let accident_attrs_hash = sha256_hex(&accident_attrs_bytes);
+    let accident_attrs = decode_accident_attrs(&accident_attrs_bytes).map_err(|e| e.to_string())?;
+    drop(accident_attrs_bytes);
+    let accidents_bytes = read_file(&accidents_path)?;
+    let accidents_hash = sha256_hex(&accidents_bytes);
+    let columns = parse_accidents(&accidents_bytes).map_err(|e| e.to_string())?;
+    drop(accidents_bytes);
+    log(&format!(
+        "  ノード{} 辺{} クラスタ{} 事故{} {}",
+        parts.node_ll.len(),
+        parts.edges.len(),
+        topology.value.clusters.len(),
+        columns.len(),
+        memory_summary()
+    ));
+
+    // 入力どうしの版の一致
+    let expect = |what: &str, deps: &Deps, key: &str, hash: &str| -> Result<(), String> {
+        match deps.get(key) {
+            Some(h) if h == hash => Ok(()),
+            _ => Err(format!(
+                "{what}のDEPSの{key}が、渡された実ファイルのSHA-256と一致しません（別の版を混ぜていないか確かめてください）"
+            )),
+        }
+    };
+    expect("topology.bin", &topology.deps, GRAPH_FILE, &graph_hash)?;
+    expect(
+        "graph_attrs.bin",
+        &graph_attrs.deps,
+        GRAPH_FILE,
+        &graph_hash,
+    )?;
+    expect(
+        "accident_attrs.bin",
+        &accident_attrs.deps,
+        ACCIDENTS_FILE,
+        &accidents_hash,
+    )?;
+    if accident_attrs.value.attrs.len() != columns.len() {
+        return Err(format!(
+            "accident_attrs.binの件数{}がaccidents.csv.gzの件数{}と違います",
+            accident_attrs.value.attrs.len(),
+            columns.len()
+        ));
+    }
+
+    let input = SnapInput {
+        graph: &parts,
+        graph_attrs: &graph_attrs.value,
+        topology: &topology.value,
+        lat: &columns.lat,
+        lon: &columns.lon,
+        accident_attrs: &accident_attrs.value.attrs,
+    };
+    let result = snap_accidents(&input, &params, &log)?;
+    log(&format!("割り当て完了 {}", memory_summary()));
+
+    let deps = Deps::from([
+        (GRAPH_FILE.to_owned(), graph_hash.clone()),
+        (TOPOLOGY_FILE.to_owned(), topology_hash.clone()),
+        (ACCIDENT_ATTRS_FILE.to_owned(), accident_attrs_hash.clone()),
+        (ACCIDENTS_FILE.to_owned(), accidents_hash.clone()),
+    ]);
+    let bytes = encode_assignment(&result.assignment, &deps);
+    write_file(&output, &bytes)?;
+    let output_hash = sha256_hex(&bytes);
+
+    log("書いたファイルを読み直して検査する");
+    let decoded = decode_assignment(&bytes).map_err(|e| e.to_string())?;
+    let (a, b) = (&decoded.value, &result.assignment);
+    for (what, same) in [
+        ("PARAMS", a.params == b.params),
+        ("ACCOFS", a.offsets == b.offsets),
+        ("TARGET", a.targets == b.targets),
+        ("UNASSGN", a.unassigned == b.unassigned),
+        ("DEPS", decoded.deps == deps),
+    ] {
+        if !same {
+            return Err(format!(
+                "書いたassignment.binを読み直した結果の{what}が、書く前の割り当てと一致しません"
+            ));
+        }
+    }
+    let verified = verify_assignment(
+        &decoded.value,
+        &parts,
+        &topology.value,
+        &accident_attrs.value.attrs,
+    )
+    .map_err(|e| format!("割り当ての検査に失敗しました:\n{e}"))?;
+    let summary = summarize(
+        &decoded.value,
+        &accident_attrs.value.attrs,
+        &parts,
+        &graph_attrs.value,
+    );
+
+    let mut review_info = Value::Null;
+    if let Some(dir) = &review_dir {
+        log("人手判定用の抽出");
+        let picks = pick_review(&accident_attrs.value.attrs, review_count, review_seed);
+        let index = RoadIndex::build(&parts, &graph_attrs.value, &topology.value, params.clone());
+        let mut records = Vec::with_capacity(picks.len());
+        for pick in &picks {
+            let i = pick.accident as usize;
+            let info = AccidentInfo {
+                lat: columns.lat[i],
+                lon: columns.lon[i],
+                modes: columns.modes[i],
+                period: columns.period[i],
+                weather: columns.weather[i],
+                deaths: columns.deaths[i],
+                injuries: columns.injuries[i],
+                source_year: columns.source_year[i],
+                date: columns.date[i],
+            };
+            records.push(review_record(
+                &index,
+                &result.tables,
+                &decoded.value,
+                pick,
+                &accident_attrs.value.attrs[i],
+                &info,
+            )?);
+        }
+        let sample = json!({
+            "assignment_sha256": output_hash,
+            "seed": review_seed,
+            "count": records.len(),
+            "sigma0_m": params.sigma0_m,
+            "records": records,
+        });
+        write_json(&dir.join("review_sample.json"), &sample)?;
+        review_info = json!({ "dir": dir.display().to_string(), "records": picks.len(), "seed": review_seed });
+    }
+
+    let audit_file = options
+        .0
+        .get("audit")
+        .map_or_else(|| audit_path(&output), PathBuf::from);
+    let file_info = |path: &Path, bytes: usize, hash: &str| json!({ "file": path.display().to_string(), "bytes": bytes, "sha256": hash });
+    let audit = json!({
+        "command": "accident-snap",
+        "elapsed_seconds": started.elapsed().as_secs_f64(),
+        "memory": memory_summary(),
+        "output": file_info(&output, bytes.len(), &output_hash),
+        "inputs": {
+            "graph": file_info(&graph_path, 0, &graph_hash),
+            "topology": file_info(&topology_path, 0, &topology_hash),
+            "accident_attrs": file_info(&accident_attrs_path, 0, &accident_attrs_hash),
+            "accidents": file_info(&accidents_path, 0, &accidents_hash),
+        },
+        "params": result.assignment.params,
+        "verify": {
+            "passed": true,
+            "accidents": verified.accidents,
+            "assigned": verified.assigned,
+            "unassigned": verified.unassigned,
+            "targets": verified.targets,
+            "edge_targets": verified.edge_targets,
+            "cluster_targets": verified.cluster_targets,
+            "mirror_targets": verified.mirror_targets,
+            "motorway_coded_assigned": verified.motorway_coded_assigned,
+        },
+        "summary": summary,
+        "review": review_info,
+    });
+    write_json(&audit_file, &audit)?;
+    log(&format!(
+        "完了 {:.1}秒 {} assignment.bin {}バイト 割り当て{} 帰属不明{}",
+        started.elapsed().as_secs_f64(),
+        memory_summary(),
+        bytes.len(),
+        verified.assigned,
+        verified.unassigned
+    ));
+    Ok(())
 }
 
 /// P6：リスクの係数を推定して `risk.bin` を作る（形式書14章）。

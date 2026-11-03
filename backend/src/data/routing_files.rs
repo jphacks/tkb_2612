@@ -28,9 +28,9 @@ use crate::domain::routing::topology::{ClusterRecord, SidewalkParent, Topology, 
 use super::LoadError;
 use super::binfile::{BinFile, BinFileWriter, DEPS_SECTION, PARAMS_SECTION};
 use super::release::{
-    ACCIDENT_ATTRS_FILE, ASSIGNMENT_FILE, GRAPH_ATTRS_MAGIC, GRAPH_FILE, GRAPH_MAGIC, ODINDEX_FILE,
-    ODINDEX_MAGIC, RESTRICTIONS_FILE, RESTRICTIONS_MAGIC, RISK_FILE, TOPOLOGY_FILE, TOPOLOGY_MAGIC,
-    routing_file_spec,
+    ACCIDENT_ATTRS_FILE, ASSIGNMENT_FILE, ASSIGNMENT_MAGIC, GRAPH_ATTRS_MAGIC, GRAPH_FILE,
+    GRAPH_MAGIC, ODINDEX_FILE, ODINDEX_MAGIC, RESTRICTIONS_FILE, RESTRICTIONS_MAGIC, RISK_FILE,
+    TOPOLOGY_FILE, TOPOLOGY_MAGIC, routing_file_spec,
 };
 
 /// `DEPS` 節：入力ファイル名→SHA-256（小文字hex）。
@@ -788,13 +788,121 @@ pub fn decode_accident_attrs(bytes: &[u8]) -> Result<Decoded<AccidentAttrTable>,
     })
 }
 
-/// `assignment.bin`（形式書13章）。
+/// `assignment.bin`（形式書13章）。節は `DEPS`・`PARAMS`・`ACCOFS`・`TARGET`・`UNASSGN` の順。
+/// `PARAMS` は `assignment.params` をそのまま書く（`accidents` を含めると、読込側が `ACCOFS` の件数と
+/// 照合する）。`assignment` は事故IDの順・候補の昇順に並べてあること。
 pub fn encode_assignment(assignment: &Assignment, deps: &Deps) -> Vec<u8> {
-    todo!("形式書13章")
+    use crate::domain::routing::accident::{AssignTarget, UnassignedRecord};
+
+    let mut w = BinFileWriter::new(ASSIGNMENT_MAGIC, format_version_of(ASSIGNMENT_FILE));
+    w.add_json(DEPS_SECTION, &deps_json(deps));
+    w.add_json(PARAMS_SECTION, &params_json(&assignment.params));
+    w.add_values("ACCOFS", &assignment.offsets);
+    let mut targets = Vec::with_capacity(assignment.targets.len() * AssignTarget::SIZE);
+    for t in &assignment.targets {
+        put_u32(&mut targets, t.target);
+        put_u32(&mut targets, t.pos_dm);
+        targets.extend_from_slice(&t.weight.to_le_bytes());
+        targets.push(t.kind);
+        targets.push(t.flags);
+        targets.extend_from_slice(&t.reserved.to_le_bytes());
+    }
+    w.add_section(
+        "TARGET",
+        AssignTarget::SIZE as u32,
+        assignment.targets.len() as u64,
+        targets,
+    );
+    let mut unassigned = Vec::with_capacity(assignment.unassigned.len() * UnassignedRecord::SIZE);
+    for r in &assignment.unassigned {
+        put_u32(&mut unassigned, r.accident);
+        unassigned.extend_from_slice(&[r.reason.code(), 0, 0, 0]);
+    }
+    w.add_section(
+        "UNASSGN",
+        UnassignedRecord::SIZE as u32,
+        assignment.unassigned.len() as u64,
+        unassigned,
+    );
+    w.finish()
 }
 
+/// `assignment.bin` を読む。マジックナンバー・`format_version`・`DEPS` の必須キー・`elem_size`（`TARGET` は16、
+/// `UNASSGN` は8）を確かめ、`PARAMS` の `accidents`（あれば）と `ACCOFS` の件数、`targets` と `unassigned`
+/// （あれば）と各節の件数の整合、`reason` の値、`pad` が0であることを検査する。
+/// 続けて `Assignment::validate_structure`（重みの範囲・合計・並び・排他性）で内容を検査する。
+/// 辺番号・クラスタ番号の範囲は、`PARAMS` の `edges`・`clusters`（あれば）に対して確かめる。
 pub fn decode_assignment(bytes: &[u8]) -> Result<Decoded<Assignment>, LoadError> {
-    todo!("形式書13章")
+    use crate::domain::routing::accident::{AssignTarget, UnassignedReason, UnassignedRecord};
+
+    let invalid = |message: String| LoadError::Invalid(format!("assignment.bin: {message}"));
+    let (file, deps) = open(
+        bytes,
+        ASSIGNMENT_FILE,
+        ASSIGNMENT_MAGIC,
+        format_version_of(ASSIGNMENT_FILE),
+        required_deps(ASSIGNMENT_FILE),
+    )?;
+    let params = file.json(PARAMS_SECTION)?;
+    let offsets_section = file.require("ACCOFS")?;
+    if offsets_section.count == 0 {
+        return Err(invalid("ACCOFSが空です".to_owned()));
+    }
+    if let Some(accidents) = param_u64(&params, "accidents")? {
+        offsets_section.expect_count(accidents + 1)?;
+    }
+    let offsets = offsets_section.u32s()?;
+    let target_section = file.require("TARGET")?;
+    if let Some(targets) = param_u64(&params, "targets")? {
+        target_section.expect_count(targets)?;
+    }
+    let targets: Vec<AssignTarget> = target_section
+        .records(AssignTarget::SIZE as u32)?
+        .map(|r| AssignTarget {
+            target: le_u32(r, 0),
+            pos_dm: le_u32(r, 4),
+            weight: f32::from_le_bytes([r[8], r[9], r[10], r[11]]),
+            kind: r[12],
+            flags: r[13],
+            reserved: le_u16(r, 14),
+        })
+        .collect();
+    let unassigned_section = file.require("UNASSGN")?;
+    if let Some(unassigned) = param_u64(&params, "unassigned")? {
+        unassigned_section.expect_count(unassigned)?;
+    }
+    let mut unassigned = Vec::with_capacity(unassigned_section.count as usize);
+    for r in unassigned_section.records(UnassignedRecord::SIZE as u32)? {
+        let Some(reason) = UnassignedReason::from_code(r[4]) else {
+            return Err(invalid(format!("UNASSGNのreason {}が不正です", r[4])));
+        };
+        if r[5..8] != [0, 0, 0] {
+            return Err(invalid("UNASSGNのpadが0ではありません".to_owned()));
+        }
+        unassigned.push(UnassignedRecord {
+            accident: le_u32(r, 0),
+            reason,
+        });
+    }
+    let assignment = Assignment {
+        params,
+        offsets,
+        targets,
+        unassigned,
+    };
+    assignment.validate_structure().map_err(invalid)?;
+    if let (Some(edges), Some(clusters)) = (
+        param_u64(&assignment.params, "edges")?,
+        param_u64(&assignment.params, "clusters")?,
+    ) {
+        assignment
+            .validate(edges as usize, clusters as usize)
+            .map_err(invalid)?;
+    }
+    Ok(Decoded {
+        value: assignment,
+        deps,
+    })
 }
 
 /// `risk.bin`（形式書14章）。
@@ -1204,5 +1312,139 @@ mod tests {
         let mut bad = attrs.clone();
         bad.way_id = vec![20, 10, 10];
         assert!(decode_graph_attrs(&encode_graph_attrs(&bad, &deps)).is_err());
+    }
+
+    // --- assignment.bin ---
+
+    fn sample_assignment() -> Assignment {
+        use crate::domain::routing::accident::{
+            AssignTarget, TARGET_MIRROR, UnassignedReason, UnassignedRecord,
+        };
+        let edge = |target, pos_dm, weight, flags| AssignTarget {
+            target,
+            pos_dm,
+            weight,
+            kind: 0,
+            flags,
+            reserved: 0,
+        };
+        Assignment {
+            params: json!({"accidents": 4, "targets": 5, "unassigned": 1, "edges": 6, "clusters": 3,
+                           "sigma0_m": 3.5}),
+            offsets: vec![0, 2, 2, 4, 5],
+            targets: vec![
+                edge(3, 50, 0.6, 0),
+                edge(5, 20, 0.4, 0),
+                edge(3, 10, 1.0, 0),
+                edge(4, 30, 1.0, TARGET_MIRROR),
+                AssignTarget {
+                    target: 2,
+                    pos_dm: u32::MAX,
+                    weight: 0.9,
+                    kind: 1,
+                    flags: 0,
+                    reserved: 0,
+                },
+            ],
+            unassigned: vec![UnassignedRecord {
+                accident: 1,
+                reason: UnassignedReason::MotorwayCodeMismatch,
+            }],
+        }
+    }
+
+    fn assignment_deps() -> Deps {
+        required_deps("assignment.bin")
+            .iter()
+            .map(|file| ((*file).to_owned(), sha256_hex(file.as_bytes())))
+            .collect()
+    }
+
+    #[test]
+    fn assignment_round_trips_with_the_documented_layout() {
+        let assignment = sample_assignment();
+        let deps = assignment_deps();
+        let bytes = encode_assignment(&assignment, &deps);
+        let decoded = decode_assignment(&bytes).unwrap();
+        assert_eq!(decoded.value, assignment);
+        assert_eq!(decoded.deps, deps);
+        assert_eq!(bytes, encode_assignment(&decoded.value, &decoded.deps));
+        let file = BinFile::parse(&bytes).unwrap();
+        file.expect(*b"TKRASSGN", 1).unwrap();
+        let counts = file.section_counts();
+        assert_eq!(
+            (counts["ACCOFS"], counts["TARGET"], counts["UNASSGN"]),
+            (5, 5, 1)
+        );
+        // 形式書13章：TARGETは16バイト、UNASSGNは8バイト。先頭の要素の並びを確かめる
+        let target = file.require("TARGET").unwrap();
+        assert_eq!(target.elem_size, 16);
+        assert_eq!(&target.bytes[0..4], &3u32.to_le_bytes());
+        assert_eq!(&target.bytes[4..8], &50u32.to_le_bytes());
+        assert_eq!(&target.bytes[8..12], &0.6f32.to_le_bytes());
+        assert_eq!(&target.bytes[12..16], &[0, 0, 0, 0]);
+        assert_eq!(target.bytes[16 * 3 + 13], 1, "4つ目はMIRROR");
+        let unassigned = file.require("UNASSGN").unwrap();
+        assert_eq!(unassigned.elem_size, 8);
+        assert_eq!(&unassigned.bytes[0..4], &1u32.to_le_bytes());
+        assert_eq!(&unassigned.bytes[4..8], &[2, 0, 0, 0]);
+    }
+
+    #[test]
+    fn assignment_decode_rejects_broken_files() {
+        let deps = assignment_deps();
+        let good = encode_assignment(&sample_assignment(), &deps);
+        assert!(decode_assignment(&good).is_ok());
+        let section_offset = |name: &str| {
+            let file = BinFile::parse(&good).unwrap();
+            file.require(name).unwrap().bytes.as_ptr() as usize - good.as_ptr() as usize
+        };
+        // マジックナンバー、切り詰め
+        let mut bytes = good.clone();
+        bytes[0] ^= 1;
+        assert!(decode_assignment(&bytes).is_err());
+        assert!(decode_assignment(&good[..good.len() - 8]).is_err());
+        assert!(decode_assignment(&[]).is_err());
+        // DEPSの必須キー
+        let mut fewer = deps.clone();
+        fewer.remove("topology.bin");
+        assert!(decode_assignment(&encode_assignment(&sample_assignment(), &fewer)).is_err());
+        // 他の章のファイルは読めない
+        assert!(decode_topology(&good).is_err());
+        // reasonの値、padが0でない
+        let mut bytes = good.clone();
+        bytes[section_offset("UNASSGN") + 4] = 7;
+        assert!(decode_assignment(&bytes).is_err());
+        let mut bytes = good.clone();
+        bytes[section_offset("UNASSGN") + 6] = 1;
+        assert!(decode_assignment(&bytes).is_err());
+        // 重みが0.1未満、MIRRORの定義外のflags
+        let mut bytes = good.clone();
+        bytes[section_offset("TARGET") + 8..section_offset("TARGET") + 12]
+            .copy_from_slice(&0.05f32.to_le_bytes());
+        assert!(decode_assignment(&bytes).is_err());
+        let mut bytes = good.clone();
+        bytes[section_offset("TARGET") + 13] = 4;
+        assert!(decode_assignment(&bytes).is_err());
+        // PARAMSの件数との矛盾
+        for key in ["accidents", "targets", "unassigned"] {
+            let mut a = sample_assignment();
+            a.params[key] = json!(99);
+            assert!(
+                decode_assignment(&encode_assignment(&a, &deps)).is_err(),
+                "{key}"
+            );
+        }
+        // 辺・クラスタの番号の範囲（PARAMSのedges・clusters）
+        let mut a = sample_assignment();
+        a.params["edges"] = json!(5);
+        assert!(decode_assignment(&encode_assignment(&a, &deps)).is_err());
+        let mut a = sample_assignment();
+        a.params["clusters"] = json!(2);
+        assert!(decode_assignment(&encode_assignment(&a, &deps)).is_err());
+        // 割り当てのない事故がUNASSGNにない
+        let mut a = sample_assignment();
+        a.unassigned.clear();
+        assert!(decode_assignment(&encode_assignment(&a, &deps)).is_err());
     }
 }
