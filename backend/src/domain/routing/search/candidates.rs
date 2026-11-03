@@ -153,6 +153,13 @@ pub fn overlap_ratio(graph: &Graph, topology: &Topology, a: &Path, b: &Path) -> 
     shared / total as f64
 }
 
+/// 候補の整理で落とした理由の内訳（評価用）。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SelectStats {
+    /// 80,000mを超えるために外した候補の数（時間の上限は満たすもの）。
+    pub dropped_too_long: usize,
+}
+
 /// 候補を整理する（behavior.md 5章「候補の整理」2〜5）。
 ///
 /// `p0` は最短時間経路、`best` は事故考慮経路、`others` は凸包上の解とペナルティ法の代替経路
@@ -172,25 +179,51 @@ pub fn select_candidates(
     others: Vec<Path>,
     budget_ds: u64,
 ) -> Vec<Path> {
+    select_candidates_with_stats(graph, topology, p0, best, others, budget_ds).0
+}
+
+/// [`select_candidates`] と同じ整理を行い、80,000m超で外した候補の数も返す。
+pub fn select_candidates_with_stats(
+    graph: &Graph,
+    topology: &Topology,
+    p0: Path,
+    best: Path,
+    others: Vec<Path>,
+    budget_ds: u64,
+) -> (Vec<Path>, SelectStats) {
     let same_as_p0 = best.dedges == p0.dedges
         && best.start.edge == p0.start.edge
         && best.start.offset_dm == p0.start.offset_dm
         && best.end.edge == p0.end.edge
         && best.end.offset_dm == p0.end.offset_dm;
+    // 時間の上限を満たす候補について、距離の上限も満たすかを返す。
     let within_limits = |p: &Path| {
         p.time_ds <= budget_ds
             && path_distance_dm(graph, &p.start, &p.end, &p.dedges)
                 .is_some_and(|dm| dm <= MAX_ROUTE_DISTANCE_DM)
     };
+    let too_long = |p: &Path| {
+        p.time_ds <= budget_ds
+            && path_distance_dm(graph, &p.start, &p.end, &p.dedges)
+                .is_some_and(|dm| dm > MAX_ROUTE_DISTANCE_DM)
+    };
+    let mut stats = SelectStats::default();
     let mut kept: Vec<Path> = vec![p0];
-    if !same_as_p0 && within_limits(&best) {
-        kept.push(best);
+    if !same_as_p0 {
+        if within_limits(&best) {
+            kept.push(best);
+        } else if too_long(&best) {
+            stats.dropped_too_long += 1;
+        }
     }
     for candidate in others {
         if kept.len() >= MAX_CANDIDATES {
             break;
         }
         if !within_limits(&candidate) {
+            if too_long(&candidate) {
+                stats.dropped_too_long += 1;
+            }
             continue;
         }
         let duplicate = kept
@@ -201,5 +234,5 @@ pub fn select_candidates(
         }
     }
     kept.sort_by_key(|p| p.time_ds);
-    kept
+    (kept, stats)
 }

@@ -8,9 +8,10 @@ pub mod geometry;
 
 use std::time::Instant;
 
+use crate::contract::engine::{MAX_ACCIDENT_POINTS, MAX_HIGH_RISK_SECTIONS};
 use crate::contract::{
-    AccidentPoint, AccidentTotals, CancelToken, EngineError, EvaluatedRoute, Interrupt, Mode,
-    NavigationData, RouteEngine, RouteOutcome, RouteQuery, RoutedPath, Weather,
+    AccidentPoint, AccidentTotals, CancelToken, EngineError, EvaluatedRoute, HighRiskSegment,
+    Interrupt, Mode, NavigationData, RouteEngine, RouteOutcome, RouteQuery, RoutedPath, Weather,
 };
 use crate::domain::candidates::SINGLE_CANDIDATE_WARNING;
 use crate::domain::corridor::Subdivision;
@@ -18,7 +19,9 @@ use crate::domain::engine::{
     NO_ACCIDENT_REASON, NO_ACCIDENT_WARNING, SAME_ROUTE_REASON, ZERO_BASELINE_REASON,
     format_minutes,
 };
-use crate::domain::navigation::{display_sections_checked, navigation_data_checked};
+use crate::domain::navigation::{
+    HIGH_RISK_MIN_WEIGHT, display_sections_checked, navigation_data_checked,
+};
 use crate::domain::rounding::py_round;
 use crate::domain::routing::risk::RiskView;
 use crate::domain::routing::risk::arc_cost::{RiskArcCost, path_risk};
@@ -61,8 +64,38 @@ struct Candidate {
     risk_per_km: f64,
     accident_points: Vec<AccidentPoint>,
     weights: Vec<u64>,
+    high_risk_sections: Vec<HighRiskSegment>,
+    high_risk_total: u64,
     distance_m: f64,
     duration_s: f64,
+}
+
+/// 評価の中間値のうち、応答に出さない計測用の値（`routing_eval engine-batch`）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct CandidateReport {
+    /// 間引く前の形状の頂点数。
+    pub full_vertex_count: usize,
+    /// 表示用の形状を間引いたか。
+    pub simplified: bool,
+    /// 表示事故点の数（`min(accident_count, 250)`）。
+    pub accident_point_count: usize,
+    /// 件数3件以上の高リスクのsidの数（応答の `high_risk_total` と同じ）。
+    pub t3_sids: u64,
+    /// 件数3件以上で作った表示用の区間の数。
+    pub t3_sections: u64,
+    /// 「2件以上かつ深刻度の合計3以上」の高リスクのsidの数。
+    pub t2_sids: u64,
+    /// 「2件以上かつ深刻度の合計3以上」で作った表示用の区間の数。
+    pub t2_sections: u64,
+}
+
+/// 1回の評価の計測用の値（応答には出さない）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct EvaluationReport {
+    /// `RouteOutcome::candidates` と同じ順の候補ごとの値。
+    pub candidates: Vec<CandidateReport>,
+    /// 探索の候補の整理で80,000mを超えるために外した候補の数。
+    pub dropped_too_long: u64,
 }
 
 fn search_error(error: RouteError, cancel: &CancelToken) -> EngineError {
@@ -84,6 +117,15 @@ pub fn evaluate(
     query: &RouteQuery,
     cancel: &CancelToken,
 ) -> Result<RouteOutcome, EngineError> {
+    evaluate_with_report(engine, query, cancel).map(|(outcome, _)| outcome)
+}
+
+/// [`evaluate`] と同じ計算を行い、応答に出さない計測用の値も返す（`routing_eval engine-batch`）。
+pub fn evaluate_with_report(
+    engine: &RoutingEngine,
+    query: &RouteQuery,
+    cancel: &CancelToken,
+) -> Result<(RouteOutcome, EvaluationReport), EngineError> {
     let started = Instant::now();
     let mode = query.mode();
     let conditions = query.conditions();
@@ -126,6 +168,7 @@ pub fn evaluate(
         Err(error) => return Err(search_error(error, cancel)),
     };
     let mut candidates = Vec::with_capacity(search.candidates.len());
+    let mut reports = Vec::with_capacity(search.candidates.len());
     if search.candidates.is_empty() {
         return Err(EngineError::ContractViolation(
             "探索の候補が0本です".to_owned(),
@@ -158,7 +201,7 @@ pub fn evaluate(
         cancel.check()?;
         let summary =
             accidents::summarize(engine.snapshot(), conditions, &accident_set.ids, cancel)?;
-        let weights = accidents::high_risk_weights(
+        let (counts, severities) = accidents::sid_counts(
             graph,
             &data.topology,
             engine.snapshot(),
@@ -168,8 +211,37 @@ pub fn evaluate(
             &accident_set,
             cancel,
         )?;
+        let weights = accidents::high_risk_weights_from_counts(&counts, &severities);
+        // しきい値を「2件以上かつ深刻度の合計3以上」にしたときの重み（評価用）。
+        let t2_weights: Vec<u64> = counts
+            .iter()
+            .zip(&severities)
+            .map(|(&count, &severity)| {
+                if count >= 2 && severity >= HIGH_RISK_MIN_WEIGHT {
+                    severity
+                } else {
+                    0
+                }
+            })
+            .collect();
+        let t2_sids = t2_weights
+            .iter()
+            .filter(|&&weight| weight >= HIGH_RISK_MIN_WEIGHT)
+            .count() as u64;
+        let (high_risk_sections, high_risk_total) =
+            display_sections_checked(&subdivision, &weights, cancel)?;
+        let (t2_section_list, _) = display_sections_checked(&subdivision, &t2_weights, cancel)?;
         let weighted_risk = py_round(path_risk(&mut view, path), 2);
         let risk_per_km = py_round(weighted_risk / (distance_m / 1000.0).max(0.001), 3);
+        reports.push(CandidateReport {
+            full_vertex_count: shape.full.len(),
+            simplified: shape.simplified,
+            accident_point_count: summary.accident_points.len(),
+            t3_sids: high_risk_total,
+            t3_sections: high_risk_sections.len() as u64,
+            t2_sids,
+            t2_sections: t2_section_list.len() as u64,
+        });
         candidates.push(Candidate {
             coordinates: shape.display,
             subdivision,
@@ -179,6 +251,8 @@ pub fn evaluate(
             risk_per_km,
             accident_points: summary.accident_points,
             weights,
+            high_risk_sections,
+            high_risk_total,
             distance_m,
             duration_s: path.time_ds as f64 / 10.0,
         });
@@ -269,8 +343,6 @@ pub fn evaluate(
     let mut evaluated = Vec::with_capacity(n);
     for (i, candidate) in candidates.into_iter().enumerate() {
         cancel.check()?;
-        let (high_risk_sections, high_risk_total) =
-            display_sections_checked(&candidate.subdivision, &candidate.weights, cancel)?;
         let selected = i == fastest || safest == Some(i);
         let navigation: Option<NavigationData> = if selected {
             Some(navigation_data_checked(
@@ -292,8 +364,8 @@ pub fn evaluate(
             weighted_risk: candidate.weighted_risk,
             risk_per_km: candidate.risk_per_km,
             accident_points: candidate.accident_points,
-            high_risk_sections,
-            high_risk_total,
+            high_risk_sections: candidate.high_risk_sections,
+            high_risk_total: candidate.high_risk_total,
             navigation,
             extra_minutes: extra[i],
             within_detour: within[i],
@@ -302,7 +374,7 @@ pub fn evaluate(
 
     cancel.check()?;
     let aggregation_ms = py_round(started.elapsed().as_secs_f64() * 1000.0, 2);
-    Ok(RouteOutcome {
+    let outcome = RouteOutcome {
         dataset_id: engine.dataset().dataset_id.clone(),
         data_years: engine.dataset().data_years.clone(),
         mode,
@@ -316,5 +388,118 @@ pub fn evaluate(
         warnings,
         risk_note: routing_risk_note(mode, conditions.weather),
         aggregation_ms,
-    })
+    };
+    Ok((
+        outcome,
+        EvaluationReport {
+            candidates: reports,
+            dropped_too_long: search.dropped_too_long,
+        },
+    ))
+}
+
+/// `RouteOutcome` の相関制約（openapi.yaml・behavior.md 7〜8章）を検査する。
+///
+/// 評価コマンド（`routing_eval engine-batch`）が応答の値を確かめるのに使う。`testing` の
+/// fixture と同じ規則で、`backend/tests` からも同じ関数を使う。
+pub fn check_outcome_invariants(outcome: &RouteOutcome) -> Result<(), String> {
+    let n = outcome.candidates.len();
+    if !(1..=6).contains(&n) {
+        return Err(format!("候補数{n}が1〜6の範囲外"));
+    }
+    if outcome.fastest >= n {
+        return Err("fastestが候補にない".into());
+    }
+    if outcome.safest.is_some_and(|s| s >= n) {
+        return Err("safestが候補にない".into());
+    }
+    // safestがnullになるのは、全候補で集合Bが空のときだけ（behavior.md 8章）
+    let any_accident = outcome
+        .candidates
+        .iter()
+        .any(|c| c.totals.accident_count > 0);
+    match (outcome.safest.is_some(), any_accident) {
+        (false, true) => return Err("集合Bが空でない候補があるのにsafestがnull".into()),
+        (true, false) => return Err("全候補で集合Bが空なのにsafestがある".into()),
+        _ => {}
+    }
+    if outcome.extra_minutes.is_some() != outcome.safest.is_some() {
+        return Err("extra_minutesの有無がsafestの有無と一致しない".into());
+    }
+    if outcome.safest.is_none() && outcome.risk_reduction_percent.is_some() {
+        return Err("safestがnullなのにrisk_reduction_percentがある".into());
+    }
+    for (i, c) in outcome.candidates.iter().enumerate() {
+        let id = format!("route-{}", i + 1);
+        let t = &c.totals;
+        if t.fatal_accidents + t.injury_accidents != t.accident_count {
+            return Err(format!("{id}: 死亡事故+負傷事故がaccident_countと異なる"));
+        }
+        if c.weather_match.is_some() != outcome.conditions.weather.is_some() {
+            return Err(format!("{id}: weather_matchの有無が天候指定と一致しない"));
+        }
+        if let Some(w) = &c.weather_match
+            && (w.fatal_accidents + w.injury_accidents != w.accident_count
+                || w.accident_count > t.accident_count)
+        {
+            return Err(format!("{id}: weather_matchの件数が不正"));
+        }
+        let points = (t.accident_count as usize).min(MAX_ACCIDENT_POINTS);
+        if c.accident_points.len() != points {
+            return Err(format!("{id}: 事故点数がmin(accident_count,250)と異なる"));
+        }
+        let sections = (c.high_risk_total as usize).min(MAX_HIGH_RISK_SECTIONS);
+        if c.high_risk_sections.len() != sections {
+            return Err(format!(
+                "{id}: 表示区間数がmin(high_risk_total,100)と異なる"
+            ));
+        }
+        if c.high_risk_sections.iter().any(|s| s.severity_weight < 3) {
+            return Err(format!("{id}: 重み3未満の表示区間がある"));
+        }
+        let selected = i == outcome.fastest || outcome.safest == Some(i);
+        match (&c.navigation, selected) {
+            (Some(nav), true) => check_navigation(&id, c, nav)?,
+            (None, false) => {}
+            (Some(_), false) => return Err(format!("{id}: 未選定なのにnavigationがある")),
+            (None, true) => return Err(format!("{id}: 選定候補なのにnavigationがない")),
+        }
+    }
+    Ok(())
+}
+
+fn check_navigation(id: &str, c: &EvaluatedRoute, nav: &NavigationData) -> Result<(), String> {
+    let d = &nav.vertex_distances_m;
+    if d.len() != c.path.coordinates.len() {
+        return Err(format!("{id}: vertex_distances_mの長さが頂点数と異なる"));
+    }
+    if d.first() != Some(&0.0) || d.last() != Some(&nav.length_m) {
+        return Err(format!(
+            "{id}: vertex_distances_mの先頭が0、末尾がlength_mでない"
+        ));
+    }
+    if d.windows(2).any(|w| w[0] > w[1]) {
+        return Err(format!("{id}: vertex_distances_mが非減少でない"));
+    }
+    let mut covered = 0u64;
+    let mut previous_end: Option<u32> = None;
+    for s in &nav.sections {
+        if s.start_segment_index > s.end_segment_index
+            || !(0.0 <= s.start_m && s.start_m <= s.end_m && s.end_m <= nav.length_m)
+        {
+            return Err(format!("{id}: ナビ区間の範囲が不正"));
+        }
+        if previous_end.is_some_and(|e| s.start_segment_index <= e + 1) {
+            return Err(format!("{id}: ナビ区間の順序・間隔が不正"));
+        }
+        if s.severity_weight < 3 {
+            return Err(format!("{id}: 重み3未満のナビ区間がある"));
+        }
+        covered += u64::from(s.end_segment_index - s.start_segment_index + 1);
+        previous_end = Some(s.end_segment_index);
+    }
+    if covered != c.high_risk_total {
+        return Err(format!("{id}: Σ(E−S+1)がhigh_risk_totalと異なる"));
+    }
+    Ok(())
 }

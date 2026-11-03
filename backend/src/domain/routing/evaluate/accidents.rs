@@ -577,10 +577,11 @@ fn cluster_sid(
     Ok(best.map_or(0, |(_, sid)| sid))
 }
 
-/// 集合Bの事故を1つのsidに置き、件数が [`HIGH_RISK_MIN_ACCIDENTS`] 以上のsidだけに
-/// 深刻度の和を残した重み（behavior.md 7章）。
+/// 集合Bの事故を1つのsidに置き、sidごとの件数と深刻度（`10×死者+負傷者`）の合計を返す。
+///
+/// しきい値を変えたときの区間の数を数える評価用にも使う（`routing_eval engine-batch`）。
 #[allow(clippy::too_many_arguments)]
-pub fn high_risk_weights(
+pub fn sid_counts(
     graph: &Graph,
     topology: &Topology,
     snapshot: &AccidentSnapshot,
@@ -589,7 +590,7 @@ pub fn high_risk_weights(
     subdivision: &Subdivision,
     accidents: &AccidentSet,
     cancel: &CancelToken,
-) -> Result<Vec<u64>, EngineError> {
+) -> Result<(Vec<u32>, Vec<u64>), EngineError> {
     let columns = snapshot.columns();
     let mut counts = vec![0_u32; subdivision.segments.len()];
     let mut severities = vec![0_u64; subdivision.segments.len()];
@@ -641,15 +642,50 @@ pub fn high_risk_weights(
         counts[sid as usize] += 1;
         severities[sid as usize] += severity(columns.deaths[index], columns.injuries[index]);
     }
-    Ok(severities
-        .into_iter()
+    Ok((counts, severities))
+}
+
+/// sidごとの件数と深刻度から、件数が [`HIGH_RISK_MIN_ACCIDENTS`] 以上のsidだけに
+/// 深刻度の和を残した重み（behavior.md 7章）。
+pub fn high_risk_weights_from_counts(counts: &[u32], severities: &[u64]) -> Vec<u64> {
+    severities
+        .iter()
         .enumerate()
-        .map(|(sid, severity)| {
+        .map(|(sid, &severity)| {
             if counts[sid] as usize >= HIGH_RISK_MIN_ACCIDENTS {
                 severity
             } else {
                 0
             }
         })
-        .collect())
+        .collect()
+}
+
+/// 集合Bの事故を1つのsidに置き、件数が [`HIGH_RISK_MIN_ACCIDENTS`] 以上のsidだけに
+/// 深刻度の和を残した重み（behavior.md 7章）。
+///
+/// 評価本体は `sid_counts` の結果を [`high_risk_weights_from_counts`] に渡す（2通りの
+/// しきい値を数えるため、件数と深刻度を1回だけ求める）。この関数は同じ規則の入口として残す。
+#[allow(dead_code, clippy::too_many_arguments)]
+pub fn high_risk_weights(
+    graph: &Graph,
+    topology: &Topology,
+    snapshot: &AccidentSnapshot,
+    path: &Path,
+    shape: &RouteShape,
+    subdivision: &Subdivision,
+    accidents: &AccidentSet,
+    cancel: &CancelToken,
+) -> Result<Vec<u64>, EngineError> {
+    let (counts, severities) = sid_counts(
+        graph,
+        topology,
+        snapshot,
+        path,
+        shape,
+        subdivision,
+        accidents,
+        cancel,
+    )?;
+    Ok(high_risk_weights_from_counts(&counts, &severities))
 }

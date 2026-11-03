@@ -15,6 +15,8 @@
 //! | `dump-time-model` | `graph.bin` の `TIMEMODL`（所要時間のモデル）をJSONで標準出力に書く（`--dir <DIR>`。M1.7の係数の探索用） |
 //! | `route-batch` | ODの一覧に対して、条件つきのリスクで吸着 → 探索（`find_routes`）を実行し、1件ごとの結果と計測値をJSON Linesで出す（M3b.5） |
 //! | `route-summary` | `route-batch` の結果をグループごとに集計し、JSONと人が読める表を出す（M3b.5） |
+//! | `engine-batch` | ODの一覧に対して、schema 3のreleaseの `RoutingEngine::evaluate` を実行し、応答の値と計測値をJSON Linesで出す（M5.5・M5.8） |
+//! | `engine-summary` | `engine-batch` の結果をグループごとに集計し、JSONと人が読める表を出す（M5.5・M5.8） |
 //! | `load-release` | schema 3のreleaseを `data::load_engine` で読み、識別子・件数・所要時間・VmRSS・VmHWMをJSONで出す（M4.2） |
 //!
 //! `graph-stats` は `--dir <DIR>`（4つの `.bin` があるディレクトリ）を受け取る。`--parts-only true` を
@@ -46,6 +48,20 @@
 //!
 //! `route-summary`：`--results <result.jsonl>[,<result2.jsonl>...]`。任意：`--group-by mode|mode,region`
 //! （既定 `mode`）、`--out <summary.json>`（省略時は標準出力）。`region` は `id` の最初の `-` より前。
+//!
+//! `engine-batch`：`--release <schema 3のrelease> --ods <od.jsonl> --out <result.jsonl>`。任意：
+//! `--threads N`（既定4）、`--timeout-s S`（1件ごとの期限、既定35）、`--detour-min M`（既定10。ODの
+//! `detour_min` があればそちらを使う）、`--conditions random|all`（既定 `random`）、`--seed S`（既定1）。
+//! 1件ごとに `evaluate` の壁時計（`total_ms`）と `aggregation_ms`、応答の選定・候補の値を記録し、
+//! 候補ごとに間引く前の頂点数・間引きの有無・事故点数と、高リスク区間の2通りのしきい値
+//! （`t3`：件数3以上、`t2`：件数2以上かつ深刻度の合計3以上）のsid数・区間数を出す。
+//! 処理の前後のVmRSS・VmHWMと読込の時間は標準エラーに出し、`--out` の拡張子を `.meta.json` に
+//! したファイルへ release_id・読込の秒数・処理の秒数・VmHWM・スレッド数を書く。
+//!
+//! `engine-summary`：`--results <result.jsonl>[,<result2.jsonl>...]`。任意：`--group-by mode|mode,region`
+//! （既定 `mode`）、`--out <summary.json>`（省略時は標準出力）。グループごとに状態の内訳、`total_ms` の
+//! 分位点、候補数・選定候補の高リスク区間の数の分布、`safest` の有無、`route_too_long`・80km超で
+//! 外した候補・間引いた候補の割合、`safest` の事故件数が `fastest` より多いODの割合を出す。
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -54,7 +70,8 @@ use std::time::{Duration, Instant};
 
 use accident_route_backend::contract::geo::{METERS_PER_DEGREE, straight_distance_m};
 use accident_route_backend::contract::{
-    CancelToken, ConditionFilter, DayType, Interrupt, LatLon, Mode, Period, Weather,
+    CancelToken, ConditionFilter, DayType, EngineError, Interrupt, LatLon, Mode, Period,
+    RouteEngine, RouteQuery, Weather,
 };
 use accident_route_backend::data;
 use accident_route_backend::data::load::parse_accidents;
@@ -63,6 +80,9 @@ use accident_route_backend::data::routing_files::{
     decode_restrictions, decode_risk, decode_topology,
 };
 use accident_route_backend::domain::routing::accident::EdgeAccidentIndex;
+use accident_route_backend::domain::routing::evaluate::{
+    EvaluationReport, check_outcome_invariants,
+};
 use accident_route_backend::domain::routing::graph::restrictions::TurnAutomaton;
 use accident_route_backend::domain::routing::graph::synthetic::Rng;
 use accident_route_backend::domain::routing::graph::time::{TimeModel, turn_angle_deg};
@@ -86,12 +106,12 @@ use accident_route_backend::domain::routing::search::{
 };
 use accident_route_backend::domain::routing::snap::{OdIndex, SnapPoint, point_on_edge, snap};
 use accident_route_backend::domain::routing::topology::Topology;
-use accident_route_backend::domain::routing::{Landmarks, Restrictions};
+use accident_route_backend::domain::routing::{Landmarks, Restrictions, RoutingEngine};
 use accident_route_backend::domain::snapshot::AccidentSnapshot;
 use rayon::prelude::*;
 use serde_json::{Value, json};
 
-const USAGE: &str = "使い方: routing_eval <legality|bench|od-sample|y-metrics|graph-stats|fastest-batch|dump-time-model|route-batch|route-summary|load-release> [--名前 値]...";
+const USAGE: &str = "使い方: routing_eval <legality|bench|od-sample|y-metrics|graph-stats|fastest-batch|dump-time-model|route-batch|route-summary|engine-batch|engine-summary|load-release> [--名前 値]...";
 
 /// `--名前 値` の組。名前は先頭の `--` を除いて持つ。
 struct Options(BTreeMap<String, String>);
@@ -1783,6 +1803,282 @@ fn route_batch(options: &Options) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// engine-batch（M5.5・M5.8）
+// ---------------------------------------------------------------------------------------------
+
+/// `EngineError` を記録の `status` とエラーのメッセージにする。
+fn engine_error_status(error: &EngineError) -> (&'static str, String) {
+    match error {
+        EngineError::NoRoute => ("no_route", "経路が見つかりません".to_owned()),
+        EngineError::RouteTooLong => (
+            "route_too_long",
+            "最短時間経路の距離が80,000mを超えています".to_owned(),
+        ),
+        EngineError::Interrupted(Interrupt::DeadlineExceeded) => {
+            ("timeout", "期限を超えました".to_owned())
+        }
+        EngineError::Interrupted(Interrupt::Cancelled) => {
+            ("interrupted", "取り消されました".to_owned())
+        }
+        EngineError::ContractViolation(message) => ("contract_violation", message.clone()),
+        // 新方式のエンジンは外部API・待ち行列を返さない。記録の種類を増やさないため、
+        // 内部の不整合として残す。
+        EngineError::ExternalApi | EngineError::Busy => (
+            "contract_violation",
+            "新方式では起こらないエラーです".to_owned(),
+        ),
+    }
+}
+
+/// 1件のODを `RoutingEngine::evaluate` で評価し、応答の値と計測値を記録する。
+struct EngineRunner<'a> {
+    engine: &'a RoutingEngine,
+    timeout: Duration,
+    random_conditions: bool,
+    seed: u64,
+    default_detour_min: u32,
+}
+
+impl EngineRunner<'_> {
+    fn run(&self, od: &Od) -> Value {
+        let started = Instant::now();
+        let detour_min = od.detour_min.unwrap_or(self.default_detour_min);
+        let filter = if self.random_conditions {
+            random_conditions(&od.id, self.seed)
+        } else {
+            ConditionFilter::default()
+        };
+        let mut rec = serde_json::Map::new();
+        rec.insert("id".into(), json!(od.id));
+        rec.insert("mode".into(), json!(od.mode.as_str()));
+        rec.insert(
+            "straight_m".into(),
+            json!((straight_distance_m(od.origin, od.dest) * 10.0).round() / 10.0),
+        );
+        rec.insert("detour_min".into(), json!(detour_min));
+        rec.insert("conditions".into(), conditions_json(filter));
+
+        let query =
+            match RouteQuery::new(od.origin, od.dest, od.mode, f64::from(detour_min), filter) {
+                Ok(query) => query,
+                Err(error) => {
+                    rec.insert("status".into(), json!("contract_violation"));
+                    rec.insert("error".into(), json!(format!("{error:?}")));
+                    rec.insert(
+                        "total_ms".into(),
+                        json!(started.elapsed().as_secs_f64() * 1e3),
+                    );
+                    return Self::finish_error(rec);
+                }
+            };
+        let cancel = CancelToken::with_timeout(self.timeout);
+        let result = self.engine.evaluate_with_report(&query, &cancel);
+        rec.insert(
+            "total_ms".into(),
+            json!(started.elapsed().as_secs_f64() * 1e3),
+        );
+        match result {
+            Ok((outcome, report)) => Self::finish_ok(rec, outcome, report),
+            Err(error) => {
+                let (status, message) = engine_error_status(&error);
+                rec.insert("status".into(), json!(status));
+                rec.insert("error".into(), json!(message));
+                Self::finish_error(rec)
+            }
+        }
+    }
+
+    /// 評価の失敗。集計側が同じ形で読めるように欄を埋める。
+    fn finish_error(mut rec: serde_json::Map<String, Value>) -> Value {
+        rec.insert("aggregation_ms".into(), Value::Null);
+        rec.insert("invariants_ok".into(), Value::Null);
+        rec.insert("fastest".into(), Value::Null);
+        rec.insert("safest".into(), Value::Null);
+        rec.insert("candidate_count".into(), json!(0));
+        rec.insert("risk_reduction_percent".into(), Value::Null);
+        rec.insert("dropped_too_long".into(), json!(0));
+        rec.insert("candidates".into(), Value::Array(Vec::new()));
+        Value::Object(rec)
+    }
+
+    /// 評価の成功。候補ごとの応答の値と、応答に出さない計測値を並べる。
+    fn finish_ok(
+        mut rec: serde_json::Map<String, Value>,
+        outcome: accident_route_backend::contract::RouteOutcome,
+        report: EvaluationReport,
+    ) -> Value {
+        let invariants = check_outcome_invariants(&outcome);
+        rec.insert("status".into(), json!("ok"));
+        rec.insert("aggregation_ms".into(), json!(outcome.aggregation_ms));
+        rec.insert("invariants_ok".into(), json!(invariants.is_ok()));
+        if let Err(message) = &invariants {
+            rec.insert("invariants_message".into(), json!(message));
+        }
+        rec.insert("fastest".into(), json!(outcome.fastest));
+        rec.insert(
+            "safest".into(),
+            outcome.safest.map_or(Value::Null, |s| json!(s)),
+        );
+        rec.insert("candidate_count".into(), json!(outcome.candidates.len()));
+        rec.insert(
+            "risk_reduction_percent".into(),
+            outcome
+                .risk_reduction_percent
+                .map_or(Value::Null, |v| json!(v)),
+        );
+        rec.insert("dropped_too_long".into(), json!(report.dropped_too_long));
+
+        let mut t3_mismatch = false;
+        let mut candidates = Vec::with_capacity(outcome.candidates.len());
+        for (i, candidate) in outcome.candidates.iter().enumerate() {
+            let measured = report.candidates.get(i);
+            let t3_sids = measured.map_or(candidate.high_risk_total, |r| r.t3_sids);
+            let t3_sections = measured.map_or(0, |r| r.t3_sections);
+            let t2_sids = measured.map_or(0, |r| r.t2_sids);
+            let t2_sections = measured.map_or(0, |r| r.t2_sections);
+            if measured.is_none()
+                || t3_sids != candidate.high_risk_total
+                || t3_sections != candidate.high_risk_sections.len() as u64
+            {
+                t3_mismatch = true;
+            }
+            candidates.push(json!({
+                "distance_m": candidate.path.distance_m,
+                "duration_s": candidate.path.duration_s,
+                "extra_minutes": candidate.extra_minutes,
+                "accident_count": candidate.totals.accident_count,
+                "fatal_accidents": candidate.totals.fatal_accidents,
+                "deaths": candidate.totals.deaths,
+                "injuries": candidate.totals.injuries,
+                "weighted_risk": candidate.weighted_risk,
+                "high_risk_total": candidate.high_risk_total,
+                "high_risk_sections": candidate.high_risk_sections.len(),
+                "vertex_count": candidate.path.coordinates.len(),
+                "full_vertex_count": measured.map_or(0, |r| r.full_vertex_count),
+                "simplified": measured.is_some_and(|r| r.simplified),
+                "accident_point_count": measured.map_or(0, |r| r.accident_point_count),
+                "t3_sids": t3_sids,
+                "t3_sections": t3_sections,
+                "t2_sids": t2_sids,
+                "t2_sections": t2_sections,
+            }));
+        }
+        if t3_mismatch {
+            rec.insert("t3_mismatch".into(), json!(true));
+        }
+        rec.insert("candidates".into(), Value::Array(candidates));
+        Value::Object(rec)
+    }
+}
+
+/// `--out` の拡張子を `.meta.json` にしたパス（`out/e60.jsonl` → `out/e60.meta.json`）。
+fn meta_path(out: &Path) -> std::path::PathBuf {
+    out.with_extension("meta.json")
+}
+
+/// ODの一覧に対して、releaseのエンジンで評価を実行し、1件ごとの結果をJSON Linesで出す。
+fn engine_batch(options: &Options) -> Result<(), String> {
+    let release_dir = options
+        .0
+        .get("release")
+        .map(Path::new)
+        .ok_or("--release が必要です")?;
+    let ods_path = options.0.get("ods").ok_or("--ods が必要です")?;
+    let out_path = Path::new(options.0.get("out").ok_or("--out が必要です")?);
+    let threads: usize = number_option(options, "threads", Some(4))?;
+    let timeout_s: f64 = number_option(options, "timeout-s", Some(35.0))?;
+    let detour_min: u32 = number_option(options, "detour-min", Some(10))?;
+    let seed: u64 = number_option(options, "seed", Some(1))?;
+    let random_conditions = match options
+        .0
+        .get("conditions")
+        .map(String::as_str)
+        .unwrap_or("random")
+    {
+        "random" => true,
+        "all" => false,
+        value => return Err(format!("--conditions は random か all です: {value}")),
+    };
+    if threads == 0 {
+        return Err("--threads は1以上です".to_owned());
+    }
+    if !timeout_s.is_finite() || timeout_s <= 0.0 {
+        return Err(format!("--timeout-s は正の数です: {timeout_s}"));
+    }
+
+    let started = Instant::now();
+    let report = |label: &str| {
+        let (rss, hwm) = memory_mb();
+        eprintln!(
+            "[{:>6.1}s] {label:<32} VmRSS={rss:.0}MB VmHWM={hwm:.0}MB",
+            started.elapsed().as_secs_f64()
+        );
+    };
+
+    report("releaseを読みます");
+    let engine = accident_route_backend::data::load::load_routing_engine_typed(release_dir)
+        .map_err(|e| e.to_string())?;
+    let dataset = engine.dataset().clone();
+    report("releaseを読んだ");
+    eprintln!(
+        "[{:.1}s] release_id={} 読込={:.1}秒 事故={}",
+        started.elapsed().as_secs_f64(),
+        dataset.release_id,
+        dataset.load_seconds,
+        dataset.accidents
+    );
+
+    let ods = read_ods(ods_path)?;
+    eprintln!(
+        "[{:.1}s] {} 組を {threads} スレッドで評価します",
+        started.elapsed().as_secs_f64(),
+        ods.len()
+    );
+    let runner = EngineRunner {
+        engine: &engine,
+        timeout: Duration::from_secs_f64(timeout_s),
+        random_conditions,
+        seed,
+        default_detour_min: detour_min,
+    };
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let batch_started = Instant::now();
+    let results: Vec<Value> = pool.install(|| ods.par_iter().map(|od| runner.run(od)).collect());
+    let process_s = batch_started.elapsed().as_secs_f64();
+    let mut text = String::new();
+    for record in results {
+        text.push_str(&record.to_string());
+        text.push('\n');
+    }
+    std::fs::write(out_path, text)
+        .map_err(|e| format!("{} に書けません: {e}", out_path.display()))?;
+    let (rss, hwm) = memory_mb();
+    eprintln!(
+        "[{:.1}s] {} 組を {process_s:.1}秒で評価し、{} に書きました VmRSS={rss:.0}MB VmHWM={hwm:.0}MB",
+        started.elapsed().as_secs_f64(),
+        ods.len(),
+        out_path.display()
+    );
+
+    let meta = json!({
+        "release_id": dataset.release_id,
+        "load_seconds": dataset.load_seconds,
+        "process_seconds": process_s,
+        "vm_rss_mb": rss,
+        "vm_hwm_mb": hwm,
+        "threads": threads,
+        "records": ods.len(),
+    });
+    let meta_file = meta_path(out_path);
+    std::fs::write(&meta_file, format!("{meta}\n"))
+        .map_err(|e| format!("{} に書けません: {e}", meta_file.display()))?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
 // route-summary（M3b.5）
 // ---------------------------------------------------------------------------------------------
 
@@ -2061,6 +2357,298 @@ fn route_summary(options: &Options) -> Result<(), String> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------------------------
+// engine-summary（M5.5・M5.8）
+// ---------------------------------------------------------------------------------------------
+
+/// 高リスク区間の数の階級（0・1・2・3〜5・6〜10・11以上）。
+fn section_bucket_index(value: u64) -> usize {
+    match value {
+        0 => 0,
+        1 => 1,
+        2 => 2,
+        3..=5 => 3,
+        6..=10 => 4,
+        _ => 5,
+    }
+}
+
+/// 区間の数の分布（階級ごとの件数・中央値・平均）。中央値は既存の `quantile` と同じ定義。
+fn section_distribution(values: &[u64]) -> Value {
+    let mut counts = [0_usize; 6];
+    for &value in values {
+        counts[section_bucket_index(value)] += 1;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    let mean = if sorted.is_empty() {
+        Value::Null
+    } else {
+        let sum: u64 = sorted.iter().sum();
+        json!(sum as f64 / sorted.len() as f64)
+    };
+    json!({
+        "buckets": {
+            "0": counts[0],
+            "1": counts[1],
+            "2": counts[2],
+            "3-5": counts[3],
+            "6-10": counts[4],
+            "11+": counts[5],
+        },
+        "median": quantile_u64(&sorted, 0.5).map_or(Value::Null, |v| json!(v)),
+        "mean": mean,
+    })
+}
+
+/// 割合（分母0ならnull）。
+fn rate_json(numerator: usize, denominator: usize) -> Value {
+    if denominator == 0 {
+        Value::Null
+    } else {
+        json!(numerator as f64 / denominator as f64)
+    }
+}
+
+/// 1つのグループの `engine-batch` の結果を集計する。
+fn summarize_engine_group(key: &GroupKey, records: &[Value]) -> Value {
+    let mut status_counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut total_ms = Vec::new();
+    let mut candidate_counts: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut ok_count = 0_usize;
+    let mut safest_null = 0_usize;
+    let mut invariants_false = 0_usize;
+    let mut t3_mismatch = 0_usize;
+    let mut route_too_long = 0_usize;
+    let mut dropped_total = 0_u64;
+    let mut dropped_ods = 0_usize;
+    let mut simplified_candidates = 0_usize;
+    let mut candidates_total = 0_usize;
+    let mut t3_values = Vec::new();
+    let mut t2_values = Vec::new();
+    let mut safest_more = 0_usize;
+    let mut safest_different = 0_usize;
+
+    for record in records {
+        let status = record["status"].as_str().unwrap_or("unknown");
+        *status_counts.entry(status.to_owned()).or_default() += 1;
+        if status == "route_too_long" {
+            route_too_long += 1;
+        }
+        if let Some(ms) = record["total_ms"].as_f64() {
+            total_ms.push(ms);
+        }
+        let dropped = record["dropped_too_long"].as_u64().unwrap_or(0);
+        dropped_total += dropped;
+        if dropped > 0 {
+            dropped_ods += 1;
+        }
+        if status != "ok" {
+            continue;
+        }
+        ok_count += 1;
+        if record["safest"].is_null() {
+            safest_null += 1;
+        }
+        if record["invariants_ok"].as_bool() == Some(false) {
+            invariants_false += 1;
+        }
+        if record["t3_mismatch"].as_bool() == Some(true) {
+            t3_mismatch += 1;
+        }
+        let candidates = record["candidates"]
+            .as_array()
+            .map_or(&[][..], |c| c.as_slice());
+        *candidate_counts.entry(candidates.len()).or_default() += 1;
+        for candidate in candidates {
+            candidates_total += 1;
+            if candidate["simplified"].as_bool() == Some(true) {
+                simplified_candidates += 1;
+            }
+        }
+        let fastest = record["fastest"].as_u64();
+        let safest = record["safest"].as_u64();
+        if let Some(index) = safest.or(fastest)
+            && let Some(candidate) = candidates.get(index as usize)
+        {
+            t3_values.push(candidate["t3_sections"].as_u64().unwrap_or(0));
+            t2_values.push(candidate["t2_sections"].as_u64().unwrap_or(0));
+        }
+        if let (Some(safest), Some(fastest)) = (safest, fastest)
+            && safest != fastest
+            && let (Some(safe), Some(fast)) = (
+                candidates.get(safest as usize),
+                candidates.get(fastest as usize),
+            )
+        {
+            safest_different += 1;
+            if safe["accident_count"].as_u64().unwrap_or(0)
+                > fast["accident_count"].as_u64().unwrap_or(0)
+            {
+                safest_more += 1;
+            }
+        }
+    }
+
+    let sorted_total = sorted_f64(&total_ms);
+    let total_summary = json!({
+        "median": quantile(&sorted_total, 0.5).map_or(Value::Null, |v| json!(v)),
+        "p95": quantile(&sorted_total, 0.95).map_or(Value::Null, |v| json!(v)),
+        "p99": quantile(&sorted_total, 0.99).map_or(Value::Null, |v| json!(v)),
+        "max": quantile(&sorted_total, 1.0).map_or(Value::Null, |v| json!(v)),
+    });
+    let selected_t3 = section_distribution(&t3_values);
+    let selected_t2 = section_distribution(&t2_values);
+
+    json!({
+        "mode": key.mode,
+        "region": key.region,
+        "count": records.len(),
+        "status_counts": status_counts,
+        "ok_count": ok_count,
+        "total_ms": total_summary,
+        "candidate_count_distribution": candidate_counts
+            .into_iter()
+            .map(|(count, n)| (count.to_string(), json!(n)))
+            .collect::<serde_json::Map<String, Value>>(),
+        "safest_null_rate": rate_json(safest_null, ok_count),
+        "invariants_false": invariants_false,
+        "t3_mismatch_count": t3_mismatch,
+        "route_too_long_rate": rate_json(route_too_long, records.len()),
+        "dropped_too_long": {
+            "total": dropped_total,
+            "ods": dropped_ods,
+        },
+        "simplified_candidate_rate": rate_json(simplified_candidates, candidates_total),
+        "simplified_candidates": simplified_candidates,
+        "candidates": candidates_total,
+        "selected_sections": {
+            "count": t3_values.len(),
+            "t3": selected_t3,
+            "t2": selected_t2,
+        },
+        "safest_more_accidents": {
+            "numerator": safest_more,
+            "denominator": safest_different,
+            "rate": rate_json(safest_more, safest_different),
+        },
+    })
+}
+
+/// 人が読める表の1行（`engine-summary`）。
+fn engine_summary_line(group: &Value) -> String {
+    let number = |v: &Value| v.as_f64().map_or("-".to_owned(), |x| format!("{x:.1}"));
+    let rate = |v: &Value| match v.as_f64() {
+        Some(x) => format!("{:.1}%", x * 100.0),
+        None => "-".to_owned(),
+    };
+    let key = match group["region"].as_str() {
+        Some(region) => format!("{}/{}", group["mode"].as_str().unwrap_or("?"), region),
+        None => group["mode"].as_str().unwrap_or("?").to_owned(),
+    };
+    format!(
+        "{key:<18} n={:<5} ok={:<5} total_ms p50/p95/p99/max={}/{}/{}/{} safest_null={} invariants_false={} t3_mismatch={} too_long={} dropped={}({}OD) simplified={} t3_med={} t2_med={} safest_more={}/{}({})",
+        group["count"].as_u64().unwrap_or(0),
+        group["ok_count"].as_u64().unwrap_or(0),
+        number(&group["total_ms"]["median"]),
+        number(&group["total_ms"]["p95"]),
+        number(&group["total_ms"]["p99"]),
+        number(&group["total_ms"]["max"]),
+        rate(&group["safest_null_rate"]),
+        group["invariants_false"].as_u64().unwrap_or(0),
+        group["t3_mismatch_count"].as_u64().unwrap_or(0),
+        rate(&group["route_too_long_rate"]),
+        group["dropped_too_long"]["total"].as_u64().unwrap_or(0),
+        group["dropped_too_long"]["ods"].as_u64().unwrap_or(0),
+        rate(&group["simplified_candidate_rate"]),
+        group["selected_sections"]["t3"]["median"]
+            .as_u64()
+            .map_or("-".to_owned(), |v| v.to_string()),
+        group["selected_sections"]["t2"]["median"]
+            .as_u64()
+            .map_or("-".to_owned(), |v| v.to_string()),
+        group["safest_more_accidents"]["numerator"]
+            .as_u64()
+            .unwrap_or(0),
+        group["safest_more_accidents"]["denominator"]
+            .as_u64()
+            .unwrap_or(0),
+        rate(&group["safest_more_accidents"]["rate"]),
+    )
+}
+
+/// `engine-batch` の結果をグループごとに集計する。
+fn engine_summary(options: &Options) -> Result<(), String> {
+    let results = options.0.get("results").ok_or("--results が必要です")?;
+    let group_by = options
+        .0
+        .get("group-by")
+        .map(String::as_str)
+        .unwrap_or("mode");
+    let with_region = match group_by {
+        "mode" => false,
+        "mode,region" => true,
+        value => {
+            return Err(format!("--group-by は mode か mode,region です: {value}"));
+        }
+    };
+    let out_path = options.0.get("out").map(Path::new);
+
+    let mut groups: BTreeMap<GroupKey, Vec<Value>> = BTreeMap::new();
+    let mut records = 0_usize;
+    for path in results.split(',') {
+        let text =
+            std::fs::read_to_string(path).map_err(|e| format!("{path} を読めません: {e}"))?;
+        for (i, line) in text
+            .lines()
+            .enumerate()
+            .filter(|(_, line)| !line.trim().is_empty())
+        {
+            let record: Value = serde_json::from_str(line)
+                .map_err(|e| format!("{path} の {} 行目がJSONではありません: {e}", i + 1))?;
+            let id = record["id"]
+                .as_str()
+                .ok_or_else(|| format!("{path} の {} 行目にidがありません", i + 1))?;
+            let mode = record["mode"]
+                .as_str()
+                .ok_or_else(|| format!("{path} の {} 行目にmodeがありません", i + 1))?;
+            let key = GroupKey {
+                mode: mode.to_owned(),
+                region: with_region.then(|| region_of(id).to_owned()),
+            };
+            groups.entry(key).or_default().push(record);
+            records += 1;
+        }
+    }
+
+    let summaries: Vec<Value> = groups
+        .iter()
+        .map(|(key, records)| summarize_engine_group(key, records))
+        .collect();
+    let summary = json!({
+        "group_by": group_by,
+        "records": records,
+        "groups": summaries,
+    });
+    let text = serde_json::to_string_pretty(&summary).map_err(|e| e.to_string())?;
+    match out_path {
+        Some(path) => {
+            std::fs::write(path, format!("{text}\n"))
+                .map_err(|e| format!("{} に書けません: {e}", path.display()))?;
+        }
+        None => println!("{text}"),
+    }
+
+    eprintln!(
+        "グループ {} 件、記録 {records} 件（group_by={group_by}）",
+        summaries.len()
+    );
+    for group in &summaries {
+        eprintln!("{}", engine_summary_line(group));
+    }
+    Ok(())
+}
+
 /// schema 3のreleaseを起動時と同じ経路で読み、計測値をJSONで出す（M4.2）。
 fn load_release(options: &Options) -> Result<(), String> {
     let dir = dir_option(options)?;
@@ -2102,6 +2690,8 @@ fn main() -> ExitCode {
         Some("dump-time-model") => dump_time_model,
         Some("route-batch") => route_batch,
         Some("route-summary") => route_summary,
+        Some("engine-batch") => engine_batch,
+        Some("engine-summary") => engine_summary,
         Some("load-release") => load_release,
         _ => {
             eprintln!(
