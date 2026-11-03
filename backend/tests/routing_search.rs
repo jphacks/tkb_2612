@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use accident_route_backend::contract::geo::straight_distance_m;
 use accident_route_backend::contract::{CancelToken, Interrupt, Mode};
 use accident_route_backend::domain::routing::NONE;
 use accident_route_backend::domain::routing::graph::restrictions::{Restrictions, TurnAutomaton};
@@ -18,7 +19,9 @@ use accident_route_backend::domain::routing::graph::time::{
     PerMode, TimeModel, TurnParams, edge_time_ds, node_penalty_ds, partial_edge_time_ds,
     turn_cost_ds,
 };
-use accident_route_backend::domain::routing::graph::{DirEdge, EdgeId, Graph, node_flags};
+use accident_route_backend::domain::routing::graph::{
+    DirEdge, EdgeId, Graph, HighwayClass, node_flags,
+};
 use accident_route_backend::domain::routing::legality::check_path;
 use accident_route_backend::domain::routing::search::alt::{
     Landmarks, UNREACHABLE_Q, edge_only_distances, farthest_landmark_table, select_landmarks,
@@ -27,12 +30,19 @@ use accident_route_backend::domain::routing::search::alt::{
 use accident_route_backend::domain::routing::search::candidates::{
     MAX_ROUTE_DISTANCE_DM, overlap_ratio, path_length_dm, select_candidates,
 };
-use accident_route_backend::domain::routing::search::ellipse::{Subgraph, whole_graph_subgraph};
+use accident_route_backend::domain::routing::search::ellipse::{
+    EllipseError, NO_DEDGE, Subgraph, ellipse_subgraph, whole_graph_subgraph,
+};
+use accident_route_backend::domain::routing::search::endpoints::{path_distance_dm, path_time_ds};
+use accident_route_backend::domain::routing::search::fastest::fastest_path;
 use accident_route_backend::domain::routing::search::larac::larac;
 use accident_route_backend::domain::routing::search::pipeline::{
     penalty_alternatives, search_subgraph,
 };
 use accident_route_backend::domain::routing::search::rcsp::bounded_rcsp;
+use accident_route_backend::domain::routing::search::reduced::{
+    REDUCED_MAX_CLASS, REDUCED_RADIUS_M, reduced_ellipse,
+};
 use accident_route_backend::domain::routing::search::{
     ArcCost, Path, SearchContext, SearchParams, SearchStatus,
 };
@@ -741,6 +751,8 @@ struct CaseStats {
     max_walks: u64,
     /// 列挙にかかった時間。
     enumerate_time: Duration,
+    /// 楕円が全体グラフの部分グラフより辺が少なかった件数（切り出しが効いた）。
+    ellipse_smaller: u32,
 }
 
 fn assert_valid_path(oracle: &mut Oracle<'_>, path: &Path, what: &str) {
@@ -748,6 +760,23 @@ fn assert_valid_path(oracle: &mut Oracle<'_>, path: &Path, what: &str) {
         oracle.eval(&path.dedges),
         Some((path.time_ds, path.risk_fx)),
         "{what}: 経路が不正、または時間・リスクが定義と違う: {path:?}"
+    );
+    // 経路の時間・距離の正本（`endpoints`）とも一致する。
+    assert_eq!(
+        path_time_ds(
+            oracle.graph,
+            oracle.mode,
+            &path.start,
+            &path.end,
+            &path.dedges
+        ),
+        Some(path.time_ds),
+        "{what}: path_time_ds と違う"
+    );
+    assert_eq!(
+        path_distance_dm(oracle.graph, &path.start, &path.end, &path.dedges),
+        Some(path_length_dm(oracle.graph, path)),
+        "{what}: path_distance_dm と違う"
     );
 }
 
@@ -802,6 +831,20 @@ fn check_random_case(seed: u64, stats: &mut CaseStats) {
         "seed={seed}: 合法な最短時間が列挙と違う"
     );
     assert_valid_path(&mut oracle, &fastest, "最短時間経路");
+    // 別に実装した `fastest_path`（M1.5）の最短時間が、部分グラフ上の最短時間と一致する。
+    let theirs = fastest_path(&ctx, &start, &end, &cancel)
+        .unwrap()
+        .expect("到達できる");
+    assert_eq!(theirs.time_ds, t0, "seed={seed}: fastest_path の時間が違う");
+    assert_eq!(
+        check_path(g, &world.restrictions, mode, &theirs.dedges),
+        vec![],
+        "seed={seed}"
+    );
+    assert_eq!(
+        path_time_ds(g, mode, &start, &end, &theirs.dedges),
+        Some(t0)
+    );
     let min_risk = probe.min_risk.clone().expect("到達できる");
     assert_valid_path(&mut oracle, &min_risk, "リスク最小の経路");
 
@@ -832,6 +875,58 @@ fn check_random_case(seed: u64, stats: &mut CaseStats) {
         );
     }
     count_extras(&world, &start, &end, t0, stats);
+}
+
+/// 部分グラフの構造の不変条件：CSR、仮想ノード、辺の時間とリスクが元のグラフと `cost` の値であること。
+fn check_subgraph_invariants(graph: &Graph, mode: Mode, sub: &Subgraph, cost: &mut TestCost) {
+    let n = sub.nodes.len();
+    assert_eq!(sub.node_ofs.len(), n + 3);
+    assert_eq!((sub.source as usize, sub.target as usize), (n, n + 1));
+    assert_eq!(sub.node_count(), n + 2);
+    assert!(sub.node_ofs.windows(2).all(|w| w[0] <= w[1]));
+    assert_eq!(*sub.node_ofs.last().unwrap() as usize, sub.arcs.len());
+    assert!(
+        sub.nodes.windows(2).all(|w| w[0] < w[1]),
+        "局所番号は元の番号の昇順"
+    );
+    assert!(
+        sub.arcs_of(sub.target).is_empty(),
+        "到着の仮想ノードから出る辺はない"
+    );
+    assert!(sub.arcs.iter().all(|a| (a.head as usize) < n + 2));
+    for v in 0..n as u32 {
+        let node = sub.nodes[v as usize];
+        for arc in sub.arcs_of(v) {
+            if arc.dedge == NO_DEDGE {
+                assert_eq!((arc.head, arc.time_ds, arc.risk_fx), (sub.target, 0, 0));
+            } else if arc.head == sub.target {
+                // 到着の辺（途中まで）：到着の辺の有向辺で、出発ノードが v。
+                assert_eq!(arc.dedge.edge(), sub.end.edge);
+                assert_eq!(graph.dedge_from(arc.dedge), node);
+                assert!(graph.passable(arc.dedge, mode));
+            } else {
+                assert_eq!(graph.dedge_from(arc.dedge), node);
+                assert_eq!(sub.nodes[arc.head as usize], graph.dedge_to(arc.dedge));
+                assert_eq!(Some(arc.time_ds), edge_time_ds(graph, arc.dedge, mode));
+                assert_eq!(
+                    arc.risk_fx,
+                    cost.risk_fx(arc.dedge) + cost.cluster_entry_risk_fx(arc.dedge)
+                );
+            }
+        }
+    }
+    for arc in sub.arcs_of(sub.source) {
+        if arc.dedge == NO_DEDGE {
+            assert_eq!((arc.time_ds, arc.risk_fx), (0, 0));
+            assert!((arc.head as usize) < n);
+        } else {
+            assert_eq!(arc.dedge.edge(), sub.start.edge);
+            assert!(graph.passable(arc.dedge, mode));
+            if arc.head != sub.target {
+                assert_eq!(sub.nodes[arc.head as usize], graph.dedge_to(arc.dedge));
+            }
+        }
+    }
 }
 
 /// 上限 `sub.budget_ds` でのLARAC・RCSP・組み合わせ・候補の整理を、列挙の結果と照らす。
@@ -924,6 +1019,36 @@ fn check_budget(
         best_expected,
         "seed={seed}"
     );
+
+    // 楕円で切った部分グラフ上の最適解は、全体グラフ上の最適解（列挙）と一致する（楕円の安全性）。
+    check_subgraph_invariants(g, world.mode, sub, oracle.cost);
+    let (start, end) = (oracle.start, oracle.end);
+    let ellipse = ellipse_subgraph(
+        ctx,
+        &start,
+        &end,
+        sub.fastest_ds,
+        budget - sub.fastest_ds,
+        &mut *oracle.cost,
+        &cancel,
+    )
+    .unwrap_or_else(|e| panic!("seed={seed}: 楕円を切り出せない: {e:?}"));
+    check_subgraph_invariants(g, world.mode, &ellipse, oracle.cost);
+    assert!(ellipse.arcs.len() <= sub.arcs.len());
+    if ellipse.arcs.len() < sub.arcs.len() {
+        stats.ellipse_smaller += 1;
+    }
+    let lr = larac(ctx, &ellipse, 10, &cancel).unwrap();
+    let result = bounded_rcsp(ctx, &ellipse, &lr, &cancel)
+        .unwrap()
+        .expect("楕円の中に最短時間経路がある");
+    assert_eq!(result.status, SearchStatus::Optimal, "seed={seed}");
+    assert_eq!(
+        (result.path.risk_fx, result.path.time_ds),
+        best_expected,
+        "seed={seed}: 楕円上の最適解が全体グラフ上と違う"
+    );
+    assert_valid_path(oracle, &result.path, "楕円上のRCSPの解");
 
     // 組み合わせ（リスク最小 → LARAC → RCSP → 代替経路 → 候補の整理）。
     let outcome = search_subgraph(ctx, sub, fastest, &cancel)
@@ -1072,6 +1197,10 @@ fn rcsp_matches_exhaustive_enumeration_on_600_random_graphs() {
     assert!(
         stats.larac_suboptimal >= 20,
         "LARACが最適でない件数が少ない（RCSPの試験にならない）: {stats:?}"
+    );
+    assert!(
+        stats.ellipse_smaller >= 200,
+        "楕円が全体グラフより小さかった件数が少ない（楕円の試験にならない）: {stats:?}"
     );
     assert!(
         stats.extras_matter >= 100,
@@ -2090,4 +2219,426 @@ fn select_candidates_drops_candidates_longer_than_80km() {
         10_000,
     );
     assert_eq!(kept, vec![long_p0]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// 楕円の切り出し・縮小
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn ellipse_cut_keeps_the_optimal_solution_on_graphs_with_thousands_of_nodes() {
+    // behavior.md 11章「楕円の安全性」：ノード数千のグラフで、楕円で切った部分グラフ上の最適解の
+    // リスクと時間が、全体グラフ上の最適解と一致する。最短時間は別に実装した `fastest_path` で求める。
+    let mut checked = 0;
+    let mut reduced_cases = 0;
+    let mut node_ratios = Vec::new();
+    let mut seed = 0_u64;
+    while checked < 12 {
+        seed += 1;
+        assert!(seed < 400, "照合できた件数が少ない: {checked}");
+        let nodes = 1500 + (seed as usize * 97) % 1000;
+        let config = RandomGraphConfig {
+            lat_e7: (356_000_000, 356_030_000),
+            lon_e7: (1_397_000_000, 1_397_030_000),
+            extra_edges: nodes,
+            oneway_prob: PerMode {
+                walk: 0.02,
+                bike: 0.1,
+                car: 0.15,
+            },
+            deny_prob: PerMode {
+                walk: 0.02,
+                bike: 0.03,
+                car: 0.02,
+            },
+            via_node_restrictions: nodes / 20,
+            via_way_restrictions: nodes / 40,
+            ..RandomGraphConfig::rich(nodes)
+        };
+        let mut builder = random_graph(seed, &config);
+        builder.set_time_model(costly_time_model());
+        let mode = Mode::ALL[(seed % 3) as usize];
+        let world = World::new(&builder, mode);
+        let g = &world.graph;
+        let mut rng = Rng::new(seed ^ 0xe11);
+        let (start, end) = (random_snap(&mut rng, g), random_snap(&mut rng, g));
+        if same_place(g, &start, &end) {
+            continue;
+        }
+        let ctx = world.ctx(unlimited_params());
+        let cancel = CancelToken::unbounded();
+        let Some(p0) = fastest_path(&ctx, &start, &end, &cancel).unwrap() else {
+            continue;
+        };
+        assert_eq!(
+            path_time_ds(g, mode, &start, &end, &p0.dedges),
+            Some(p0.time_ds)
+        );
+        assert_eq!(check_path(g, &world.restrictions, mode, &p0.dedges), vec![]);
+        let mut cost = TestCost::random(&mut rng, g);
+        let detour = p0.time_ds * (5 + rng.below(21)) as u64 / 100;
+        let budget = p0.time_ds + detour;
+
+        let whole =
+            whole_graph_subgraph(&ctx, &start, &end, p0.time_ds, detour, &mut cost, &cancel)
+                .unwrap();
+        let ellipse = ellipse_subgraph(&ctx, &start, &end, p0.time_ds, detour, &mut cost, &cancel)
+            .expect("楕円を切り出せる");
+        check_subgraph_invariants(g, mode, &ellipse, &mut cost);
+        assert_eq!(ellipse.budget_ds, budget);
+        assert_eq!(ellipse.fastest_ds, p0.time_ds);
+        // 楕円の辺は、全体グラフの辺の部分集合。
+        let whole_dedges: HashSet<DirEdge> = whole
+            .arcs
+            .iter()
+            .filter(|a| a.dedge != NO_DEDGE)
+            .map(|a| a.dedge)
+            .collect();
+        assert!(
+            ellipse
+                .arcs
+                .iter()
+                .filter(|a| a.dedge != NO_DEDGE)
+                .all(|a| whole_dedges.contains(&a.dedge))
+        );
+        node_ratios.push(ellipse.nodes.len() as f64 / g.node_count() as f64);
+
+        let solve = |sub: &Subgraph| {
+            let lr = larac(&ctx, sub, 10, &cancel).unwrap();
+            let rcsp = bounded_rcsp(&ctx, sub, &lr, &cancel).unwrap().unwrap();
+            assert_eq!(rcsp.status, SearchStatus::Optimal);
+            rcsp.path
+        };
+        let on_whole = solve(&whole);
+        let on_ellipse = solve(&ellipse);
+        assert_eq!(
+            (on_ellipse.risk_fx, on_ellipse.time_ds),
+            (on_whole.risk_fx, on_whole.time_ds),
+            "seed={seed}: 楕円上の最適解が全体グラフ上と違う"
+        );
+        for path in [&on_whole, &on_ellipse] {
+            assert!(path.time_ds <= budget);
+            assert_eq!(
+                check_path(g, &world.restrictions, mode, &path.dedges),
+                vec![]
+            );
+            assert_eq!(
+                path_time_ds(g, mode, &start, &end, &path.dedges),
+                Some(path.time_ds)
+            );
+        }
+        if on_whole.dedges != p0.dedges {
+            reduced_cases += 1;
+        }
+        // 候補の整理まで通す：返す候補はすべて B 以下。
+        let outcome = search_subgraph(&ctx, &ellipse, &p0, &cancel)
+            .unwrap()
+            .unwrap();
+        let picked = select_candidates(
+            g,
+            &world.topology,
+            p0.clone(),
+            outcome.best,
+            outcome.alternatives,
+            budget,
+        );
+        assert!(picked.iter().all(|p| p.time_ds <= budget));
+        checked += 1;
+    }
+    eprintln!(
+        "seeds={seed} 平均ノード比={:.3} 最短時間経路と違う最適解={reduced_cases}",
+        node_ratios.iter().sum::<f64>() / node_ratios.len() as f64
+    );
+    // 楕円が全体の一部に絞れている（切り出しが効いている）。
+    assert!(
+        node_ratios.iter().sum::<f64>() / (node_ratios.len() as f64) < 0.8,
+        "{node_ratios:?}"
+    );
+    assert!(
+        reduced_cases >= 3,
+        "最短時間経路と違う最適解が少ない: {reduced_cases}"
+    );
+}
+
+#[test]
+fn ellipse_reports_too_large_and_unreachable() {
+    let (mut builder, shape) = grid(30, 30, 100.0);
+    builder.set_time_model(costly_time_model());
+    let world = World::new(&builder, Mode::Car);
+    let g = &world.graph;
+    let cancel = CancelToken::unbounded();
+    let mut cost = TestCost::with_risk(g, &[]);
+    let first = builder.dedge(shape.node(0, 0), shape.node(0, 1));
+    let last = builder.dedge(shape.node(29, 28), shape.node(29, 29));
+    let start = SnapPoint::on_edge(g, first.edge(), 0);
+    let end = SnapPoint::on_edge(g, last.edge(), g.edge(last.edge()).length_dm);
+    let ctx = world.ctx(unlimited_params());
+    let p0 = fastest_path(&ctx, &start, &end, &cancel).unwrap().unwrap();
+    let detour = p0.time_ds / 4;
+    let full =
+        ellipse_subgraph(&ctx, &start, &end, p0.time_ds, detour, &mut cost, &cancel).unwrap();
+    assert!(full.nodes.len() > 300, "{}", full.nodes.len());
+    assert!(full.nodes.len() <= g.node_count());
+    // ノード数の上限を超えると TooLarge。上限ちょうどなら切り出せる。
+    let limited = |limit: u32| {
+        world.ctx(SearchParams {
+            ellipse_node_limit: limit,
+            ..unlimited_params()
+        })
+    };
+    let n = full.nodes.len() as u32;
+    match ellipse_subgraph(
+        &limited(n - 1),
+        &start,
+        &end,
+        p0.time_ds,
+        detour,
+        &mut cost,
+        &cancel,
+    ) {
+        Err(EllipseError::TooLarge { nodes }) => assert!(nodes > u64::from(n) - 1),
+        other => panic!("{other:?}"),
+    }
+    let exact = ellipse_subgraph(
+        &limited(n),
+        &start,
+        &end,
+        p0.time_ds,
+        detour,
+        &mut cost,
+        &cancel,
+    )
+    .unwrap();
+    assert_eq!(exact.nodes, full.nodes);
+    assert_eq!(exact.arcs, full.arcs);
+    // 同じ位置の出発・到着、予算が最短時間の下界にも届かない場合は Unreachable。
+    assert_eq!(
+        ellipse_subgraph(&ctx, &start, &start, p0.time_ds, detour, &mut cost, &cancel).unwrap_err(),
+        EllipseError::Unreachable
+    );
+    assert_eq!(
+        ellipse_subgraph(&ctx, &start, &end, 0, 0, &mut cost, &cancel).unwrap_err(),
+        EllipseError::Unreachable
+    );
+    // 中断。
+    let cancelled = CancelToken::unbounded();
+    cancelled.cancel();
+    assert_eq!(
+        ellipse_subgraph(
+            &ctx, &start, &end, p0.time_ds, detour, &mut cost, &cancelled
+        )
+        .unwrap_err(),
+        EllipseError::Interrupted(Interrupt::Cancelled)
+    );
+    // 出発と到着が同じ辺の途中：辺の中だけで着けば、ノードを持たない部分グラフになる。
+    let a = SnapPoint::on_edge(g, first.edge(), 300);
+    let b = SnapPoint::on_edge(g, first.edge(), 800);
+    let direct = fastest_path(&ctx, &a, &b, &cancel).unwrap().unwrap();
+    let sub = ellipse_subgraph(&ctx, &a, &b, direct.time_ds, 0, &mut cost, &cancel).unwrap();
+    assert!(
+        sub.arcs
+            .iter()
+            .any(|arc| arc.head == sub.target && arc.dedge == first)
+    );
+    let found = larac(&ctx, &sub, 10, &cancel).unwrap().best.unwrap();
+    assert_eq!((found.dedges, found.time_ds), (vec![first], direct.time_ds));
+}
+
+#[test]
+fn reduced_ellipse_keeps_only_nearby_edges_and_major_roads() {
+    // 40×40の格子（間隔150 m＝約6 km四方）。行0と列39は primary（幹線）、ほかは residential。
+    // 出発は左下、到着は右上。幹線を通る経路（行0→列39）は最短時間経路のひとつ。
+    let n = 40;
+    let (mut builder, shape) = grid(n, n, 150.0);
+    for e in 0..builder.edge_count() as u32 {
+        // 辺の端点から行・列を求める。
+        let (tail, head) = {
+            let spec = builder.edge_spec(e);
+            (spec.tail, spec.head)
+        };
+        let (tr, tc) = (tail as usize / n, tail as usize % n);
+        let (hr, hc) = (head as usize / n, head as usize % n);
+        let arterial = (tr == 0 && hr == 0) || (tc == n - 1 && hc == n - 1);
+        if arterial {
+            let spec = builder.edge_spec(e).clone();
+            *builder.edge_spec_mut(e) = spec.class(HighwayClass::Primary);
+        }
+    }
+    let world = World::new(&builder, Mode::Car);
+    let g = &world.graph;
+    let cancel = CancelToken::unbounded();
+    let mut rng = Rng::new(3);
+    let mut cost = TestCost::random(&mut rng, g);
+    let first = builder.dedge(shape.node(0, 0), shape.node(0, 1));
+    let last = builder.dedge(shape.node(n - 1, n - 2), shape.node(n - 1, n - 1));
+    let start = SnapPoint::on_edge(g, first.edge(), 0);
+    let end = SnapPoint::on_edge(g, last.edge(), g.edge(last.edge()).length_dm);
+    let ctx = world.ctx(unlimited_params());
+    let p0 = fastest_path(&ctx, &start, &end, &cancel).unwrap().unwrap();
+    let detour = p0.time_ds / 3;
+    let full =
+        ellipse_subgraph(&ctx, &start, &end, p0.time_ds, detour, &mut cost, &cancel).unwrap();
+    let reduced =
+        reduced_ellipse(&ctx, &start, &end, p0.time_ds, detour, &mut cost, &cancel).unwrap();
+    check_subgraph_invariants(g, Mode::Car, &reduced, &mut cost);
+    assert!(
+        reduced.nodes.len() < full.nodes.len(),
+        "{} < {}",
+        reduced.nodes.len(),
+        full.nodes.len()
+    );
+    assert_eq!(
+        (reduced.fastest_ds, reduced.budget_ds),
+        (full.fastest_ds, full.budget_ds)
+    );
+    // 辺は、楕円の辺のうち、幹線（class ≤ tertiary_link）か、出発・到着から3 km以内のノードに接するものだけ。
+    let centers = [
+        g.node_coord(shape.node(0, 0)),
+        g.node_coord(shape.node(n - 1, n - 1)),
+    ];
+    let near = |node: u32| {
+        centers.iter().any(|c| {
+            straight_distance_m(g.node_coord(node).to_latlon(), c.to_latlon()) <= REDUCED_RADIUS_M
+        })
+    };
+    let full_dedges: HashSet<DirEdge> = full
+        .arcs
+        .iter()
+        .filter(|a| a.dedge != NO_DEDGE)
+        .map(|a| a.dedge)
+        .collect();
+    let mut far_residential = 0;
+    for (v, &node) in reduced.nodes.iter().enumerate() {
+        for arc in reduced.arcs_of(v as u32) {
+            if arc.dedge == NO_DEDGE || arc.head == reduced.target {
+                continue;
+            }
+            assert!(full_dedges.contains(&arc.dedge));
+            let class = g.edge(arc.dedge.edge()).class;
+            assert!(
+                class <= REDUCED_MAX_CLASS || near(node) || near(g.dedge_to(arc.dedge)),
+                "遠くの生活道路を残している"
+            );
+        }
+    }
+    for &d in &full_dedges {
+        let class = g.edge(d.edge()).class;
+        if class > REDUCED_MAX_CLASS && !near(g.dedge_from(d)) && !near(g.dedge_to(d)) {
+            far_residential += 1;
+        }
+    }
+    assert!(
+        far_residential > 100,
+        "縮小が効く配置になっていない: {far_residential}"
+    );
+    // 縮小した部分グラフにも、幹線を通る最短時間経路があり、探索できる。
+    let outcome = search_subgraph(&ctx, &reduced, &p0, &cancel)
+        .unwrap()
+        .unwrap();
+    assert!(outcome.best.time_ds <= reduced.budget_ds);
+    assert_eq!(
+        check_path(g, &world.restrictions, Mode::Car, &outcome.best.dedges),
+        vec![]
+    );
+
+    // 楕円が TooLarge になる上限でも、縮小なら切り出せる。縮小でも超えるなら TooLarge のまま。
+    let limit = (reduced.nodes.len() + full.nodes.len()) as u32 / 2;
+    let limited = world.ctx(SearchParams {
+        ellipse_node_limit: limit,
+        ..unlimited_params()
+    });
+    assert!(matches!(
+        ellipse_subgraph(
+            &limited, &start, &end, p0.time_ds, detour, &mut cost, &cancel
+        ),
+        Err(EllipseError::TooLarge { .. })
+    ));
+    let again = reduced_ellipse(
+        &limited, &start, &end, p0.time_ds, detour, &mut cost, &cancel,
+    )
+    .unwrap();
+    assert_eq!(again.nodes, reduced.nodes);
+    let tiny = world.ctx(SearchParams {
+        ellipse_node_limit: 10,
+        ..unlimited_params()
+    });
+    assert!(matches!(
+        reduced_ellipse(&tiny, &start, &end, p0.time_ds, detour, &mut cost, &cancel),
+        Err(EllipseError::TooLarge { .. })
+    ));
+}
+
+#[test]
+fn fastest_path_agrees_with_and_without_alt_tables() {
+    // 距離表（ALT）を使った下界でも、最短時間経路の時間と楕円の部分グラフは変わらない。
+    let mut with_tables = 0;
+    for seed in 0..80_u64 {
+        let nodes = 30 + (seed as usize * 13) % 120;
+        let config = RandomGraphConfig {
+            lat_e7: (356_000_000, 356_015_000),
+            lon_e7: (1_397_000_000, 1_397_015_000),
+            extra_edges: nodes,
+            ..RandomGraphConfig::rich(nodes)
+        };
+        let mut builder = random_graph(seed, &config);
+        builder.set_time_model(costly_time_model());
+        let mode = Mode::ALL[(seed % 3) as usize];
+        let mut world = World::new(&builder, mode);
+        let mut rng = Rng::new(seed ^ 0xa17);
+        let g = &world.graph;
+        let (start, end) = (random_snap(&mut rng, g), random_snap(&mut rng, g));
+        if same_place(g, &start, &end) {
+            continue;
+        }
+        let cancel = CancelToken::unbounded();
+        let (plain, e_plain) = {
+            let plain_ctx = world.ctx(unlimited_params());
+            let plain = fastest_path(&plain_ctx, &start, &end, &cancel).unwrap();
+            let e_plain = plain.as_ref().map(|p0| {
+                let mut cost = TestCost::random(&mut Rng::new(seed), g);
+                ellipse_subgraph(
+                    &plain_ctx,
+                    &start,
+                    &end,
+                    p0.time_ds,
+                    p0.time_ds / 5 + 1,
+                    &mut cost,
+                    &cancel,
+                )
+                .unwrap()
+            });
+            (plain, e_plain)
+        };
+        let unit = 1 + rng.below(40) as u32;
+        let table = farthest_landmark_table(g, mode, 1 + rng.below(6), 0, unit, rng.chance(0.5));
+        let mut tables = [None, None, None];
+        tables[accident_route_backend::domain::routing::risk::mode_index(mode)] = Some(table);
+        world.landmarks = Landmarks::from_tables(unit, tables);
+        let ctx = world.ctx(unlimited_params());
+        let alt = fastest_path(&ctx, &start, &end, &cancel).unwrap();
+        assert_eq!(
+            plain.as_ref().map(|p| p.time_ds),
+            alt.as_ref().map(|p| p.time_ds),
+            "seed={seed}"
+        );
+        let (Some(p0), Some(e_plain)) = (plain, e_plain) else {
+            continue;
+        };
+        with_tables += 1;
+        // 楕円も同じ。
+        let mut cost = TestCost::random(&mut Rng::new(seed), &world.graph);
+        let e_alt = ellipse_subgraph(
+            &ctx,
+            &start,
+            &end,
+            p0.time_ds,
+            p0.time_ds / 5 + 1,
+            &mut cost,
+            &cancel,
+        )
+        .unwrap();
+        assert_eq!(e_plain.nodes, e_alt.nodes, "seed={seed}");
+        assert_eq!(e_plain.arcs, e_alt.arcs, "seed={seed}");
+    }
+    assert!(with_tables >= 40, "{with_tables}");
 }
