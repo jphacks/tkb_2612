@@ -16,7 +16,8 @@
 //! 時間の下界が暫定解の時間以上）、同じ状態の既存のラベルに優越されるもの。
 //!
 //! 打ち切り：`SearchParams::rcsp_budget_ms` の経過、ラベル数が `rcsp_label_limit` に達した場合は、
-//! その時点の暫定解を返し、`Optimal` とは記録しない（`Bounded`）。中断は `Interrupt`。
+//! その時点の暫定解を返し、`Optimal` とは記録しない（`Bounded`）。`rcsp_budget_ms` が0なら、ラベルを
+//! 1つも展開せずにLARACの暫定解（予算内）をそのまま返す（評価の「LARACだけ」）。中断は `Interrupt`。
 //!
 //! 周回：状態付きの探索なので、右左折禁止を避ける周回（同じノードを違う直前の辺や照合器の状態で
 //! 2回通る歩道）を許す。同じ状態を2回通るラベルは、時間が正で増えるため、最初に着いたラベルに
@@ -113,6 +114,24 @@ pub fn bounded_rcsp(
             gap: 0.0,
         }))
     };
+
+    // 時間予算0ms：RCSPを1回も展開せず、LARACの暫定解（予算内）をそのまま返す。
+    // `SearchParams::DEFAULT.rcsp_budget_ms` は正なので、既定の動作は変えない。
+    if ctx.params.rcsp_budget_ms == 0 {
+        if let Some(path) = larac.best.clone().filter(|p| p.time_ds <= bound) {
+            let gap = if path.risk_fx == 0 {
+                0.0
+            } else {
+                path.risk_fx.saturating_sub(larac.lower_bound_fx) as f64 / path.risk_fx as f64
+            };
+            return Ok(Some(RcspResult {
+                path,
+                status: SearchStatus::Bounded,
+                gap,
+            }));
+        }
+        return fallback(cancel);
+    }
 
     let to_time = costs_to_target(sub, |a| u64::from(a.time_ds), cancel)?;
     let to_risk = costs_to_target(sub, |a| a.risk_fx, cancel)?;

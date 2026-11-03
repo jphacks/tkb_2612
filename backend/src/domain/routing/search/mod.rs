@@ -9,6 +9,7 @@ pub mod alt;
 pub mod candidates;
 pub mod ellipse;
 pub mod endpoints;
+pub mod eval_cost;
 pub mod fastest;
 pub mod larac;
 pub mod pipeline;

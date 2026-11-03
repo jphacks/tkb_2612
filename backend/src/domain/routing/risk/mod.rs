@@ -13,6 +13,7 @@ use crate::domain::routing::accident::EdgeAccidentIndex;
 use crate::domain::routing::graph::time::PerMode;
 use crate::domain::routing::graph::{EdgeId, Graph};
 use crate::domain::routing::topology::{ClusterId, Topology};
+use crate::domain::scoring::severity;
 
 pub mod arc_cost;
 
@@ -24,6 +25,68 @@ pub const EDGE_K_SIDEWALK: u8 = 0xFE;
 pub const CELL_COUNT: usize = 10;
 /// `KTAB`・`JTAB` の件数（3手段×256種別×10セル）。
 pub const TABLE_LEN: usize = 3 * 256 * CELL_COUNT;
+
+/// リスクの計算の切り替え（評価専用。形式書14.5節）。
+///
+/// 既定の [`RiskVariant::Standard`] は形式書14.5節の式そのもので、サーバのエンジンと `risk-fit` は
+/// この値を使う。残りの2つは `route-batch` の `--risk-variant` で選ぶ比較用の計算で、探索にも
+/// 記録のリスクにも同じ計算を使う。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RiskVariant {
+    /// 形式書14.5節の式（経験ベイズ・種別の平均深刻度）。
+    #[default]
+    Standard,
+    /// 経験ベイズなし：辺・交差点クラスタの `ŷ` を観測の重みの和 `n` そのものにする（`W=1`）。
+    /// 事故0件の区間のリスクは0。天候の項も `ŷ^w` を `n^w` にする。
+    ///
+    /// ```text
+    /// risk_e = c_k · S · (n_e + (M_w − 1)·n_e^w)
+    /// risk_v = S_v · (n_v + (M_w − 1)·n_v^w)
+    /// ```
+    NoEmpiricalBayes,
+    /// 深刻度を辺単位にする：観測の部分の深刻度を、種別の平均 `S` ではなく事故ごとの
+    /// `sev_i = 10×死者 + 負傷者`（[`severity`]）で数える。事前分布の部分は今までどおり `S` を掛ける。
+    ///
+    /// ```text
+    /// risk_e = c_k · [ (1−W)·μ_e·S + W·Σ a_i·sev_i ] · (天候の項)
+    /// 天候の項 = 1 + (M_w − 1)·[ (1−W_w)·μ_e·ρ·S + W_w·Σ_{天候w} a_i·sev_i ]
+    ///                 / [ (1−W)·μ_e·S + W·Σ a_i·sev_i ]
+    /// ```
+    ///
+    /// すなわち、天候の項の中の「観測の部分」も事故ごとの深刻度の和にする。`μ_e` と事故の重みの和は
+    /// 通った長さ・位置について加法的なので、辺を2つに分けても合計は変わらない。
+    EdgeSeverity,
+    /// 期待件数：深刻度 S・生活道路の係数 c・天候の項を掛けない `ŷ`（経験ベイズの推定件数。
+    /// 学習年数 `T` 年ぶん）。較正（予測と評価期間の実績の比較）に使う。
+    ///
+    /// ```text
+    /// risk_e = (1−W)·μ_e + W·n_e
+    /// ```
+    ExpectedCount,
+}
+
+impl RiskVariant {
+    /// 記録に書く文字列。
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            RiskVariant::Standard => "standard",
+            RiskVariant::NoEmpiricalBayes => "no-eb",
+            RiskVariant::EdgeSeverity => "edge-severity",
+            RiskVariant::ExpectedCount => "expected-count",
+        }
+    }
+
+    /// `--risk-variant` の値を読む。
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "standard" => Some(RiskVariant::Standard),
+            "no-eb" => Some(RiskVariant::NoEmpiricalBayes),
+            "edge-severity" => Some(RiskVariant::EdgeSeverity),
+            "expected-count" => Some(RiskVariant::ExpectedCount),
+            _ => None,
+        }
+    }
+}
 
 /// `KTAB`・`JTAB` のレコード（形式書14.1節、48バイト）。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -229,6 +292,19 @@ struct CoefSums {
     rho: f64,
 }
 
+/// 辺・クラスタの観測の部分（`n_e`・`n_e^w` と、深刻度を辺単位にするときの事故ごとの深刻度の和）。
+#[derive(Debug, Clone, Copy, Default)]
+struct Observed {
+    /// `n_e = Σ a_i`。
+    weight: f64,
+    /// 天候が一致する `n_e^w`。
+    weight_weather: f64,
+    /// `Σ a_i·sev_i`（[`RiskVariant::EdgeSeverity`] のときだけ数える）。
+    severity: f64,
+    /// 天候が一致する `Σ a_i·sev_i`（[`RiskVariant::EdgeSeverity`] のときだけ数える）。
+    severity_weather: f64,
+}
+
 /// 位置 `pos_dm` が区間 `[from_dm, to_dm)` に入るか。`to_dm` が辺の長さなら、終端
 /// `pos_dm == length_dm` も含める（辺を分けたときに境界の事故を二重に数えないため）。
 fn position_in_range(pos_dm: u32, from_dm: u32, to_dm: u32, length_dm: u32) -> bool {
@@ -252,6 +328,8 @@ pub struct RiskView<'a> {
     train_years: HashSet<u16>,
     /// 雨・霧・雪のときの（天候コード、倍率M）。それ以外は `None`。
     weather_term: Option<(u8, f64)>,
+    /// 評価用の計算の切り替え（既定は [`RiskVariant::Standard`]）。
+    variant: RiskVariant,
     edge_cache: HashMap<EdgeId, f64>,
     cluster_cache: HashMap<ClusterId, f64>,
 }
@@ -304,9 +382,19 @@ impl<'a> RiskView<'a> {
             cell_included,
             train_years: model.params.train_source_years.iter().copied().collect(),
             weather_term,
+            variant: RiskVariant::Standard,
             edge_cache: HashMap::new(),
             cluster_cache: HashMap::new(),
         }
+    }
+
+    /// 評価用の計算を切り替えた `RiskView` を返す。キャッシュは空にしてから使う。
+    /// [`RiskVariant::Standard`] は [`RiskView::new`] と同じ計算になる。
+    pub fn with_variant(mut self, variant: RiskVariant) -> Self {
+        self.variant = variant;
+        self.edge_cache.clear();
+        self.cluster_cache.clear();
+        self
     }
 
     /// この `RiskView` が参照しているグラフ。
@@ -345,12 +433,12 @@ impl<'a> RiskView<'a> {
             EDGE_K_NO_RISK => 0.0,
             EDGE_K_SIDEWALK => self.sidewalk_partial_risk(e, from_dm, to_dm),
             _ => {
-                let (n_e, n_weather) = self.edge_weights(e, from_dm, to_dm);
+                let observed = self.edge_weights(e, from_dm, to_dm);
                 let sums = self.coef_sums(&self.model.k_table, k);
                 let a = self.coefficient_a(&self.model.k_table, k);
                 let beta = *self.model.params.beta.get(self.mode);
                 let travelled_m = f64::from(to_dm - from_dm) / 10.0;
-                let risk = self.risk_value(sums, travelled_m, n_e, n_weather, a, beta);
+                let risk = self.risk_value(sums, travelled_m, observed, a, beta);
                 self.c_factor(k) * risk
             }
         }
@@ -390,10 +478,10 @@ impl<'a> RiskView<'a> {
     }
 
     /// 辺eの `[from_dm, to_dm)` にある割り当ての重みの和（`n_e` と、天候が一致する `n^w_e`）。
-    fn edge_weights(&self, e: EdgeId, from_dm: u32, to_dm: u32) -> (f64, f64) {
+    /// [`RiskVariant::EdgeSeverity`] のときは、事故ごとの深刻度を掛けた和も数える。
+    fn edge_weights(&self, e: EdgeId, from_dm: u32, to_dm: u32) -> Observed {
         let length = self.graph.edge(e).length_dm;
-        let mut n_e = 0.0;
-        let mut n_weather = 0.0;
+        let mut observed = Observed::default();
         for entry in self.accidents.edge_entries(e) {
             let accident = entry.accident as usize;
             if !self.assignment_matches(accident) {
@@ -403,30 +491,48 @@ impl<'a> RiskView<'a> {
                 continue;
             }
             let weight = f64::from(entry.weight);
-            n_e += weight;
-            if self.weather_matches(accident) {
-                n_weather += weight;
+            observed.weight += weight;
+            let weather_matches = self.weather_matches(accident);
+            if weather_matches {
+                observed.weight_weather += weight;
+            }
+            if self.variant == RiskVariant::EdgeSeverity {
+                let columns = self.snapshot.columns();
+                let value = severity(columns.deaths[accident], columns.injuries[accident]) as f64;
+                observed.severity += weight * value;
+                if weather_matches {
+                    observed.severity_weather += weight * value;
+                }
             }
         }
-        (n_e, n_weather)
+        observed
     }
 
     /// クラスタcへの割り当ての重みの和（`n_v` と、天候が一致する `n^w_v`）。
-    fn cluster_weights(&self, c: ClusterId) -> (f64, f64) {
-        let mut n_e = 0.0;
-        let mut n_weather = 0.0;
+    /// [`RiskVariant::EdgeSeverity`] のときは、事故ごとの深刻度を掛けた和も数える。
+    fn cluster_weights(&self, c: ClusterId) -> Observed {
+        let mut observed = Observed::default();
         for entry in self.accidents.cluster_entries(c) {
             let accident = entry.accident as usize;
             if !self.assignment_matches(accident) {
                 continue;
             }
             let weight = f64::from(entry.weight);
-            n_e += weight;
-            if self.weather_matches(accident) {
-                n_weather += weight;
+            observed.weight += weight;
+            let weather_matches = self.weather_matches(accident);
+            if weather_matches {
+                observed.weight_weather += weight;
+            }
+            if self.variant == RiskVariant::EdgeSeverity {
+                let columns = self.snapshot.columns();
+                let value = severity(columns.deaths[accident], columns.injuries[accident]) as f64;
+                observed.severity += weight * value;
+                if weather_matches {
+                    observed.severity_weather += weight * value;
+                }
             }
         }
-        (n_e, n_weather)
+        observed
     }
 
     /// `Cset` のセルについて係数表の行を足す。
@@ -461,8 +567,7 @@ impl<'a> RiskView<'a> {
         &self,
         sums: CoefSums,
         travelled_m: f64,
-        n_e: f64,
-        n_weather: f64,
+        observed: Observed,
         a: f64,
         beta: f64,
     ) -> f64 {
@@ -475,24 +580,56 @@ impl<'a> RiskView<'a> {
         } else {
             t_r / denominator
         };
-        let mut y = (1.0 - w) * mu + w * n_e;
-        if let Some((_, multiplier)) = self.weather_term {
-            let t_r_rho = t_r * sums.rho;
-            let denominator_weather = t_r_rho + beta;
-            let w_weather = if denominator_weather == 0.0 {
-                0.0
-            } else {
-                t_r_rho / denominator_weather
-            };
-            let y_weather = (1.0 - w_weather) * (mu * sums.rho) + w_weather * n_weather;
-            y += (multiplier - 1.0) * y_weather;
+        match self.variant {
+            RiskVariant::Standard => {
+                let mut y = (1.0 - w) * mu + w * observed.weight;
+                if let Some((_, multiplier)) = self.weather_term {
+                    let t_r_rho = t_r * sums.rho;
+                    let denominator_weather = t_r_rho + beta;
+                    let w_weather = if denominator_weather == 0.0 {
+                        0.0
+                    } else {
+                        t_r_rho / denominator_weather
+                    };
+                    let y_weather =
+                        (1.0 - w_weather) * (mu * sums.rho) + w_weather * observed.weight_weather;
+                    y += (multiplier - 1.0) * y_weather;
+                }
+                sums.s * y
+            }
+            RiskVariant::NoEmpiricalBayes => {
+                // W=1：事前分布の項を落とし、天候の項も観測の重みだけにする。
+                let mut y = observed.weight;
+                if let Some((_, multiplier)) = self.weather_term {
+                    y += (multiplier - 1.0) * observed.weight_weather;
+                }
+                sums.s * y
+            }
+            RiskVariant::EdgeSeverity => {
+                // 事前分布の部分は種別の平均 S、観測の部分は事故ごとの深刻度。
+                let mut y = (1.0 - w) * mu * sums.s + w * observed.severity;
+                if let Some((_, multiplier)) = self.weather_term {
+                    let t_r_rho = t_r * sums.rho;
+                    let denominator_weather = t_r_rho + beta;
+                    let w_weather = if denominator_weather == 0.0 {
+                        0.0
+                    } else {
+                        t_r_rho / denominator_weather
+                    };
+                    let y_weather = (1.0 - w_weather) * (mu * sums.rho) * sums.s
+                        + w_weather * observed.severity_weather;
+                    y += (multiplier - 1.0) * y_weather;
+                }
+                y
+            }
+            RiskVariant::ExpectedCount => (1.0 - w) * mu + w * observed.weight,
         }
-        sums.s * y
     }
 
     /// 自動車の生活道路の係数 `c_k`（形式書14.5節）。
     fn c_factor(&self, k: u8) -> f64 {
         if self.mode == Mode::Car
+            && self.variant != RiskVariant::ExpectedCount
             && k != EDGE_K_NO_RISK
             && k != EDGE_K_SIDEWALK
             && self.model.params.c_groups.contains(&(k / 8))
@@ -511,11 +648,11 @@ impl<'a> RiskView<'a> {
             EDGE_K_SIDEWALK => self.sidewalk_risk(e),
             _ => {
                 let length = self.graph.edge(e).length_dm;
-                let (n_e, n_weather) = self.edge_weights(e, 0, length);
+                let observed = self.edge_weights(e, 0, length);
                 let sums = self.coef_sums(&self.model.k_table, k);
                 let a = self.coefficient_a(&self.model.k_table, k);
                 let beta = *self.model.params.beta.get(self.mode);
-                let risk = self.risk_value(sums, f64::from(length) / 10.0, n_e, n_weather, a, beta);
+                let risk = self.risk_value(sums, f64::from(length) / 10.0, observed, a, beta);
                 self.c_factor(k) * risk
             }
         }
@@ -562,11 +699,11 @@ impl<'a> RiskView<'a> {
     /// クラスタのリスク（キャッシュへの出し入れは `cluster_risk`）。
     fn compute_cluster_risk(&self, c: ClusterId) -> f64 {
         let j = self.model.cluster_j[c as usize];
-        let (n_e, n_weather) = self.cluster_weights(c);
+        let observed = self.cluster_weights(c);
         let sums = self.coef_sums(&self.model.j_table, j);
         let a = self.coefficient_a(&self.model.j_table, j);
         let beta = *self.model.params.beta_cluster.get(self.mode);
-        self.risk_value(sums, 1.0, n_e, n_weather, a, beta)
+        self.risk_value(sums, 1.0, observed, a, beta)
     }
 }
 

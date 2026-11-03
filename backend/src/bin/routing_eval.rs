@@ -42,7 +42,16 @@
 //! （既定 `random`。ODのidと `--seed` から決まる乱数で条件を選ぶ）、`--seed S`（既定1）、
 //! `--rcsp-budget-ms MS`・`--larac-iterations N`・`--ellipse-node-limit N`・`--rcsp-label-limit N`
 //! （探索のパラメータ、既定は `SearchParams::DEFAULT`）、`--coords true|false`（候補の座標を出す、
-//! 既定false）。記録は全体の `status` と、探索の状態を `search_status` として持つ（`RouteStats.status`）。
+//! 既定false）、`--paths true|false`（候補の経路と道路種別ごとの長さを出す、既定false）、
+//! `--objective risk|length|random`（探索の目的、既定`risk`）、
+//! `--risk-variant standard|no-eb|edge-severity|expected-count`（リスクの計算、既定`standard`。`expected-count` は深刻度・係数c・天候の項を掛けない推定件数で、較正用）。
+//! 記録は全体の `status` と、探索の状態を `search_status` として持つ（`RouteStats.status`）。
+//! `--objective length` は「上限内で最も短い道のり」、`random` は「辺の長さ×0.5〜2.0の乱数」を
+//! リスクの代わりに使う。どちらでも、記録の `risk` は `--risk-variant` の `RiskView` で計算し直す。
+//! `--paths true` の候補は `path`（吸着点と有向辺の列）と `class_lengths_m`（道路種別ごとの長さ）を持ち、
+//! 記録の最上位に `p0_index`・`best_index`（候補の中の同じ経路の添字）が付く。
+//! `--risk-variant no-eb` は経験ベイズなし（観測の重みの和）、`edge-severity` は深刻度を事故ごとに
+//! 数える（形式書14.5節）。サーバのエンジンは `standard` のまま。
 //!
 //! `route-summary`：`--results <result.jsonl>[,<result2.jsonl>...]`。任意：`--group-by mode|mode,region`
 //! （既定 `mode`）、`--out <summary.json>`（省略時は標準出力）。`region` は `id` の最初の `-` より前。
@@ -71,11 +80,15 @@ use accident_route_backend::domain::routing::graph::{
 };
 use accident_route_backend::domain::routing::legality::{Violation, check_path};
 use accident_route_backend::domain::routing::risk::RiskModel;
+use accident_route_backend::domain::routing::risk::RiskVariant;
 use accident_route_backend::domain::routing::risk::RiskView;
 use accident_route_backend::domain::routing::risk::arc_cost::{RiskArcCost, path_risk};
 use accident_route_backend::domain::routing::search::endpoints::{
     Endpoints, Placement, is_same_position, path_distance_dm, path_time_ds, placement,
     travelled_lengths_dm,
+};
+use accident_route_backend::domain::routing::search::eval_cost::{
+    LengthArcCost, RandomArcCost, class_lengths_dm,
 };
 use accident_route_backend::domain::routing::search::fastest::{FastestWork, fastest_path_with};
 use accident_route_backend::domain::routing::search::route::{
@@ -1420,6 +1433,60 @@ fn route_distance_m(graph: &Graph, path: &RoutePath) -> f64 {
         .map_or(f64::NAN, |dm| dm as f64 / 10.0)
 }
 
+/// `route-batch` の探索の目的（`--objective`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SearchObjective {
+    /// 今までどおり `RiskArcCost`（条件つきのリスク）。
+    Risk,
+    /// 長さ（m）だけ（比較対象「距離だけ」）。
+    Length,
+    /// 長さ（m）×辺ごとの乱数（比較対象「上限内でのランダム選択」）。
+    Random,
+}
+
+impl SearchObjective {
+    fn as_str(self) -> &'static str {
+        match self {
+            SearchObjective::Risk => "risk",
+            SearchObjective::Length => "length",
+            SearchObjective::Random => "random",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "risk" => Some(SearchObjective::Risk),
+            "length" => Some(SearchObjective::Length),
+            "random" => Some(SearchObjective::Random),
+            _ => None,
+        }
+    }
+}
+
+/// 2つの経路が同じ（有向辺の列と出発・到着の吸着点が一致する）。
+fn same_route(a: &RoutePath, b: &RoutePath) -> bool {
+    a.dedges == b.dedges && a.start == b.start && a.end == b.end
+}
+
+/// 経路の `path` の記録（`--paths true`。`y-metrics`・`match-routes` が読む共通の形）。
+fn route_geometry_json(path: &RoutePath) -> Value {
+    json!({
+        "start": {"edge": path.start.edge, "offset_dm": path.start.offset_dm},
+        "end": {"edge": path.end.edge, "offset_dm": path.end.offset_dm},
+        "dedges": path.dedges.iter().map(|d| d.0).collect::<Vec<_>>(),
+    })
+}
+
+/// 経路の道路種別ごとの長さ（m）。0の種別は出さない。
+fn class_lengths_json(graph: &Graph, path: &RoutePath) -> Value {
+    let lengths = class_lengths_dm(graph, path);
+    let mut object = serde_json::Map::new();
+    for (class, dm) in lengths {
+        object.insert(class.to_string(), json!(dm as f64 / 10.0));
+    }
+    Value::Object(object)
+}
+
 /// `p0`・`best` の記録。
 fn route_path_json(graph: &Graph, path: &RoutePath, risk: f64) -> Value {
     json!({
@@ -1440,7 +1507,10 @@ struct RouteRunner<'a> {
     snapshot: &'a AccidentSnapshot,
     timeout: Duration,
     coords: bool,
+    paths: bool,
     random_conditions: bool,
+    objective: SearchObjective,
+    risk_variant: RiskVariant,
     seed: u64,
     default_detour_min: u32,
     params: SearchParams,
@@ -1469,6 +1539,8 @@ impl RouteRunner<'_> {
         );
         rec.insert("detour_min".into(), json!(detour_min));
         rec.insert("conditions".into(), conditions_json(filter));
+        rec.insert("objective".into(), json!(self.objective.as_str()));
+        rec.insert("risk_variant".into(), json!(self.risk_variant.as_str()));
 
         let snap_started = Instant::now();
         let start = snap(graph, &data.topology, &data.odindex, od.origin, mode);
@@ -1485,6 +1557,11 @@ impl RouteRunner<'_> {
             }
             rec.entry("candidates")
                 .or_insert_with(|| Value::Array(Vec::new()));
+            if self.paths {
+                // 失敗した記録も `--paths true` なら同じ欄を持つ（見つからなければ null）。
+                rec.entry("p0_index").or_insert(Value::Null);
+                rec.entry("best_index").or_insert(Value::Null);
+            }
             rec.insert("status".into(), json!(status));
             // 成功した場合は find_routes の直後に入れてある（検証の時間を含めない）。
             rec.entry("total_ms")
@@ -1534,10 +1611,23 @@ impl RouteRunner<'_> {
             self.snapshot,
             mode,
             filter,
-        );
-        let result = {
-            let mut cost = RiskArcCost::new(&mut view);
-            find_routes(&ctx, &mut cost, &start, &end, detour_min, &cancel)
+        )
+        .with_variant(self.risk_variant);
+        // 探索の目的は `--objective`。`length`・`random` でも、記録のリスクは下で `RiskView` で
+        // 計算し直す（`view` は探索には使わない）。
+        let result = match self.objective {
+            SearchObjective::Risk => {
+                let mut cost = RiskArcCost::new(&mut view);
+                find_routes(&ctx, &mut cost, &start, &end, detour_min, &cancel)
+            }
+            SearchObjective::Length => {
+                let mut cost = LengthArcCost::new(graph);
+                find_routes(&ctx, &mut cost, &start, &end, detour_min, &cancel)
+            }
+            SearchObjective::Random => {
+                let mut cost = RandomArcCost::new(graph, self.seed);
+                find_routes(&ctx, &mut cost, &start, &end, detour_min, &cancel)
+            }
         };
         let search_done_ms = total_started.elapsed().as_secs_f64() * 1e3;
         let result = match result {
@@ -1586,6 +1676,10 @@ impl RouteRunner<'_> {
             candidate.insert("time_s".into(), json!(path.time_ds as f64 / 10.0));
             candidate.insert("distance_m".into(), json!(route_distance_m(graph, path)));
             candidate.insert("risk".into(), json!(candidate_risks[i]));
+            if self.paths {
+                candidate.insert("path".into(), route_geometry_json(path));
+                candidate.insert("class_lengths_m".into(), class_lengths_json(graph, path));
+            }
             candidate.insert("dedge_count".into(), json!(path.dedges.len()));
             candidate.insert("violations".into(), Value::Array(violations));
             candidate.insert(
@@ -1600,6 +1694,25 @@ impl RouteRunner<'_> {
             candidates.push(Value::Object(candidate));
         }
         rec.insert("candidates".into(), Value::Array(candidates));
+        if self.paths {
+            // `p0`・`best` と同じ経路（有向辺の列と吸着点）の候補の添字。
+            let p0_index = result
+                .candidates
+                .iter()
+                .position(|path| same_route(path, &result.p0));
+            let best_index = result
+                .candidates
+                .iter()
+                .position(|path| same_route(path, &result.best));
+            rec.insert(
+                "p0_index".into(),
+                p0_index.map_or(Value::Null, |i| json!(i)),
+            );
+            rec.insert(
+                "best_index".into(),
+                best_index.map_or(Value::Null, |i| json!(i)),
+            );
+        }
         finish(rec, "ok")
     }
 }
@@ -1630,6 +1743,25 @@ fn route_batch(options: &Options) -> Result<(), String> {
     let detour_min: u32 = number_option(options, "detour-min", Some(10))?;
     let seed: u64 = number_option(options, "seed", Some(1))?;
     let coords = bool_option(options, "coords", false)?;
+    let paths = bool_option(options, "paths", false)?;
+    let objective_value = options
+        .0
+        .get("objective")
+        .map(String::as_str)
+        .unwrap_or("risk");
+    let objective = SearchObjective::parse(objective_value).ok_or_else(|| {
+        format!("--objective は risk・length・random のどれかです: {objective_value}")
+    })?;
+    let risk_variant_value = options
+        .0
+        .get("risk-variant")
+        .map(String::as_str)
+        .unwrap_or("standard");
+    let risk_variant = RiskVariant::parse(risk_variant_value).ok_or_else(|| {
+        format!(
+            "--risk-variant は standard・no-eb・edge-severity・expected-count のどれかです: {risk_variant_value}"
+        )
+    })?;
     let random_conditions = match options
         .0
         .get("conditions")
@@ -1755,7 +1887,10 @@ fn route_batch(options: &Options) -> Result<(), String> {
         snapshot: &snapshot,
         timeout: Duration::from_secs_f64(timeout_s),
         coords,
+        paths,
         random_conditions,
+        objective,
+        risk_variant,
         seed,
         default_detour_min: detour_min,
         params,
