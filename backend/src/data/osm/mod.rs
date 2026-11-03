@@ -10,6 +10,8 @@
 //! PBFのブロックを `rayon` で並列に復号する。結果の順番は、ブロックの番号（ファイル内の順）で整える
 //! ので、スレッド数に依存しない。wayは最後にIDの昇順に整える。
 
+pub mod admin;
+
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;

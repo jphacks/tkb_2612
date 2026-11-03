@@ -7,8 +7,9 @@
 //! | サブコマンド | 内容 |
 //! |---|---|
 //! | `legality` | 経路の合法性の検査（`domain::routing::legality`） |
+//! | `admin-boundary` | 全国PBFから評価地域（東京23区・千葉市・さいたま市・横浜市）の行政界を取り出し、GeoJSONに書く（M5.1） |
 //! | `bench` | 探索の計測（時間・メモリ） |
-//! | `od-sample` | 出発地・目的地の組の抽出（M1.8。手段ごとの距離帯、シード固定） |
+//! | `od-sample` | 出発地・目的地の組の抽出（M1.8。手段ごとの距離帯、シード固定。M5.2で地域指定） |
 //! | `y-metrics` | リスク指標の評価 |
 //! | `graph-stats` | グラフ一式（`graph.bin`・`restrictions.bin`・`topology.bin`・`odindex.bin`）を読み込んで、件数とRSSを表示する（M1の受け入れ条件） |
 //! | `fastest-batch` | ODの一覧に対して、手段ごとに吸着 → 最短時間経路を実行し、結果をJSON Linesで出す（M1.7・M1.8） |
@@ -27,6 +28,15 @@
 //! 到着の辺を一様に選ぶ。`random-point` は、到着の点を出発点のまわりの距離帯の中の無作為な点（面積で一様）
 //! にする（道のない場所も含むので、吸着できない組が出る。吸着の割合を見る補助用）。出力は1行1組のJSON
 //! （`{"id","mode","o":{"lat","lon"},"d":{…},"straight_m","density500",…}`）。
+//!
+//! `od-sample` に `--region <regions.geojson> --region-id <id>` を付けると、地域の多角形の内側の
+//! 道路ノードからODを選ぶ（M5.2）。`--bbox`・`--jitter-m`・`--dest random-point` とは併用できない。
+//! 出発のノードを一様に選び、到着のノードを、同じ候補のうち直線距離が距離帯に入るものから一様に選ぶ。
+//! 点はノードの座標そのもの。`id` は `<地域id>-<手段>-<4桁>` になり、`--prefix` は無視する。
+//!
+//! `admin-boundary`：`--pbf <PBF> --out <regions.geojson>`。全国PBFをrelation → way → nodeの順に
+//! 3回走査し、`boundary=administrative` のrelationから地域の外周と穴を組み立てる。実行時間と
+//! ピークメモリを標準エラーに出す。
 //!
 //! `fastest-batch`：`--dir <DIR> --ods <od.jsonl> --out <result.jsonl>`。任意：`--threads N`（既定4）、
 //! `--timeout-s S`（1件ごとの期限、既定120）、`--coords true|false`（経路の座標を出す、既定true）、
@@ -58,11 +68,18 @@ use accident_route_backend::contract::{
 };
 use accident_route_backend::data;
 use accident_route_backend::data::load::parse_accidents;
+use accident_route_backend::data::osm::admin::{
+    AdminRelation, read_admin_relations, read_node_coords, read_ways_by_id,
+};
 use accident_route_backend::data::routing_files::{
     decode_alt, decode_assignment, decode_graph, decode_graph_parts, decode_odindex,
     decode_restrictions, decode_risk, decode_topology,
 };
 use accident_route_backend::domain::routing::accident::EdgeAccidentIndex;
+use accident_route_backend::domain::routing::eval::region::{
+    BoundaryWay, RegionBBox, RegionFeature, RegionGeometry, assemble_rings, feature_collection,
+    polygons_from_rings,
+};
 use accident_route_backend::domain::routing::graph::restrictions::TurnAutomaton;
 use accident_route_backend::domain::routing::graph::synthetic::Rng;
 use accident_route_backend::domain::routing::graph::time::{TimeModel, turn_angle_deg};
@@ -91,7 +108,7 @@ use accident_route_backend::domain::snapshot::AccidentSnapshot;
 use rayon::prelude::*;
 use serde_json::{Value, json};
 
-const USAGE: &str = "使い方: routing_eval <legality|bench|od-sample|y-metrics|graph-stats|fastest-batch|dump-time-model|route-batch|route-summary|load-release> [--名前 値]...";
+const USAGE: &str = "使い方: routing_eval <legality|admin-boundary|bench|od-sample|y-metrics|graph-stats|fastest-batch|dump-time-model|route-batch|route-summary|load-release> [--名前 値]...";
 
 /// `--名前 値` の組。名前は先頭の `--` を除いて持つ。
 struct Options(BTreeMap<String, String>);
@@ -443,6 +460,297 @@ fn edges_in_window(index: &OdIndex, center: Coord, reach_m: f64, out: &mut Vec<E
 }
 
 // ---------------------------------------------------------------------------------------------
+// admin-boundary
+// ---------------------------------------------------------------------------------------------
+
+/// 東京23区の区名（この順でFeatureのrelationを並べる）。
+const TOKYO23: &[&str] = &[
+    "千代田区",
+    "中央区",
+    "港区",
+    "新宿区",
+    "文京区",
+    "台東区",
+    "墨田区",
+    "江東区",
+    "品川区",
+    "目黒区",
+    "大田区",
+    "世田谷区",
+    "渋谷区",
+    "中野区",
+    "杉並区",
+    "豊島区",
+    "北区",
+    "荒川区",
+    "板橋区",
+    "練馬区",
+    "足立区",
+    "葛飾区",
+    "江戸川区",
+];
+
+const CHIBA: &[&str] = &["千葉市"];
+const SAITAMA: &[&str] = &["さいたま市"];
+const YOKOHAMA: &[&str] = &["横浜市"];
+
+/// 評価地域の指定。`tokyo23` だけは同名の区がほかの市にもあるので、外接矩形の中心で絞る。
+struct RegionSpec {
+    id: &'static str,
+    names: &'static [&'static str],
+    tokyo: bool,
+}
+
+const REGIONS: [RegionSpec; 4] = [
+    RegionSpec {
+        id: "tokyo23",
+        names: TOKYO23,
+        tokyo: true,
+    },
+    RegionSpec {
+        id: "chiba",
+        names: CHIBA,
+        tokyo: false,
+    },
+    RegionSpec {
+        id: "saitama",
+        names: SAITAMA,
+        tokyo: false,
+    },
+    RegionSpec {
+        id: "yokohama",
+        names: YOKOHAMA,
+        tokyo: false,
+    },
+];
+
+fn relation_label(relation: &AdminRelation) -> String {
+    format!(
+        "relation {}（{}）",
+        relation.id,
+        relation.name.as_deref().unwrap_or("名前なし")
+    )
+}
+
+fn boundary_ways(
+    relation: &AdminRelation,
+    ids: &[i64],
+    ways: &BTreeMap<i64, Vec<i64>>,
+) -> Result<Vec<BoundaryWay>, String> {
+    ids.iter()
+        .map(|id| {
+            let nodes = ways.get(id).ok_or_else(|| {
+                format!("{}のway {id} がPBFにありません", relation_label(relation))
+            })?;
+            Ok(BoundaryWay {
+                id: *id,
+                nodes: nodes.clone(),
+            })
+        })
+        .collect()
+}
+
+fn way_coords(
+    ways: &[BoundaryWay],
+    coords: &BTreeMap<i64, Coord>,
+    relation: &AdminRelation,
+) -> Result<Vec<Coord>, String> {
+    let mut out = Vec::new();
+    for way in ways {
+        for id in &way.nodes {
+            let coord = coords.get(id).ok_or_else(|| {
+                format!("{}のnode {id} の座標がありません", relation_label(relation))
+            })?;
+            out.push(*coord);
+        }
+    }
+    Ok(out)
+}
+
+fn ring_coords(
+    ring: &[i64],
+    coords: &BTreeMap<i64, Coord>,
+    relation: &AdminRelation,
+) -> Result<Vec<Coord>, String> {
+    ring.iter()
+        .map(|id| {
+            coords.get(id).copied().ok_or_else(|| {
+                format!("{}のnode {id} の座標がありません", relation_label(relation))
+            })
+        })
+        .collect()
+}
+
+/// 全国PBFから評価地域の行政界を取り出し、GeoJSONの `FeatureCollection` に書く（M5.1）。
+fn admin_boundary(options: &Options) -> Result<(), String> {
+    let pbf = options
+        .0
+        .get("pbf")
+        .map(Path::new)
+        .ok_or("--pbf が必要です")?;
+    let out = options.0.get("out").ok_or("--out が必要です")?;
+    let started = Instant::now();
+    let stamp = |label: &str| {
+        let (rss, hwm) = memory_mb();
+        eprintln!(
+            "[{:>7.1}s] {label} VmRSS={rss:.0}MB VmHWM={hwm:.0}MB",
+            started.elapsed().as_secs_f64()
+        );
+    };
+    stamp("開始");
+
+    let relations = read_admin_relations(pbf).map_err(|e| e.to_string())?;
+    stamp(&format!(
+        "1/3 relationを読んだ（行政界 {}件）",
+        relations.len()
+    ));
+
+    let candidates: Vec<(&RegionSpec, Vec<&AdminRelation>)> = REGIONS
+        .iter()
+        .map(|spec| {
+            let list = relations
+                .iter()
+                .filter(|relation| {
+                    relation.admin_level.as_deref() == Some("7")
+                        && relation
+                            .name
+                            .as_deref()
+                            .is_some_and(|name| spec.names.contains(&name))
+                })
+                .collect();
+            (spec, list)
+        })
+        .collect();
+    for (spec, list) in &candidates {
+        eprintln!("地域 {} の候補のrelation: {}件", spec.id, list.len());
+    }
+
+    let mut way_ids = Vec::new();
+    for (_, list) in &candidates {
+        for relation in list {
+            way_ids.extend(relation.outer_ways.iter().copied());
+            way_ids.extend(relation.inner_ways.iter().copied());
+        }
+    }
+    way_ids.sort_unstable();
+    way_ids.dedup();
+    let ways = read_ways_by_id(pbf, &way_ids).map_err(|e| e.to_string())?;
+    stamp(&format!(
+        "2/3 wayを読んだ（必要 {}本、取得 {}本）",
+        way_ids.len(),
+        ways.len()
+    ));
+
+    let mut node_ids = Vec::new();
+    for nodes in ways.values() {
+        node_ids.extend(nodes.iter().copied());
+    }
+    node_ids.sort_unstable();
+    node_ids.dedup();
+    let coords = read_node_coords(pbf, &node_ids).map_err(|e| e.to_string())?;
+    stamp(&format!(
+        "3/3 nodeを読んだ（必要 {}個、取得 {}個）",
+        node_ids.len(),
+        coords.len()
+    ));
+
+    let mut features = Vec::with_capacity(REGIONS.len());
+    for (spec, list) in &candidates {
+        let mut found: BTreeMap<String, Vec<(&AdminRelation, RegionGeometry)>> = BTreeMap::new();
+        for relation in list {
+            let name = relation.name.clone().unwrap_or_default();
+            let outer_ways = boundary_ways(relation, &relation.outer_ways, &ways)?;
+            let inner_ways = boundary_ways(relation, &relation.inner_ways, &ways)?;
+            let outer_points = way_coords(&outer_ways, &coords, relation)?;
+            let Some(bbox) = RegionBBox::from_coords(outer_points.iter().copied()) else {
+                return Err(format!(
+                    "{}の外周のwayがありません",
+                    relation_label(relation)
+                ));
+            };
+            if spec.tokyo {
+                let (lat, lon) = bbox.center();
+                if !(35.45..=35.95).contains(&lat) || !(139.5..=140.0).contains(&lon) {
+                    continue;
+                }
+            }
+            let outer_rings = assemble_rings(&outer_ways)
+                .map_err(|e| format!("{}の外周: {e}", relation_label(relation)))?;
+            let inner_rings = assemble_rings(&inner_ways)
+                .map_err(|e| format!("{}の穴: {e}", relation_label(relation)))?;
+            let outer = outer_rings
+                .iter()
+                .map(|ring| ring_coords(ring, &coords, relation))
+                .collect::<Result<Vec<_>, _>>()?;
+            let inner = inner_rings
+                .iter()
+                .map(|ring| ring_coords(ring, &coords, relation))
+                .collect::<Result<Vec<_>, _>>()?;
+            let polygons = polygons_from_rings(outer, inner)
+                .map_err(|e| format!("{}の多角形: {e}", relation_label(relation)))?;
+            let geometry = RegionGeometry::new(polygons)
+                .map_err(|e| format!("{}の形: {e}", relation_label(relation)))?;
+            found.entry(name).or_default().push((relation, geometry));
+        }
+
+        let mut info = Vec::with_capacity(spec.names.len());
+        let mut polygons = Vec::new();
+        for name in spec.names {
+            let Some(list) = found.get(*name) else {
+                return Err(format!("地域 {} の{name}が見つかりません", spec.id));
+            };
+            if list.len() != 1 {
+                return Err(format!(
+                    "地域 {} の{name}が{}件見つかりました",
+                    spec.id,
+                    list.len()
+                ));
+            }
+            let (relation, geometry) = &list[0];
+            info.push((relation.id, (*name).to_owned()));
+            polygons.extend(geometry.polygons().iter().cloned());
+        }
+        let geometry =
+            RegionGeometry::new(polygons).map_err(|e| format!("地域 {} の形: {e}", spec.id))?;
+        features.push(RegionFeature {
+            region: spec.id.to_owned(),
+            relations: info,
+            geometry,
+        });
+    }
+
+    let json = feature_collection(&features);
+    let text =
+        serde_json::to_string_pretty(&json).map_err(|e| format!("GeoJSONにできません: {e}"))?;
+    let path = Path::new(out);
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("{} を作れません: {e}", parent.display()))?;
+    }
+    std::fs::write(path, format!("{text}\n")).map_err(|e| format!("{out} に書けません: {e}"))?;
+    for feature in &features {
+        let holes: usize = feature
+            .geometry
+            .polygons()
+            .iter()
+            .map(|polygon| polygon.holes().len())
+            .sum();
+        eprintln!(
+            "地域 {}: 面積 {:.2}km²、外周 {}、穴 {}、relation {}件",
+            feature.region,
+            feature.geometry.area_km2(),
+            feature.geometry.polygons().len(),
+            holes,
+            feature.relations.len()
+        );
+    }
+    stamp(&format!("{out} に書きました"));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
 // od-sample
 // ---------------------------------------------------------------------------------------------
 
@@ -510,6 +818,28 @@ fn od_sample(options: &Options) -> Result<(), String> {
         Some(v) => return Err(format!("--dest は edge か random-point です: {v}")),
     };
     let bbox = options.0.get("bbox").map(|t| BBox::parse(t)).transpose()?;
+    let region = match (options.0.get("region"), options.0.get("region-id")) {
+        (None, None) => None,
+        (Some(path), Some(id)) => {
+            if bbox.is_some() {
+                return Err("--region と --bbox は同時に指定できません".to_owned());
+            }
+            if options.0.contains_key("jitter-m") {
+                return Err("--region を指定したときは --jitter-m を指定できません".to_owned());
+            }
+            if random_dest {
+                return Err(
+                    "--region を指定したときは --dest random-point を指定できません".to_owned(),
+                );
+            }
+            let text =
+                std::fs::read_to_string(path).map_err(|e| format!("{path} を読めません: {e}"))?;
+            Some((id.as_str(), RegionGeometry::from_geojson(&text, id)?))
+        }
+        (Some(_), None) | (None, Some(_)) => {
+            return Err("--region と --region-id は同時に指定してください".to_owned());
+        }
+    };
     if !(STRAIGHT_MIN_M..=STRAIGHT_MAX_M).contains(&min_m)
         || !(STRAIGHT_MIN_M..=STRAIGHT_MAX_M).contains(&max_m)
         || min_m >= max_m
@@ -520,6 +850,11 @@ fn od_sample(options: &Options) -> Result<(), String> {
     }
     let started = Instant::now();
     let data = load_data(dir, None, false)?;
+    if let Some((region_id, region)) = &region {
+        return od_sample_region(
+            &data, mode, count, seed, min_m, max_m, region_id, region, out, started,
+        );
+    }
     let edge_count = data.graph.edge_count() as u32;
     let pool: Vec<EdgeId> = (0..edge_count)
         .filter(|&e| usable_edge(&data, e, mode, bbox))
@@ -622,6 +957,121 @@ fn od_sample(options: &Options) -> Result<(), String> {
     std::fs::write(out, text).map_err(|e| format!("{out} に書けません: {e}"))?;
     eprintln!(
         "[{:.1}s] {} 組を {out} に書きました（試行 {attempts}）",
+        started.elapsed().as_secs_f64(),
+        count
+    );
+    Ok(())
+}
+
+/// 地域を指定したODの抽出（M5.2）。地域の多角形の内側にあるノードのうち、その手段で吸着可能な辺に
+/// 接し、その辺の少なくとも1本がmotorwayでないものを候補にする。出発を一様に選び、到着を、同じ
+/// 候補のうち直線距離が距離帯に入るものから一様に選ぶ（棄却法）。点はノードの座標そのもの。
+#[allow(clippy::too_many_arguments)]
+fn od_sample_region(
+    data: &Data,
+    mode: Mode,
+    count: usize,
+    seed: u64,
+    min_m: f64,
+    max_m: f64,
+    region_id: &str,
+    region: &RegionGeometry,
+    out: &str,
+    started: Instant,
+) -> Result<(), String> {
+    let graph = &data.graph;
+    let mut candidates: Vec<NodeId> = Vec::new();
+    for node in 0..graph.node_count() as u32 {
+        let coord = graph.node_coord(node);
+        if !region.contains(coord) {
+            continue;
+        }
+        let mut usable = false;
+        let mut non_motorway = false;
+        for dedge in graph.out_dedges(node) {
+            let edge = dedge.edge();
+            if !usable_edge(data, edge, mode, None) {
+                continue;
+            }
+            usable = true;
+            let class = graph.edge(edge).class;
+            if class != HighwayClass::Motorway.code() && class != HighwayClass::MotorwayLink.code()
+            {
+                non_motorway = true;
+                break;
+            }
+        }
+        if usable && non_motorway {
+            candidates.push(node);
+        }
+    }
+    eprintln!(
+        "[{:.1}s] 候補のノード {} 個（{}、地域 {}）",
+        started.elapsed().as_secs_f64(),
+        candidates.len(),
+        mode.as_str(),
+        region_id
+    );
+    if candidates.is_empty() {
+        return Err(format!("地域 {region_id} に候補のノードがありません"));
+    }
+
+    let mut rng = Rng::new(seed);
+    let mut lines = Vec::with_capacity(count);
+    let mut window = Vec::new();
+    let mut origin_attempts = 0_usize;
+    // 1つの出発に対して到着を探す回数。見つからなければ出発を選び直す。
+    const DEST_ATTEMPTS: usize = 10_000;
+    while lines.len() < count {
+        origin_attempts += 1;
+        if origin_attempts > count.saturating_mul(1000).max(1000) {
+            return Err(format!(
+                "{} 組しか作れませんでした（出発の試行 {origin_attempts}）",
+                lines.len()
+            ));
+        }
+        let origin_node = *rng.pick(&candidates);
+        let origin = graph.node_coord(origin_node);
+        let origin_ll = origin.to_latlon();
+        let mut destination = None;
+        for _ in 0..DEST_ATTEMPTS {
+            let dest_node = *rng.pick(&candidates);
+            let dest = graph.node_coord(dest_node);
+            let straight = straight_distance_m(origin_ll, dest.to_latlon());
+            if (min_m..=max_m).contains(&straight) {
+                destination = Some((dest_node, dest, straight));
+                break;
+            }
+        }
+        let Some((dest_node, dest, straight)) = destination else {
+            continue;
+        };
+        // 周囲の辺の密度（既存の od-sample と同じ定義。手段によらず全辺を数える）
+        window.clear();
+        edges_in_window(&data.odindex, origin, 500.0, &mut window);
+        window.sort_unstable();
+        window.dedup();
+        let density500 = window.len();
+        lines.push(
+            json!({
+                "id": format!("{region_id}-{}-{:04}", mode.as_str(), lines.len() + 1),
+                "mode": mode.as_str(),
+                "region": region_id,
+                "o": latlon_json(origin_ll),
+                "d": latlon_json(dest.to_latlon()),
+                "straight_m": (straight * 10.0).round() / 10.0,
+                "density500": density500,
+                "origin_node": origin_node,
+                "dest_node": dest_node,
+            })
+            .to_string(),
+        );
+    }
+    let mut text = lines.join("\n");
+    text.push('\n');
+    std::fs::write(out, text).map_err(|e| format!("{out} に書けません: {e}"))?;
+    eprintln!(
+        "[{:.1}s] {} 組を {out} に書きました（出発の試行 {origin_attempts}）",
         started.elapsed().as_secs_f64(),
         count
     );
@@ -2094,6 +2544,7 @@ fn main() -> ExitCode {
     };
     let run: fn(&Options) -> Result<(), String> = match command.to_str() {
         Some("legality") => legality,
+        Some("admin-boundary") => admin_boundary,
         Some("bench") => bench,
         Some("od-sample") => od_sample,
         Some("y-metrics") => y_metrics,
