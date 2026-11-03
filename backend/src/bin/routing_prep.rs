@@ -448,6 +448,7 @@ fn accident_snap(options: &Options) -> Result<(), String> {
     let parts = decode_graph_parts(&graph_bytes)
         .map_err(|e| e.to_string())?
         .value;
+    let graph_len = graph_bytes.len();
     drop(graph_bytes);
     let attrs_bytes = read_file(&attrs_path)?;
     let graph_attrs = decode_graph_attrs(&attrs_bytes).map_err(|e| e.to_string())?;
@@ -455,14 +456,17 @@ fn accident_snap(options: &Options) -> Result<(), String> {
     let topology_bytes = read_file(&topology_path)?;
     let topology_hash = sha256_hex(&topology_bytes);
     let topology = decode_topology(&topology_bytes).map_err(|e| e.to_string())?;
+    let topology_len = topology_bytes.len();
     drop(topology_bytes);
     let accident_attrs_bytes = read_file(&accident_attrs_path)?;
     let accident_attrs_hash = sha256_hex(&accident_attrs_bytes);
     let accident_attrs = decode_accident_attrs(&accident_attrs_bytes).map_err(|e| e.to_string())?;
+    let accident_attrs_len = accident_attrs_bytes.len();
     drop(accident_attrs_bytes);
     let accidents_bytes = read_file(&accidents_path)?;
     let accidents_hash = sha256_hex(&accidents_bytes);
     let columns = parse_accidents(&accidents_bytes).map_err(|e| e.to_string())?;
+    let accidents_len = accidents_bytes.len();
     drop(accidents_bytes);
     log(&format!(
         "  ノード{} 辺{} クラスタ{} 事故{} {}",
@@ -604,10 +608,10 @@ fn accident_snap(options: &Options) -> Result<(), String> {
         "memory": memory_summary(),
         "output": file_info(&output, bytes.len(), &output_hash),
         "inputs": {
-            "graph": file_info(&graph_path, 0, &graph_hash),
-            "topology": file_info(&topology_path, 0, &topology_hash),
-            "accident_attrs": file_info(&accident_attrs_path, 0, &accident_attrs_hash),
-            "accidents": file_info(&accidents_path, 0, &accidents_hash),
+            "graph": file_info(&graph_path, graph_len, &graph_hash),
+            "topology": file_info(&topology_path, topology_len, &topology_hash),
+            "accident_attrs": file_info(&accident_attrs_path, accident_attrs_len, &accident_attrs_hash),
+            "accidents": file_info(&accidents_path, accidents_len, &accidents_hash),
         },
         "params": result.assignment.params,
         "verify": {
