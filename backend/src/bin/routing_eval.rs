@@ -10,7 +10,8 @@
 //! | `admin-boundary` | 全国PBFから評価地域（東京23区・千葉市・さいたま市・横浜市）の行政界を取り出し、GeoJSONに書く（M5.1） |
 //! | `bench` | 探索の計測（時間・メモリ） |
 //! | `od-sample` | 出発地・目的地の組の抽出（M1.8。手段ごとの距離帯、シード固定。M5.2で地域指定） |
-//! | `y-metrics` | リスク指標の評価 |
+//! | `y-metrics` | 経路の将来事故（Y1・Y2・Y3）を数える（M5.4） |
+//! | `match-routes` | 現行方式の経路の折れ線を、自前のグラフの有向辺の列に写す（M5.4） |
 //! | `graph-stats` | グラフ一式（`graph.bin`・`restrictions.bin`・`topology.bin`・`odindex.bin`）を読み込んで、件数とRSSを表示する（M1の受け入れ条件） |
 //! | `fastest-batch` | ODの一覧に対して、手段ごとに吸着 → 最短時間経路を実行し、結果をJSON Linesで出す（M1.7・M1.8） |
 //! | `dump-time-model` | `graph.bin` の `TIMEMODL`（所要時間のモデル）をJSONで標準出力に書く（`--dir <DIR>`。M1.7の係数の探索用） |
@@ -81,6 +82,18 @@
 //! （既定 `mode`）、`--out <summary.json>`（省略時は標準出力）。グループごとに状態の内訳、`total_ms` の
 //! 分位点、候補数・選定候補の高リスク区間の数の分布、`safest` の有無、`route_too_long`・80km超で
 //! 外した候補・間引いた候補の割合、`safest` の事故件数が `fastest` より多いODの割合を出す。
+//!
+//! `y-metrics`：`--dir <DIR> --assignment <assignment.bin> --accidents <accidents.csv.gz>
+//! --routes <in.jsonl> --out <out.jsonl> --years 2024,2025`。任意：`--threads N`（既定4）。
+//! 入力の各候補に `y`（Y1・Y2・Y3・`length_m`）を足し、行の順を保って書く（形式書18.3節）。
+//!
+//! `match-routes`：`--dir <DIR> --in <current.jsonl> --out <matched.jsonl>`。任意：
+//! `--corridor-m M`（既定20）、`--threads N`（既定4）。現行方式の折れ線を自前のグラフの
+//! 有向辺の列に写し、`path`・`time_s`・`distance_m`・`class_lengths_m`・`match` を足す
+//! （形式書18.3節）。
+//!
+//! `fastest-batch` の `--dedges true` は、`y-metrics`・`match-routes` の確認用に共通の形式の
+//! `path` を出す（既定false。既存の出力は変えない）。
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -102,6 +115,12 @@ use accident_route_backend::data::routing_files::{
     decode_restrictions, decode_risk, decode_topology,
 };
 use accident_route_backend::domain::routing::accident::EdgeAccidentIndex;
+use accident_route_backend::domain::routing::eval::matching::{
+    class_lengths_m as matched_class_lengths_m, distance_m as matched_distance_m, match_route,
+};
+use accident_route_backend::domain::routing::eval::metrics::{
+    EvalPath, Y2Assignments, length_m as y_length_m, y1_count, y2_count, y3_weight,
+};
 use accident_route_backend::domain::routing::eval::region::{
     BoundaryWay, RegionBBox, RegionFeature, RegionGeometry, assemble_rings, feature_collection,
     polygons_from_rings,
@@ -141,7 +160,7 @@ use accident_route_backend::domain::snapshot::AccidentSnapshot;
 use rayon::prelude::*;
 use serde_json::{Value, json};
 
-const USAGE: &str = "使い方: routing_eval <legality|admin-boundary|bench|od-sample|y-metrics|graph-stats|fastest-batch|dump-time-model|route-batch|route-summary|engine-batch|engine-summary|load-release> [--名前 値]...";
+const USAGE: &str = "使い方: routing_eval <legality|admin-boundary|bench|od-sample|y-metrics|match-routes|graph-stats|fastest-batch|dump-time-model|route-batch|route-summary|engine-batch|engine-summary|load-release> [--名前 値]...";
 
 /// `--名前 値` の組。名前は先頭の `--` を除いて持つ。
 struct Options(BTreeMap<String, String>);
@@ -1574,6 +1593,7 @@ struct Runner<'a> {
     timeout: Duration,
     coords: bool,
     twins: bool,
+    dedges: bool,
 }
 
 fn mode_slot(mode: Mode) -> usize {
@@ -1707,6 +1727,10 @@ impl Runner<'_> {
             rec.insert("vertices".into(), json!(coords.len()));
             rec.insert("coords".into(), coords_json(&coords));
         }
+        if self.dedges {
+            // `y-metrics`・`match-routes` の確認用に、共通の形式の経路を出す（既定は出さない）。
+            rec.insert("path".into(), route_geometry_json(&path));
+        }
         if self.twins {
             let mut seen = std::collections::BTreeSet::new();
             let mut lines = Vec::new();
@@ -1752,6 +1776,7 @@ fn fastest_batch(options: &Options) -> Result<(), String> {
     let timeout_s: f64 = number_option(options, "timeout-s", Some(120.0))?;
     let coords = bool_option(options, "coords", true)?;
     let twins = bool_option(options, "twins", false)?;
+    let dedges = bool_option(options, "dedges", false)?;
     let time_model = options.0.get("time-model").map(Path::new);
     if threads == 0 {
         return Err("--threads は1以上です".to_owned());
@@ -1786,6 +1811,7 @@ fn fastest_batch(options: &Options) -> Result<(), String> {
         timeout: Duration::from_secs_f64(timeout_s),
         coords,
         twins,
+        dedges,
     };
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
@@ -3253,10 +3279,447 @@ fn load_release(options: &Options) -> Result<(), String> {
     Ok(())
 }
 
-/// リスク指標の評価。
+/// 年（`--years`）を読む。カンマ区切りの整数。
+fn parse_years(text: &str) -> Result<Vec<u16>, String> {
+    let mut years = Vec::new();
+    for part in text.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let year: u16 = part
+            .parse()
+            .map_err(|_| format!("--years の値が年ではありません: {part}"))?;
+        years.push(year);
+    }
+    if years.is_empty() {
+        return Err("--years が空です".to_owned());
+    }
+    Ok(years)
+}
+
+/// 共通の形式の `path` を読む。形が正しくなければ理由を返す。
+fn path_from_json(graph: &Graph, value: &Value) -> Result<RoutePath, String> {
+    let point = |name: &str| -> Result<SnapPoint, String> {
+        let v = value
+            .get(name)
+            .ok_or_else(|| format!("path.{name} がありません"))?;
+        let edge = v
+            .get("edge")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| format!("path.{name}.edge がありません"))?;
+        let offset_dm = v
+            .get("offset_dm")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| format!("path.{name}.offset_dm がありません"))?;
+        let edge = u32::try_from(edge).map_err(|_| format!("path.{name}.edge が範囲外です"))?;
+        let offset_dm =
+            u32::try_from(offset_dm).map_err(|_| format!("path.{name}.offset_dm が範囲外です"))?;
+        if edge as usize >= graph.edge_count() {
+            return Err(format!("path.{name}.edge {edge} が辺の数以上です"));
+        }
+        if offset_dm > graph.edge(edge).length_dm {
+            return Err(format!(
+                "path.{name}.offset_dm {offset_dm} が辺{edge}の長さを超えています"
+            ));
+        }
+        Ok(SnapPoint::on_edge(graph, edge, offset_dm))
+    };
+    let start = point("start")?;
+    let end = point("end")?;
+    let dedges: Vec<DirEdge> = value
+        .get("dedges")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "path.dedges がありません".to_owned())?
+        .iter()
+        .map(|v| {
+            v.as_u64()
+                .and_then(|d| u32::try_from(d).ok())
+                .map(DirEdge)
+                .ok_or_else(|| "path.dedges の要素が有向辺番号ではありません".to_owned())
+        })
+        .collect::<Result<_, _>>()?;
+    if dedges.is_empty() {
+        return Err("path.dedges が空です".to_owned());
+    }
+    if travelled_lengths_dm(graph, &start, &end, &dedges).is_none() {
+        return Err("path の形が正しくありません".to_owned());
+    }
+    Ok(RoutePath {
+        dedges,
+        start,
+        end,
+        time_ds: 0,
+        risk_fx: 0,
+    })
+}
+
+/// 1行分の経路の `y` を足す。`path` がない・null の候補は `y` を null にする。
+fn eval_route_record(
+    data: &Data,
+    accidents: &EdgeAccidentIndex,
+    snapshot: &AccidentSnapshot,
+    years: &[u16],
+    assigns: &Y2Assignments,
+    record: &mut Value,
+) -> Result<(), String> {
+    let id = record
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_owned();
+    let mode = record
+        .get("mode")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("{id}: mode がありません"))
+        .and_then(parse_mode)?;
+    let candidates = record
+        .get_mut("candidates")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| format!("{id}: candidates がありません"))?;
+    for candidate in candidates {
+        let object = candidate
+            .as_object_mut()
+            .ok_or_else(|| format!("{id}: 候補がJSONのオブジェクトではありません"))?;
+        let path_value = object.get("path").filter(|v| !v.is_null()).cloned();
+        let Some(path_value) = path_value else {
+            object.insert("y".into(), Value::Null);
+            continue;
+        };
+        let path = match path_from_json(&data.graph, &path_value) {
+            Ok(path) => path,
+            Err(_) => {
+                object.insert("y".into(), Value::Null);
+                continue;
+            }
+        };
+        let eval_path = EvalPath {
+            start: &path.start,
+            end: &path.end,
+            dedges: &path.dedges,
+        };
+        let y1 = y1_count(&data.graph, snapshot, years, mode, eval_path);
+        let y2 = y2_count(
+            &data.graph,
+            &data.topology,
+            snapshot,
+            years,
+            mode,
+            assigns,
+            eval_path,
+        );
+        let y3 = y3_weight(
+            &data.graph,
+            &data.topology,
+            accidents,
+            snapshot,
+            years,
+            mode,
+            eval_path,
+        );
+        let length = y_length_m(&data.graph, eval_path);
+        match (y1, y2, y3, length) {
+            (Some(y1), Some(y2), Some(y3), Some(length)) => {
+                object.insert(
+                    "y".into(),
+                    json!({"y1": y1, "y2": y2, "y3": y3, "length_m": length}),
+                );
+            }
+            _ => {
+                object.insert("y".into(), Value::Null);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 経路の将来事故（Y1・Y2・Y3）を数える。
 fn y_metrics(options: &Options) -> Result<(), String> {
-    let _ = options;
-    todo!("y-metrics")
+    let dir = dir_option(options)?;
+    let assignment_path = options
+        .0
+        .get("assignment")
+        .map(Path::new)
+        .ok_or("--assignment が必要です")?;
+    let accidents_path = options
+        .0
+        .get("accidents")
+        .map(Path::new)
+        .ok_or("--accidents が必要です")?;
+    let routes_path = options.0.get("routes").ok_or("--routes が必要です")?;
+    let out_path = options.0.get("out").ok_or("--out が必要です")?;
+    let years = parse_years(options.0.get("years").ok_or("--years が必要です")?)?;
+    let threads: usize = number_option(options, "threads", Some(4))?;
+    if threads == 0 {
+        return Err("--threads は1以上です".to_owned());
+    }
+
+    let started = Instant::now();
+    let report = |label: &str| {
+        let (rss, hwm) = memory_mb();
+        eprintln!(
+            "[{:>6.1}s] {label:<32} VmRSS={rss:.0}MB VmHWM={hwm:.0}MB",
+            started.elapsed().as_secs_f64()
+        );
+    };
+
+    let data = load_data(dir, None, false)?;
+    report("グラフ一式を読んだ");
+    let edge_count = data.graph.edge_count();
+    let cluster_count = data.topology.cluster_count();
+
+    let bytes = std::fs::read(assignment_path)
+        .map_err(|e| format!("{} を読めません: {e}", assignment_path.display()))?;
+    let assignment = decode_assignment(&bytes).map_err(|e| e.to_string())?.value;
+    assignment.validate(edge_count, cluster_count)?;
+    let accidents = EdgeAccidentIndex::build(&assignment, edge_count, cluster_count);
+    drop(assignment);
+    drop(bytes);
+    report("assignment.binを読み、索引を作った");
+    let gzip = std::fs::read(accidents_path)
+        .map_err(|e| format!("{} を読めません: {e}", accidents_path.display()))?;
+    let columns = parse_accidents(&gzip).map_err(|e| e.to_string())?;
+    let snapshot = AccidentSnapshot::new(columns);
+    drop(gzip);
+    report("accidents.csv.gzを読んだ");
+
+    let columns = snapshot.columns();
+    for &year in &years {
+        let mut counts = [0_usize; 3];
+        for i in 0..snapshot.len() {
+            if columns.source_year[i] != year {
+                continue;
+            }
+            for (slot, mode) in Mode::ALL.into_iter().enumerate() {
+                if columns.modes[i] & mode.mask() != 0 {
+                    counts[slot] += 1;
+                }
+            }
+        }
+        eprintln!(
+            "事故 {year}: walk={} bike={} car={}",
+            counts[0], counts[1], counts[2]
+        );
+    }
+
+    let assigns = Y2Assignments::build(
+        &data.graph,
+        &data.topology,
+        &data.odindex,
+        &snapshot,
+        &years,
+    );
+    report("Y2の割り当てを作った");
+    eprintln!(
+        "Y2: 評価年の事故 {}件のうち {}件（{:.1}%）を辺に割り当てました",
+        assigns.total,
+        assigns.assigned,
+        if assigns.total == 0 {
+            0.0
+        } else {
+            assigns.assigned as f64 / assigns.total as f64 * 100.0
+        }
+    );
+
+    let text = std::fs::read_to_string(routes_path)
+        .map_err(|e| format!("{routes_path} を読めません: {e}"))?;
+    let mut records: Vec<Value> = Vec::new();
+    for (i, line) in text.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let record: Value = serde_json::from_str(line)
+            .map_err(|e| format!("{routes_path} の {} 行目がJSONではありません: {e}", i + 1))?;
+        records.push(record);
+    }
+    report(&format!("経路を読んだ（{}件）", records.len()));
+
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let batch_started = Instant::now();
+    pool.install(|| {
+        records.par_iter_mut().try_for_each(|record| {
+            eval_route_record(&data, &accidents, &snapshot, &years, &assigns, record)
+        })
+    })?;
+    let batch_s = batch_started.elapsed().as_secs_f64();
+
+    let mut out = String::new();
+    for record in &records {
+        out.push_str(&record.to_string());
+        out.push('\n');
+    }
+    std::fs::write(out_path, out).map_err(|e| format!("{out_path} に書けません: {e}"))?;
+    eprintln!(
+        "[{:.1}s] {}件を {batch_s:.2}秒で処理し、{out_path} に書きました",
+        started.elapsed().as_secs_f64(),
+        records.len()
+    );
+    Ok(())
+}
+
+/// 1行分の現行方式の候補を、自前のグラフの経路に写す。
+fn match_route_record(
+    data: &Data,
+    mode: Mode,
+    corridor_m: f64,
+    record: &mut Value,
+) -> Result<(), String> {
+    let id = record
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("?")
+        .to_owned();
+    if record.get("status").and_then(Value::as_str) != Some("ok") {
+        if let Some(object) = record.as_object_mut() {
+            object.insert("candidates".into(), Value::Array(Vec::new()));
+        }
+        return Ok(());
+    }
+    let candidates = record
+        .get_mut("candidates")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(|| format!("{id}: candidates がありません"))?;
+    for candidate in candidates {
+        let object = candidate
+            .as_object_mut()
+            .ok_or_else(|| format!("{id}: 候補がJSONのオブジェクトではありません"))?;
+        let osrm_distance = object.get("distance_m").cloned().unwrap_or(Value::Null);
+        let mut coordinates = Vec::new();
+        if let Some(list) = object.get("coordinates").and_then(Value::as_array) {
+            for point in list {
+                let Some(pair) = point.as_array() else {
+                    continue;
+                };
+                let (Some(lon), Some(lat)) = (
+                    pair.first().and_then(Value::as_f64),
+                    pair.get(1).and_then(Value::as_f64),
+                ) else {
+                    continue;
+                };
+                if lon.is_finite() && lat.is_finite() {
+                    coordinates.push(Coord::from_latlon(LatLon::new(lat, lon)));
+                }
+            }
+        }
+        match match_route(
+            &data.graph,
+            &data.topology,
+            &data.odindex,
+            mode,
+            &coordinates,
+            corridor_m,
+        ) {
+            Ok(matched) => {
+                object.insert("path".into(), route_geometry_json(&matched.path));
+                object.insert("time_s".into(), json!(matched.path.time_ds as f64 / 10.0));
+                let distance = matched_distance_m(&data.graph, &matched.path);
+                object.insert("distance_m".into(), json!(distance));
+                let classes = matched_class_lengths_m(&data.graph, &matched.path)
+                    .map(|lengths| {
+                        Value::Object(
+                            lengths
+                                .into_iter()
+                                .map(|(class, m)| (class.to_string(), json!(m)))
+                                .collect(),
+                        )
+                    })
+                    .unwrap_or_else(|| Value::Object(Default::default()));
+                object.insert("class_lengths_m".into(), classes);
+                object.insert(
+                    "match".into(),
+                    json!({
+                        "osrm_distance_m": osrm_distance,
+                        "matched_distance_m": distance,
+                        "outside_m": matched.outside_m,
+                        "max_dev_m": matched.max_dev_m,
+                        "error": Value::Null,
+                    }),
+                );
+            }
+            Err(error) => {
+                object.insert("path".into(), Value::Null);
+                object.insert(
+                    "match".into(),
+                    json!({
+                        "osrm_distance_m": osrm_distance,
+                        "matched_distance_m": Value::Null,
+                        "outside_m": Value::Null,
+                        "max_dev_m": Value::Null,
+                        "error": error,
+                    }),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// 現行方式の経路の折れ線を、自前のグラフの有向辺の列に写す。
+fn match_routes(options: &Options) -> Result<(), String> {
+    let dir = dir_option(options)?;
+    let in_path = options.0.get("in").ok_or("--in が必要です")?;
+    let out_path = options.0.get("out").ok_or("--out が必要です")?;
+    let corridor_m: f64 = number_option(options, "corridor-m", Some(20.0))?;
+    let threads: usize = number_option(options, "threads", Some(4))?;
+    if threads == 0 {
+        return Err("--threads は1以上です".to_owned());
+    }
+    if !corridor_m.is_finite() || corridor_m <= 0.0 {
+        return Err(format!("--corridor-m は正の数です: {corridor_m}"));
+    }
+    let started = Instant::now();
+    let data = load_data(dir, None, false)?;
+    eprintln!(
+        "[{:.1}s] グラフ一式を読みました",
+        started.elapsed().as_secs_f64()
+    );
+    let text =
+        std::fs::read_to_string(in_path).map_err(|e| format!("{in_path} を読めません: {e}"))?;
+    let mut records: Vec<(String, Value)> = Vec::new();
+    for (i, line) in text.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let record: Value = serde_json::from_str(line)
+            .map_err(|e| format!("{in_path} の {} 行目がJSONではありません: {e}", i + 1))?;
+        let mode = record
+            .get("mode")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("{in_path} の {} 行目に mode がありません", i + 1))?;
+        records.push((mode.to_owned(), record));
+    }
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let batch_started = Instant::now();
+    let results: Result<Vec<Value>, String> = pool.install(|| {
+        records
+            .par_iter_mut()
+            .map(|(mode_text, record)| -> Result<Value, String> {
+                let mode = parse_mode(mode_text)?;
+                match_route_record(&data, mode, corridor_m, record)?;
+                Ok(record.clone())
+            })
+            .collect()
+    });
+    let records = results?;
+    let mut out = String::new();
+    for record in &records {
+        out.push_str(&record.to_string());
+        out.push('\n');
+    }
+    std::fs::write(out_path, out).map_err(|e| format!("{out_path} に書けません: {e}"))?;
+    eprintln!(
+        "[{:.1}s] {}件を {:.2}秒で処理し、{out_path} に書きました",
+        started.elapsed().as_secs_f64(),
+        records.len(),
+        batch_started.elapsed().as_secs_f64()
+    );
+    Ok(())
 }
 
 fn main() -> ExitCode {
@@ -3271,6 +3734,7 @@ fn main() -> ExitCode {
         Some("bench") => bench,
         Some("od-sample") => od_sample,
         Some("y-metrics") => y_metrics,
+        Some("match-routes") => match_routes,
         Some("graph-stats") => graph_stats,
         Some("fastest-batch") => fastest_batch,
         Some("dump-time-model") => dump_time_model,
