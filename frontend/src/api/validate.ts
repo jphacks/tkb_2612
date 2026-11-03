@@ -209,12 +209,11 @@ export function validateRouteResponse(
       )
         invalid();
     });
+    // weighted_risk is not checked here: the schema 3 model value stays positive
+    // on routes without observed accidents (behavior.md 7).
     if (
       !route.accident_count &&
-      (route.weighted_risk ||
-        route.high_risk_total ||
-        route.deaths ||
-        route.injuries)
+      (route.high_risk_total || route.deaths || route.injuries)
     )
       invalid();
   }
