@@ -21,7 +21,7 @@
 //! [`STRAIGHT_FACTOR`] を掛けた値を使う。安全率は、辺の長さの丸め（0.1m）と局所平面近似の誤差があっても、
 //! 有向辺ごとに無矛盾（`h(u) ≤ w(u,v) + h(v)`）になる余裕である。`Landmarks` に距離表がある手段では、
 //! [`Landmarks::lower_bound_ds`](super::alt::Landmarks::lower_bound_ds) による下界との大きい方を使う
-//! （差し替え点は [`Potential::landmark_bound`]）。
+//! （差し替え点は `Potential::landmark_bound`）。
 //!
 //! # 作業領域
 //!
@@ -39,9 +39,10 @@ use crate::domain::routing::graph::time::edge_time_ds;
 use crate::domain::routing::graph::{Coord, DirEdge, NodeId};
 use crate::domain::routing::snap::{SnapPoint, point_on_edge};
 
+use super::Path;
+use super::SearchContext;
 use super::endpoints::{Endpoints, Placement, path_time_ds};
 use super::turn_dijkstra::{IdMap, TimeOnly, TurnSearch, TurnWork, turn_dijkstra};
-use super::{Path, SearchContext};
 
 /// 直線距離の下界に掛ける安全率。
 pub const STRAIGHT_FACTOR: f64 = 0.8;
@@ -101,6 +102,9 @@ pub struct FastestWork {
     forward: NodeSearch,
     backward: NodeSearch,
     states: TurnWork<u64>,
+    /// `m` の初期値（デシ秒）。`None` なら既定の `max(600, T_lb / 10)`。結果は変わらず、倍々に増やす
+    /// 回数だけが変わる（試験で小さい値を指定して、部分グラフの境界を多く通す）。
+    initial_slack_ds: Option<u64>,
 }
 
 impl FastestWork {
@@ -108,7 +112,13 @@ impl FastestWork {
         Self::default()
     }
 
-    /// 中身を捨てる（容量は残す）。`fastest_path_with` は呼び出しの最初に呼ぶ。
+    /// `m` の初期値（デシ秒）を指定する。`None` で既定の `max(600, T_lb / 10)` に戻す。
+    /// 結果の経路は変わらず、`m` を2倍にする回数だけが変わる。
+    pub fn set_initial_slack_ds(&mut self, slack_ds: Option<u64>) {
+        self.initial_slack_ds = slack_ds.map(|m| m.max(1));
+    }
+
+    /// 中身を捨てる（容量と設定は残す）。`fastest_path_with` は呼び出しの最初に呼ぶ。
     pub fn clear(&mut self) {
         self.forward.clear();
         self.backward.clear();
@@ -347,6 +357,150 @@ pub fn fastest_path_with(
     }))
 }
 
+/// 手順2.1：ノード単位の前向き・後ろ向きの2本のA*。出会いの最良値（`T_lb`）と、`df`・`db` のラベルを持つ。
+struct Bounds<'c> {
+    ctx: &'c SearchContext<'c>,
+    forward: &'c mut NodeSearch,
+    backward: &'c mut NodeSearch,
+    /// 前向きの下界（到着側へ）と後ろ向きの下界（出発側へ）。
+    pot_f: Potential<'c>,
+    pot_b: Potential<'c>,
+    /// 前向き・後ろ向きのラベルの和の最小（出会いの最良値）。
+    meet: u64,
+    /// 同じ辺の途中なら直接行く時間（なければ最大値）。
+    direct_ds: u64,
+    ticker: Ticker,
+}
+
+impl<'c> Bounds<'c> {
+    /// 出発側・到着側のラベルの種をまく。出発がノード上ならそのノード（時間0）、辺の途中なら出発の
+    /// 部分有向辺の到着ノード（その時間）。到着側も同様。
+    fn new(
+        ctx: &'c SearchContext<'c>,
+        ep: &Endpoints,
+        forward: &'c mut NodeSearch,
+        backward: &'c mut NodeSearch,
+    ) -> Self {
+        let to_end: Vec<(NodeId, u64)> = match ep.end_node() {
+            Some(n) => vec![(n, 0)],
+            None => ep
+                .arrivals
+                .iter()
+                .map(|a| (a.from, u64::from(a.time_ds)))
+                .collect(),
+        };
+        let from_start: Vec<(NodeId, u64)> = match ep.start_node() {
+            Some(n) => vec![(n, 0)],
+            None => ep
+                .departures
+                .iter()
+                .map(|a| (a.to, u64::from(a.time_ds)))
+                .collect(),
+        };
+        let end_pos = anchor_position(ctx, &ep.end, ep.end_placement);
+        let start_pos = anchor_position(ctx, &ep.start, ep.start_placement);
+        let pot_f = Potential::new(ctx, end_pos, to_end.clone(), true);
+        let pot_b = Potential::new(ctx, start_pos, from_start.clone(), false);
+        for &(n, ds) in &from_start {
+            forward.relax(n, ds, pot_f.at(n));
+        }
+        for &(n, ds) in &to_end {
+            backward.relax(n, ds, pot_b.at(n));
+        }
+        let mut meet = u64::MAX;
+        for (v, &g) in &forward.dist {
+            if let Some(&og) = backward.dist.get(v) {
+                meet = meet.min(g + og);
+            }
+        }
+        Bounds {
+            ctx,
+            forward,
+            backward,
+            pot_f,
+            pot_b,
+            meet,
+            direct_ds: ep.direct.map_or(u64::MAX, |a| u64::from(a.time_ds)),
+            ticker: Ticker(0),
+        }
+    }
+
+    /// 辺の時間だけの最短時間 `T_lb`（同じ辺の直接経路を含む）。到達できなければ `u64::MAX`。
+    ///
+    /// 前向きと後ろ向きを、先頭のキーが小さい方から交互に進める。どちらかの先頭のキーが出会いの最良値
+    /// （と直接経路の時間）以上になったら終わる。下界が許容的なので、どちらか一方で言える。
+    fn lower_bound(&mut self, cancel: &CancelToken) -> Result<u64, Interrupt> {
+        loop {
+            let cap = self.meet.min(self.direct_ds);
+            let (Some(kf), Some(kb)) = (self.forward.peek_key(), self.backward.peek_key()) else {
+                break;
+            };
+            if kf >= cap || kb >= cap {
+                break;
+            }
+            self.ticker.tick(cancel)?;
+            if kf <= kb {
+                let (g, v) = self.forward.pop().expect("peek_keyで確かめた");
+                expand(
+                    self.ctx,
+                    self.forward,
+                    self.backward,
+                    &mut self.meet,
+                    &self.pot_f,
+                    true,
+                    v,
+                    g,
+                );
+            } else {
+                let (g, v) = self.backward.pop().expect("peek_keyで確かめた");
+                expand(
+                    self.ctx,
+                    self.backward,
+                    self.forward,
+                    &mut self.meet,
+                    &self.pot_b,
+                    false,
+                    v,
+                    g,
+                );
+            }
+        }
+        Ok(self.meet.min(self.direct_ds))
+    }
+
+    /// 両方のA*を、先頭のキーが `bound` を超えるまで進める。キーが `bound` 以下のノードは、
+    /// ラベルが正確な `df`・`db` になる。
+    fn extend_to(&mut self, bound: u64, cancel: &CancelToken) -> Result<(), Interrupt> {
+        extend(
+            self.ctx,
+            self.forward,
+            self.backward,
+            &mut self.meet,
+            &self.pot_f,
+            true,
+            bound,
+            &mut self.ticker,
+            cancel,
+        )?;
+        extend(
+            self.ctx,
+            self.backward,
+            self.forward,
+            &mut self.meet,
+            &self.pot_b,
+            false,
+            bound,
+            &mut self.ticker,
+            cancel,
+        )
+    }
+
+    /// 両方のキューが空か（到達できるノードのラベルがすべて確定した）。
+    fn exhausted(&mut self) -> bool {
+        self.forward.peek_key().is_none() && self.backward.peek_key().is_none()
+    }
+}
+
 /// 手順2.1・2.2。見つかった（時間, 有向辺の並び）。
 fn search(
     ctx: &SearchContext<'_>,
@@ -358,116 +512,53 @@ fn search(
         forward,
         backward,
         states,
+        initial_slack_ds,
     } = work;
     let graph = ctx.graph;
 
-    // 後ろ向きは出発側へ、前向きは到着側へ向かう。
-    let end_pos = anchor_position(ctx, &ep.end, ep.end_placement);
-    let start_pos = anchor_position(ctx, &ep.start, ep.start_placement);
-    let to_end: Vec<(NodeId, u64)> = match ep.end_node() {
-        Some(n) => vec![(n, 0)],
-        None => ep
-            .arrivals
-            .iter()
-            .map(|a| (a.from, u64::from(a.time_ds)))
-            .collect(),
-    };
-    let from_start: Vec<(NodeId, u64)> = match ep.start_node() {
-        Some(n) => vec![(n, 0)],
-        None => ep
-            .departures
-            .iter()
-            .map(|a| (a.to, u64::from(a.time_ds)))
-            .collect(),
-    };
-    let pot_f = Potential::new(ctx, end_pos, to_end.clone(), true);
-    let pot_b = Potential::new(ctx, start_pos, from_start.clone(), false);
-
-    // --- 手順2.1：出発側・到着側のラベルの種をまく ---
-    for &(n, ds) in &from_start {
-        forward.relax(n, ds, pot_f.at(n));
-    }
-    for &(n, ds) in &to_end {
-        backward.relax(n, ds, pot_b.at(n));
-    }
-    let mut meet = u64::MAX;
-    for (v, &g) in &forward.dist {
-        if let Some(&og) = backward.dist.get(v) {
-            meet = meet.min(g + og);
-        }
-    }
-    let direct_ds = ep.direct.map_or(u64::MAX, |a| u64::from(a.time_ds));
-    let mut ticker = Ticker(0);
-
-    loop {
-        let cap = meet.min(direct_ds);
-        let (Some(kf), Some(kb)) = (forward.peek_key(), backward.peek_key()) else {
-            break;
-        };
-        if kf >= cap || kb >= cap {
-            break;
-        }
-        ticker.tick(cancel)?;
-        if kf <= kb {
-            let (g, v) = forward.pop().expect("peek_keyで確かめた");
-            expand(ctx, forward, backward, &mut meet, &pot_f, true, v, g);
-        } else {
-            let (g, v) = backward.pop().expect("peek_keyで確かめた");
-            expand(ctx, backward, forward, &mut meet, &pot_b, false, v, g);
-        }
-    }
-    let t_lb = meet.min(direct_ds);
+    // --- 手順2.1：辺の時間だけの最短時間 T_lb ---
+    let mut bounds = Bounds::new(ctx, ep, forward, backward);
+    let t_lb = bounds.lower_bound(cancel)?;
     if t_lb == u64::MAX {
         return Ok(None);
     }
 
     // --- 手順2.2：df + db ≤ T_lb + m のノードだけで状態つきの探索 ---
     let limit = ctx.params.ellipse_node_limit as usize;
-    let mut slack = MIN_SLACK_DS.max(t_lb / 10);
+    let mut slack = initial_slack_ds.unwrap_or_else(|| MIN_SLACK_DS.max(t_lb / 10));
     loop {
         let bound = t_lb.saturating_add(slack);
-        extend(
-            ctx,
-            forward,
-            backward,
-            &mut meet,
-            &pot_f,
-            true,
-            bound,
-            &mut ticker,
-            cancel,
-        )?;
-        extend(
-            ctx,
-            backward,
-            forward,
-            &mut meet,
-            &pot_b,
-            false,
-            bound,
-            &mut ticker,
-            cancel,
-        )?;
-        let exhausted = forward.peek_key().is_none() && backward.peek_key().is_none();
+        bounds.extend_to(bound, cancel)?;
+        let exhausted = bounds.exhausted();
         let r = (!exhausted).then_some(bound);
 
         let in_part = |a: u64, b: u64| r.is_none_or(|r| a.saturating_add(b) <= r);
-        if forward.dist.len().min(backward.dist.len()) > limit {
-            let (small, big) = if forward.dist.len() <= backward.dist.len() {
-                (&forward.dist, &backward.dist)
+        let (fwd_dist, bwd_dist) = (&bounds.forward.dist, &bounds.backward.dist);
+        if fwd_dist.len().min(bwd_dist.len()) > limit {
+            let (small, big) = if fwd_dist.len() <= bwd_dist.len() {
+                (fwd_dist, bwd_dist)
             } else {
-                (&backward.dist, &forward.dist)
+                (bwd_dist, fwd_dist)
             };
             let nodes = small
                 .iter()
                 .filter(|&(v, &a)| big.get(v).is_some_and(|&b| in_part(a, b)))
                 .count();
             if nodes > limit {
-                return full_graph(ctx, ep, &pot_f, cancel, forward, backward, states);
+                let pot_f = bounds.pot_f;
+                return full_graph(
+                    ctx,
+                    ep,
+                    &pot_f,
+                    cancel,
+                    bounds.forward,
+                    bounds.backward,
+                    states,
+                );
             }
         }
 
-        let member = |v: NodeId| match (forward.dist.get(&v), backward.dist.get(&v)) {
+        let member = |v: NodeId| match (fwd_dist.get(&v), bwd_dist.get(&v)) {
             (Some(&a), Some(&b)) => in_part(a, b),
             _ => false,
         };
@@ -521,4 +612,171 @@ fn full_graph(
         cancel,
     )?;
     Ok(found.map(|p| (p.cost, p.dedges)))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::domain::routing::graph::Graph;
+    use crate::domain::routing::graph::restrictions::{Restrictions, TurnAutomaton};
+    use crate::domain::routing::graph::synthetic::{RandomGraphConfig, Rng, random_graph};
+    use crate::domain::routing::search::SearchParams;
+    use crate::domain::routing::search::alt::Landmarks;
+    use crate::domain::routing::topology::Topology;
+
+    /// 辺の時間だけのノード単位の最短時間（複数の出発点、キューは素朴なDijkstra）。
+    fn exact(
+        graph: &Graph,
+        mode: Mode,
+        seeds: &[(NodeId, u64)],
+        forward: bool,
+    ) -> HashMap<NodeId, u64> {
+        let mut dist: HashMap<NodeId, u64> = HashMap::new();
+        let mut heap = BinaryHeap::new();
+        for &(n, g) in seeds {
+            if dist.get(&n).is_none_or(|&old| g < old) {
+                dist.insert(n, g);
+                heap.push(Reverse((g, n)));
+            }
+        }
+        while let Some(Reverse((g, v))) = heap.pop() {
+            if dist[&v] != g {
+                continue;
+            }
+            for &d in graph.out_dedges(v) {
+                let arc = if forward { d } else { d.reversed() };
+                let Some(w) = edge_time_ds(graph, arc, mode) else {
+                    continue;
+                };
+                let u = graph.dedge_to(d);
+                let next = g + u64::from(w);
+                if dist.get(&u).is_none_or(|&old| next < old) {
+                    dist.insert(u, next);
+                    heap.push(Reverse((next, u)));
+                }
+            }
+        }
+        dist
+    }
+
+    fn empty_topology() -> Topology {
+        Topology {
+            params: serde_json::Value::Null,
+            snap_car: vec![],
+            snap_bike: vec![],
+            snap_walk: vec![],
+            node_cluster: vec![],
+            clusters: vec![],
+            cluster_nodes: vec![],
+            twins: vec![],
+            sidewalk_parents: vec![],
+        }
+    }
+
+    /// 手順2.1の不変条件：`T_lb` は辺の時間だけの最短時間と等しく、`df(v) + db(v) ≤ bound` のノードは、
+    /// `bound` まで進めたあとのラベルが正確な `df`・`db` と等しい（ラベルは常に正確な値以上）。
+    #[test]
+    fn labels_inside_the_bound_are_exact() {
+        let mut checked_nodes = 0_usize;
+        for mode in Mode::ALL {
+            for seed in 0..80_u64 {
+                let nodes = 30 + (seed as usize * 23) % 250;
+                let (graph, _) =
+                    random_graph(seed + 40_000, &RandomGraphConfig::rich(nodes)).build_all();
+                let automaton = TurnAutomaton::build(&Restrictions::empty(), mode);
+                let topology = empty_topology();
+                let landmarks = Landmarks::empty();
+                let ctx = SearchContext {
+                    graph: &graph,
+                    topology: &topology,
+                    automaton: &automaton,
+                    landmarks: &landmarks,
+                    mode,
+                    params: SearchParams::DEFAULT,
+                };
+                let mut rng = Rng::new(seed * 7 + 3);
+                let (s, t) = (
+                    SnapPoint::on_edge(
+                        &graph,
+                        rng.below(graph.edge_count()) as u32,
+                        1 + rng.below(1000) as u32,
+                    ),
+                    SnapPoint::on_edge(
+                        &graph,
+                        rng.below(graph.edge_count()) as u32,
+                        1 + rng.below(1000) as u32,
+                    ),
+                );
+                let Some(ep) = Endpoints::new(&graph, mode, &s, &t) else {
+                    continue;
+                };
+                let seeds_f: Vec<(NodeId, u64)> = match ep.start_node() {
+                    Some(n) => vec![(n, 0)],
+                    None => ep
+                        .departures
+                        .iter()
+                        .map(|a| (a.to, u64::from(a.time_ds)))
+                        .collect(),
+                };
+                let seeds_b: Vec<(NodeId, u64)> = match ep.end_node() {
+                    Some(n) => vec![(n, 0)],
+                    None => ep
+                        .arrivals
+                        .iter()
+                        .map(|a| (a.from, u64::from(a.time_ds)))
+                        .collect(),
+                };
+                let df = exact(&graph, mode, &seeds_f, true);
+                let db = exact(&graph, mode, &seeds_b, false);
+                let node_best = df
+                    .iter()
+                    .filter_map(|(v, &a)| db.get(v).map(|&b| a + b))
+                    .min()
+                    .unwrap_or(u64::MAX);
+                let direct = ep.direct.map_or(u64::MAX, |a| u64::from(a.time_ds));
+
+                let (mut forward, mut backward) = (NodeSearch::default(), NodeSearch::default());
+                let mut bounds = Bounds::new(&ctx, &ep, &mut forward, &mut backward);
+                let cancel = CancelToken::unbounded();
+                let t_lb = bounds.lower_bound(&cancel).unwrap();
+                assert_eq!(t_lb, node_best.min(direct), "{mode:?} seed {seed}");
+                if t_lb == u64::MAX {
+                    continue;
+                }
+                for slack in [0_u64, 1, 5, 40, 300, 1500, 9000, 100_000] {
+                    let bound = t_lb + slack;
+                    bounds.extend_to(bound, &cancel).unwrap();
+                    for (v, &a) in &df {
+                        if let Some(&b) = db.get(v)
+                            && a + b <= bound
+                        {
+                            assert_eq!(
+                                bounds.forward.dist.get(v),
+                                Some(&a),
+                                "{mode:?} seed {seed} slack {slack} df({v})"
+                            );
+                            assert_eq!(
+                                bounds.backward.dist.get(v),
+                                Some(&b),
+                                "{mode:?} seed {seed} slack {slack} db({v})"
+                            );
+                            checked_nodes += 1;
+                        }
+                    }
+                    for (v, &g) in &bounds.forward.dist {
+                        assert!(
+                            g >= df[v],
+                            "前向きのラベルが正確な値を下回った: {mode:?} seed {seed} node {v}"
+                        );
+                    }
+                    for (v, &g) in &bounds.backward.dist {
+                        assert!(g >= db[v], "後ろ向きのラベルが正確な値を下回った");
+                    }
+                }
+            }
+        }
+        assert!(checked_nodes > 5000, "{checked_nodes}");
+    }
 }
