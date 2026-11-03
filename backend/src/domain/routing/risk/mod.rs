@@ -2,20 +2,19 @@
 //!
 //! 事故の観測件数 `n_e` はファイルに持たない。リクエストごとに、`assignment.bin` の索引と
 //! 事故の列から、探索で触れた辺だけ計算する。
-// 骨組み：実装時に外す
-#![allow(unused_variables)]
+use std::collections::{HashMap, HashSet};
 
-use std::collections::HashMap;
-
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
-use crate::contract::{ConditionFilter, DayType, Mode, Period};
+use crate::contract::{ConditionFilter, DayType, Mode, Period, Weather};
 use crate::domain::AccidentSnapshot;
 use crate::domain::routing::accident::EdgeAccidentIndex;
 use crate::domain::routing::graph::time::PerMode;
 use crate::domain::routing::graph::{EdgeId, Graph};
 use crate::domain::routing::topology::{ClusterId, Topology};
+
+pub mod arc_cost;
 
 /// `EDGEK` の値：リスクを持たない辺（リスク0）。
 pub const EDGE_K_NO_RISK: u8 = 0xFF;
@@ -56,7 +55,10 @@ pub struct WeatherMultiplier {
 }
 
 /// `risk.bin` の `PARAMS`（形式書14.4節）。
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+///
+/// `beta_cluster` は古いJSONにないことがあるので、`beta` と同じ値で補う
+/// （`#[serde(default)]` で0にしない）。
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct RiskParams {
     /// 学習に使ったsource_yearの昇順。
     pub train_source_years: Vec<u16>,
@@ -68,6 +70,8 @@ pub struct RiskParams {
     pub c_groups: Vec<u8>,
     /// 天候の縮小の母数β（手段ごと）。
     pub beta: PerMode<f64>,
+    /// 交差点の天候の縮小の母数β_cluster（手段ごと）。
+    pub beta_cluster: PerMode<f64>,
     pub weather_multiplier: WeatherMultiplier,
     /// urbanの推定の格子の大きさ・割合・件数のしきい値（14.2節）。
     #[serde(default)]
@@ -78,6 +82,47 @@ pub struct RiskParams {
     /// 推定の監査値。
     #[serde(default)]
     pub fit: Value,
+}
+
+/// `RiskParams` のJSONを読むための補助。`beta_cluster` の欠落を `beta` で補う。
+#[derive(Deserialize)]
+struct RiskParamsJson {
+    train_source_years: Vec<u16>,
+    years: u32,
+    c: f64,
+    c_groups: Vec<u8>,
+    beta: PerMode<f64>,
+    #[serde(default)]
+    beta_cluster: Option<PerMode<f64>>,
+    weather_multiplier: WeatherMultiplier,
+    #[serde(default)]
+    urban: Value,
+    #[serde(default)]
+    pooling: Value,
+    #[serde(default)]
+    fit: Value,
+}
+
+impl<'de> Deserialize<'de> for RiskParams {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = RiskParamsJson::deserialize(deserializer)?;
+        let beta_cluster = raw.beta_cluster.unwrap_or_else(|| raw.beta.clone());
+        Ok(RiskParams {
+            train_source_years: raw.train_source_years,
+            years: raw.years,
+            c: raw.c,
+            c_groups: raw.c_groups,
+            beta: raw.beta,
+            beta_cluster,
+            weather_multiplier: raw.weather_multiplier,
+            urban: raw.urban,
+            pooling: raw.pooling,
+            fit: raw.fit,
+        })
+    }
 }
 
 /// `risk.bin` の中身。
@@ -173,10 +218,25 @@ pub const fn road_group(class: u8) -> Option<u8> {
     }
 }
 
+/// `Cset` のセルについて、係数表の行を足したもの。
+#[derive(Debug, Clone, Copy, Default)]
+struct CoefSums {
+    /// `R = Σ_C r[C]`。
+    r: f64,
+    /// `S = Σ_C s[C]·r[C] / Σ_C r[C]`（`R=0` なら0）。
+    s: f64,
+    /// `ρ = Σ_C r[C]·rho[C][w-1] / Σ_C r[C]`（`R=0` なら0）。
+    rho: f64,
+}
+
+/// 位置 `pos_dm` が区間 `[from_dm, to_dm)` に入るか。`to_dm` が辺の長さなら、終端
+/// `pos_dm == length_dm` も含める（辺を分けたときに境界の事故を二重に数えないため）。
+fn position_in_range(pos_dm: u32, from_dm: u32, to_dm: u32, length_dm: u32) -> bool {
+    (from_dm..to_dm).contains(&pos_dm) || (to_dm == length_dm && pos_dm == length_dm)
+}
+
 /// 1リクエスト分のリスクの計算器（形式書14.5節）。探索で触れた辺・クラスタだけを計算して覚える。
 /// 手段 `mode`、条件 `filter` の `Cset`（指定がallなら該当する全セル）と天候 `w` で固定する。
-// 骨組み：フィールドは実装時に使う
-#[allow(dead_code)]
 pub struct RiskView<'a> {
     model: &'a RiskModel,
     graph: &'a Graph,
@@ -184,7 +244,14 @@ pub struct RiskView<'a> {
     accidents: &'a EdgeAccidentIndex,
     snapshot: &'a AccidentSnapshot,
     mode: Mode,
-    filter: ConditionFilter,
+    /// `Cset` のセル番号（昇順）。
+    cells: Vec<usize>,
+    /// セルが `Cset` に入るか（添字はセル番号）。
+    cell_included: [bool; CELL_COUNT],
+    /// 学習に使ったsource_year。
+    train_years: HashSet<u16>,
+    /// 雨・霧・雪のときの（天候コード、倍率M）。それ以外は `None`。
+    weather_term: Option<(u8, f64)>,
     edge_cache: HashMap<EdgeId, f64>,
     cluster_cache: HashMap<ClusterId, f64>,
 }
@@ -199,6 +266,33 @@ impl<'a> RiskView<'a> {
         mode: Mode,
         filter: ConditionFilter,
     ) -> Self {
+        let periods: Vec<Period> = match filter.period {
+            Some(period) => vec![period],
+            None => Period::ALL.to_vec(),
+        };
+        let day_types: Vec<DayType> = match filter.day_type {
+            Some(day_type) => vec![day_type],
+            None => DayType::ALL.to_vec(),
+        };
+        let mut cells = Vec::with_capacity(periods.len() * day_types.len());
+        let mut cell_included = [false; CELL_COUNT];
+        for &period in &periods {
+            for &day_type in &day_types {
+                let cell = cell_index(period, day_type);
+                cell_included[cell] = true;
+                cells.push(cell);
+            }
+        }
+        let weather_term = match filter.weather {
+            Some(Weather::Rain) => {
+                Some((Weather::Rain.code(), model.params.weather_multiplier.rain))
+            }
+            Some(Weather::Fog) => Some((Weather::Fog.code(), model.params.weather_multiplier.fog)),
+            Some(Weather::Snow) => {
+                Some((Weather::Snow.code(), model.params.weather_multiplier.snow))
+            }
+            Some(Weather::Clear | Weather::Cloudy) | None => None,
+        };
         Self {
             model,
             graph,
@@ -206,28 +300,273 @@ impl<'a> RiskView<'a> {
             accidents,
             snapshot,
             mode,
-            filter,
+            cells,
+            cell_included,
+            train_years: model.params.train_source_years.iter().copied().collect(),
+            weather_term,
             edge_cache: HashMap::new(),
             cluster_cache: HashMap::new(),
         }
     }
 
+    /// この `RiskView` が参照しているグラフ。
+    pub fn graph(&self) -> &'a Graph {
+        self.graph
+    }
+
+    /// この `RiskView` が参照している位相情報。
+    pub fn topology(&self) -> &'a Topology {
+        self.topology
+    }
+
     /// 辺eを全長通るときのリスク `risk_e`（形式書14.5節）。歩道（`EDGE_K_SIDEWALK`）は親の車道の
     /// リスク密度に歩道の長さを掛ける。`EDGE_K_NO_RISK` は0。
     pub fn edge_risk(&mut self, e: EdgeId) -> f64 {
-        todo!("形式書14.5節：辺のリスク")
+        if let Some(&risk) = self.edge_cache.get(&e) {
+            return risk;
+        }
+        let risk = self.compute_edge_risk(e);
+        self.edge_cache.insert(e, risk);
+        risk
     }
 
     /// 辺eの始点側から `from_dm`〜`to_dm` の部分だけを通るときのリスク（出発・到着の辺、14.5節）。
     /// `(1 − W)·μ_e·(通った長さ/ℓ) + W·(通った部分に位置がある事故の重みの和)` に深刻度と天候の項を掛ける。
     /// 辺を2つに分けても合計が変わらない。
     pub fn partial_edge_risk(&mut self, e: EdgeId, from_dm: u32, to_dm: u32) -> f64 {
-        todo!("形式書14.5節：辺の一部のリスク")
+        let length = self.graph.edge(e).length_dm;
+        let from_dm = from_dm.min(length);
+        let to_dm = to_dm.min(length);
+        if from_dm >= to_dm {
+            return 0.0;
+        }
+        let k = self.model.edge_k[e as usize];
+        match k {
+            EDGE_K_NO_RISK => 0.0,
+            EDGE_K_SIDEWALK => self.sidewalk_partial_risk(e, from_dm, to_dm),
+            _ => {
+                let (n_e, n_weather) = self.edge_weights(e, from_dm, to_dm);
+                let sums = self.coef_sums(&self.model.k_table, k);
+                let a = self.coefficient_a(&self.model.k_table, k);
+                let beta = *self.model.params.beta.get(self.mode);
+                let travelled_m = f64::from(to_dm - from_dm) / 10.0;
+                let risk = self.risk_value(sums, travelled_m, n_e, n_weather, a, beta);
+                self.c_factor(k) * risk
+            }
+        }
     }
 
     /// 交差点クラスタcの `risk_v`（形式書14.5節）。「外から入る有向辺」を通るときに1回だけ加える。
     pub fn cluster_risk(&mut self, c: ClusterId) -> f64 {
-        todo!("形式書14.5節：交差点のリスク")
+        if let Some(&risk) = self.cluster_cache.get(&c) {
+            return risk;
+        }
+        let risk = self.compute_cluster_risk(c);
+        self.cluster_cache.insert(c, risk);
+        risk
+    }
+
+    /// 事故がこのリクエストの条件（手段・セル・source_year）に合うか。
+    fn assignment_matches(&self, accident: usize) -> bool {
+        let columns = self.snapshot.columns();
+        if accident >= columns.len() {
+            return false;
+        }
+        if columns.modes[accident] & self.mode.mask() == 0 {
+            return false;
+        }
+        let cell =
+            usize::from(columns.period[accident]) * 2 + usize::from(columns.day_type[accident]);
+        if !self.cell_included.get(cell).copied().unwrap_or(false) {
+            return false;
+        }
+        self.train_years.contains(&columns.source_year[accident])
+    }
+
+    /// 事故の天候が、天候の項の対象（雨・霧・雪）と一致するか。
+    fn weather_matches(&self, accident: usize) -> bool {
+        self.weather_term
+            .is_some_and(|(weather, _)| self.snapshot.columns().weather[accident] == weather)
+    }
+
+    /// 辺eの `[from_dm, to_dm)` にある割り当ての重みの和（`n_e` と、天候が一致する `n^w_e`）。
+    fn edge_weights(&self, e: EdgeId, from_dm: u32, to_dm: u32) -> (f64, f64) {
+        let length = self.graph.edge(e).length_dm;
+        let mut n_e = 0.0;
+        let mut n_weather = 0.0;
+        for entry in self.accidents.edge_entries(e) {
+            let accident = entry.accident as usize;
+            if !self.assignment_matches(accident) {
+                continue;
+            }
+            if !position_in_range(entry.pos_dm, from_dm, to_dm, length) {
+                continue;
+            }
+            let weight = f64::from(entry.weight);
+            n_e += weight;
+            if self.weather_matches(accident) {
+                n_weather += weight;
+            }
+        }
+        (n_e, n_weather)
+    }
+
+    /// クラスタcへの割り当ての重みの和（`n_v` と、天候が一致する `n^w_v`）。
+    fn cluster_weights(&self, c: ClusterId) -> (f64, f64) {
+        let mut n_e = 0.0;
+        let mut n_weather = 0.0;
+        for entry in self.accidents.cluster_entries(c) {
+            let accident = entry.accident as usize;
+            if !self.assignment_matches(accident) {
+                continue;
+            }
+            let weight = f64::from(entry.weight);
+            n_e += weight;
+            if self.weather_matches(accident) {
+                n_weather += weight;
+            }
+        }
+        (n_e, n_weather)
+    }
+
+    /// `Cset` のセルについて係数表の行を足す。
+    fn coef_sums(&self, table: &[CoefRecord], kind: u8) -> CoefSums {
+        let mut r = 0.0;
+        let mut s_r = 0.0;
+        let mut rho_r = 0.0;
+        for &cell in &self.cells {
+            let coef = &table[table_index(self.mode, kind, cell)];
+            r += coef.r;
+            s_r += coef.s * coef.r;
+            if let Some((weather, _)) = self.weather_term {
+                rho_r += coef.r * f64::from(coef.rho[usize::from(weather) - 1]);
+            }
+        }
+        CoefSums {
+            r,
+            s: if r == 0.0 { 0.0 } else { s_r / r },
+            rho: if r == 0.0 { 0.0 } else { rho_r / r },
+        }
+    }
+
+    /// 係数表の `a`（同じ (m,種別) の10セルで同じ値）。
+    fn coefficient_a(&self, table: &[CoefRecord], kind: u8) -> f64 {
+        let cell = self.cells.first().copied().unwrap_or(0);
+        table[table_index(self.mode, kind, cell)].a
+    }
+
+    /// 縮小と天候の項を込めた `S·Y`。辺は `travelled_m`、交差点は `travelled_m = 1` を渡す。
+    #[allow(clippy::too_many_arguments)]
+    fn risk_value(
+        &self,
+        sums: CoefSums,
+        travelled_m: f64,
+        n_e: f64,
+        n_weather: f64,
+        a: f64,
+        beta: f64,
+    ) -> f64 {
+        let t = f64::from(self.model.params.years);
+        let t_r = t * sums.r;
+        let mu = t * travelled_m * sums.r;
+        let denominator = t_r + a;
+        let w = if denominator == 0.0 {
+            0.0
+        } else {
+            t_r / denominator
+        };
+        let mut y = (1.0 - w) * mu + w * n_e;
+        if let Some((_, multiplier)) = self.weather_term {
+            let t_r_rho = t_r * sums.rho;
+            let denominator_weather = t_r_rho + beta;
+            let w_weather = if denominator_weather == 0.0 {
+                0.0
+            } else {
+                t_r_rho / denominator_weather
+            };
+            let y_weather = (1.0 - w_weather) * (mu * sums.rho) + w_weather * n_weather;
+            y += (multiplier - 1.0) * y_weather;
+        }
+        sums.s * y
+    }
+
+    /// 自動車の生活道路の係数 `c_k`（形式書14.5節）。
+    fn c_factor(&self, k: u8) -> f64 {
+        if self.mode == Mode::Car
+            && k != EDGE_K_NO_RISK
+            && k != EDGE_K_SIDEWALK
+            && self.model.params.c_groups.contains(&(k / 8))
+        {
+            self.model.params.c
+        } else {
+            1.0
+        }
+    }
+
+    /// 辺eの全長のリスク（キャッシュへの出し入れは `edge_risk`）。
+    fn compute_edge_risk(&mut self, e: EdgeId) -> f64 {
+        let k = self.model.edge_k[e as usize];
+        match k {
+            EDGE_K_NO_RISK => 0.0,
+            EDGE_K_SIDEWALK => self.sidewalk_risk(e),
+            _ => {
+                let length = self.graph.edge(e).length_dm;
+                let (n_e, n_weather) = self.edge_weights(e, 0, length);
+                let sums = self.coef_sums(&self.model.k_table, k);
+                let a = self.coefficient_a(&self.model.k_table, k);
+                let beta = *self.model.params.beta.get(self.mode);
+                let risk = self.risk_value(sums, f64::from(length) / 10.0, n_e, n_weather, a, beta);
+                self.c_factor(k) * risk
+            }
+        }
+    }
+
+    /// 歩道の全長のリスク：親の車道のリスク密度 × 歩道の長さ。親がなければ0。
+    fn sidewalk_risk(&mut self, e: EdgeId) -> f64 {
+        let Some(parent) = self.topology.sidewalk_parent(e) else {
+            return 0.0;
+        };
+        let parent_k = self.model.edge_k[parent as usize];
+        if parent_k == EDGE_K_NO_RISK || parent_k == EDGE_K_SIDEWALK {
+            return 0.0;
+        }
+        let parent_risk = self.edge_risk(parent);
+        let parent_m = f64::from(self.graph.edge(parent).length_dm) / 10.0;
+        let edge_m = f64::from(self.graph.edge(e).length_dm) / 10.0;
+        if parent_m == 0.0 {
+            0.0
+        } else {
+            parent_risk / parent_m * edge_m
+        }
+    }
+
+    /// 歩道の部分のリスク：親の車道のリスク密度 × 通った長さ。親がなければ0。
+    fn sidewalk_partial_risk(&mut self, e: EdgeId, from_dm: u32, to_dm: u32) -> f64 {
+        let Some(parent) = self.topology.sidewalk_parent(e) else {
+            return 0.0;
+        };
+        let parent_k = self.model.edge_k[parent as usize];
+        if parent_k == EDGE_K_NO_RISK || parent_k == EDGE_K_SIDEWALK {
+            return 0.0;
+        }
+        let parent_risk = self.edge_risk(parent);
+        let parent_m = f64::from(self.graph.edge(parent).length_dm) / 10.0;
+        let travelled_m = f64::from(to_dm - from_dm) / 10.0;
+        if parent_m == 0.0 {
+            0.0
+        } else {
+            parent_risk / parent_m * travelled_m
+        }
+    }
+
+    /// クラスタのリスク（キャッシュへの出し入れは `cluster_risk`）。
+    fn compute_cluster_risk(&self, c: ClusterId) -> f64 {
+        let j = self.model.cluster_j[c as usize];
+        let (n_e, n_weather) = self.cluster_weights(c);
+        let sums = self.coef_sums(&self.model.j_table, j);
+        let a = self.coefficient_a(&self.model.j_table, j);
+        let beta = *self.model.params.beta_cluster.get(self.mode);
+        self.risk_value(sums, 1.0, n_e, n_weather, a, beta)
     }
 }
 
