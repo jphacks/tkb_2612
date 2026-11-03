@@ -4,17 +4,32 @@
 //!
 //! # 判定の規則（形式書10章が「P3で決める」とした部分）
 //!
-//! - 吸着可能な辺：手段ごとの有向グラフ（`access` のビットの向き。ノードの通過不可は無視する）の
-//!   強連結成分のうち、ノード数が `scc_min_nodes`（200）以上のものに、辺の両端が入る辺。
+//! - 吸着可能な辺：手段ごとの有向グラフ（`access` のビットの向き）の強連結成分のうち、ノード数が
+//!   `scc_min_nodes`（200）以上のものに、辺の両端が入る辺。ただし、その手段で通過できないノード
+//!   （`NODEFLG` の障害物。柵・ゲートなど）は通り抜けられないものとして強連結成分を求める（障害物の
+//!   ノードは、どの成分にもつなげず、単独の成分として数える）。障害物のノードを端点に持つ辺は、障害物は
+//!   出発・到着の辺の端点としては使えるので、次の条件を満たせば吸着可能にする（形式書10章の「両端が
+//!   強連結成分に入る」を補った規則。`topology.bin` の `PARAMS.config.snap_barrier_rule` に記録する）。
+//!   - もう一方の端点が、しきい値以上の成分に入っている。両端が障害物の辺は吸着不可。
+//!   - 辺が両方向に通れる。出発の辺は、障害物のノードの側へは進めず、到着の辺は、障害物のノードの側から
+//!     入れないので、一方通行の辺は、障害物の側から出るだけか、障害物へ入るだけになり、出発か到着の
+//!     どちらかに使えない（探索が到達できずに全体を調べ尽くすのを避ける）。
 //! - 交差点クラスタ：carで通れる辺の次数（接する辺の数。ループは2）が3以上のノードを交差点ノードとし、
 //!   長さが `cluster_edge_max_dm`（20m）以下のcarの辺でつながる交差点ノードを1つにまとめる。
 //!   横断歩道のノード（`NODEFLG` のビット1、または `CROSSING` の辺の端点）で、carの辺をたどって
 //!   最寄りの交差点ノードから20m以内にあるものは、その交差点のクラスタに入れる。
-//! - 双子：どちらもcarが一方通行（片方向だけ通れる）の辺 `a`・`b` で、同じ `ref`、または同じ `name`
-//!   （`ref` が両方にあって違うものは除く）を持つもの。`a` の進行方向に沿って20mおきに取った点が、
-//!   `b` の折れ線から60m以内にあり、その点での `b` の進行方向が `a` の進行方向と逆（角度の差が
-//!   150°以上）である割合（`b` から `a` も同様）の小さい方に長さを掛けた「重なり」が、短い方の辺の
-//!   長さの6割以上。1つの辺に双子は最大1つで、お互いが最良の相手であるものだけを組にする。
+//! - 双子（`jp-topology-2`、多対多）：どちらもcarが一方通行（片方向だけ通れる）の辺 `a`・`b` で、同じ
+//!   `ref`、または同じ `name`（`ref` が両方にあって違うものは除く）を持ち、**並走**しているもの。
+//!   並走の長さは、2本のうち短い方の辺（長さが同じなら番号の小さい辺）の進行方向に沿って5mおきに取った
+//!   点のうち、長い方の折れ線から60m以内にあり、その点での長い方の進行方向が逆向き（角度の差が150°以上）で、
+//!   最寄りの点が長い方の端の外側にはみ出さない（長い方の延長線上にあるだけの点は数えない）ものの割合に、
+//!   短い方の長さを掛けたもの。これが「短い方の長さの6割」と30mの小さい方以上なら双子にする。
+//!   条件を満たす逆向きの辺はすべて双子になる（1つの辺に双子は複数ありうる。片方の車線が長い1本で、
+//!   反対側が短い複数の辺に分かれていれば、短い辺の全部が長い辺と組になる。切れ目が合わなくても、
+//!   並走の長さが30m以上あれば組になる）。短い方の辺で決めるので、辺の分割の仕方に左右されにくく、
+//!   交差点をはさんで向かい合う辺（端でつながるだけで並走しない）は組にならない。
+//!   以前（`jp-topology-1`）は、お互いが最良の相手である1対1の組だけで、点は20mおき、60m以内は端の外も
+//!   数えていたため、分割の違う側の辺が余った一方、交差点の向かい合わせの辺が組になっていた。
 //! - 歩道の親：`SIDEWALK` の辺について、10mおき（長い辺は最大40点）に取った点ごとに、15m以内にあり、
 //!   方位の差（向きを問わない）が20°未満の、carで通れる車道の辺（motorway系と `motorroad` を除く）の
 //!   うち最寄りのものに1票を入れ、票が点の数の半分以上で最多の辺を親にする（同数は距離の和が小さい方、
@@ -52,6 +67,10 @@ pub struct TopologyConfig {
     pub twin_max_angle_deg: f64,
     /// 双子：重なりの下限（短い方の辺の長さに対する割合）。
     pub twin_min_overlap: f64,
+    /// 双子：重なりの下限の上限（m）。並走の長さがこれ以上なら、短い方の辺の長さに対する割合が
+    /// `twin_min_overlap` に届かなくても双子にする（片側の辺の切れ目がずれていても、長い区間で並走していれば
+    /// 組にするため）。
+    pub twin_min_overlap_m: f64,
     /// 双子：点を取る間隔（m）。
     pub twin_sample_step_m: f64,
     /// 歩道：親の車道までの距離の上限（m）。
@@ -72,7 +91,8 @@ impl Default for TopologyConfig {
             twin_max_gap_m: 60.0,
             twin_max_angle_deg: 30.0,
             twin_min_overlap: 0.6,
-            twin_sample_step_m: 20.0,
+            twin_min_overlap_m: 30.0,
+            twin_sample_step_m: 5.0,
             sidewalk_max_distance_m: 15.0,
             sidewalk_max_angle_deg: 20.0,
             sidewalk_min_match: 0.5,
@@ -89,14 +109,28 @@ impl TopologyConfig {
             "twin_max_gap_m": self.twin_max_gap_m,
             "twin_max_angle_deg": self.twin_max_angle_deg,
             "twin_min_overlap": self.twin_min_overlap,
+            "twin_min_overlap_m": self.twin_min_overlap_m,
             "twin_sample_step_m": self.twin_sample_step_m,
             "sidewalk_max_distance_m": self.sidewalk_max_distance_m,
             "sidewalk_max_angle_deg": self.sidewalk_max_angle_deg,
             "sidewalk_min_match": self.sidewalk_min_match,
             "sidewalk_sample_step_m": self.sidewalk_sample_step_m,
+            "snap_barrier_rule": SNAP_BARRIER_RULE,
+            "twin_rule": TWIN_RULE,
         })
     }
 }
+
+/// `PARAMS.config.snap_barrier_rule` に書く、吸着可能な辺の判定への補足（モジュールの説明を参照）。
+pub const SNAP_BARRIER_RULE: &str = "scc-without-barrier-nodes; edge touching a barrier node is snappable \
+     if the other endpoint is in a large component and the edge is passable in both directions";
+
+/// `PARAMS.config.twin_rule` に書く、双子の判定の規則（モジュールの説明を参照）。
+pub const TWIN_RULE: &str = "many-to-many-overlap-v2";
+
+/// `PARAMS.rules_version` に書く、`topology.bin` の判定規則の版。判定を変えたら上げる。
+/// `jp-topology-1`：双子は「お互いが最良の相手である1対1の組」だけ。`jp-topology-2`：双子は多対多。
+pub const TOPOLOGY_RULES_VERSION: &str = "jp-topology-2";
 
 const CAR_ANY: u8 = access::CAR_FWD | access::CAR_BWD;
 
@@ -104,9 +138,21 @@ const CAR_ANY: u8 = access::CAR_FWD | access::CAR_BWD;
 // 吸着可能な辺（強連結成分）
 // ---------------------------------------------------------------------------
 
+/// その手段で通過できないノード（`NODEFLG` の障害物）か。
+fn blocked(view: &GraphView<'_>, v: NodeId, mode: Mode) -> bool {
+    view.node_flags(v) & node_flags::block_bit(mode) != 0
+}
+
 /// 手段ごとの有向グラフの強連結成分を求め、ノードごとに「属する成分のノード数」を返す。
-/// 反復版のTarjan法。ノードの通過不可（`NODEFLG`）は無視する。
+/// 反復版のTarjan法。その手段で通過できないノード（`NODEFLG` の障害物）は通り抜けられないものとして、
+/// どの成分にもつなげず、単独の成分（ノード数1）にする。
 pub fn component_sizes(view: &GraphView<'_>, mode: Mode) -> Vec<u32> {
+    component_sizes_with(view, mode, false)
+}
+
+/// [`component_sizes`] の本体。`through_barriers` が真なら、障害物のノードも通り抜けられるものとして
+/// 求める（障害物を見ない旧い規則。監査で、障害物の規則の効果を数えるために使う）。
+pub fn component_sizes_with(view: &GraphView<'_>, mode: Mode, through_barriers: bool) -> Vec<u32> {
     const UNVISITED: u32 = u32::MAX;
     let n = view.node_count();
     let ofs = &view.parts.node_ofs;
@@ -120,6 +166,9 @@ pub fn component_sizes(view: &GraphView<'_>, mode: Mode) -> Vec<u32> {
 
     for root in 0..n as u32 {
         if index[root as usize] != UNVISITED {
+            continue;
+        }
+        if !through_barriers && blocked(view, root, mode) {
             continue;
         }
         index[root as usize] = counter;
@@ -136,6 +185,9 @@ pub fn component_sizes(view: &GraphView<'_>, mode: Mode) -> Vec<u32> {
                     continue;
                 }
                 let w = view.dedge_to(d);
+                if !through_barriers && blocked(view, w, mode) {
+                    continue;
+                }
                 if index[w as usize] == UNVISITED {
                     index[w as usize] = counter;
                     low[w as usize] = counter;
@@ -167,7 +219,10 @@ pub fn component_sizes(view: &GraphView<'_>, mode: Mode) -> Vec<u32> {
             }
         }
     }
-    comp.iter().map(|&c| sizes[c as usize]).collect()
+    // 障害物のノードは訪れていないので、単独の成分（ノード数1）にする
+    comp.iter()
+        .map(|&c| if c == UNVISITED { 1 } else { sizes[c as usize] })
+        .collect()
 }
 
 struct SnapResult {
@@ -175,20 +230,58 @@ struct SnapResult {
     audit: Value,
 }
 
+/// 辺 `e` が吸着可能か（モジュールの説明の規則）。`sizes` は障害物を通り抜けられないとして求めた成分の大きさ。
+fn edge_snappable(
+    view: &GraphView<'_>,
+    sizes: &[u32],
+    e: EdgeId,
+    mode: Mode,
+    min_nodes: u32,
+) -> bool {
+    let record = view.edge(e);
+    let large = |v: NodeId| sizes[v as usize] >= min_nodes;
+    match (
+        blocked(view, record.tail, mode),
+        blocked(view, record.head, mode),
+    ) {
+        (false, false) => large(record.tail) && large(record.head),
+        (true, true) => false,
+        (blocked_tail, _) => {
+            let other = if blocked_tail {
+                record.head
+            } else {
+                record.tail
+            };
+            large(other) && record.access & access::both(mode) == access::both(mode)
+        }
+    }
+}
+
 fn snap_bits(view: &GraphView<'_>, mode: Mode, min_nodes: u32) -> SnapResult {
     let sizes = component_sizes(view, mode);
+    // 障害物を見ない旧い規則での吸着可能な辺の数（監査用。効果の大きさを記録する）
+    let sizes_through = component_sizes_with(view, mode, true);
     let edges = view.edge_count();
     let mut bits = vec![0u64; edges.div_ceil(64)];
-    let (mut passable, mut snappable) = (0u64, 0u64);
+    let (mut passable, mut snappable, mut snappable_through) = (0u64, 0u64, 0u64);
+    let (mut touching_barrier, mut snappable_touching_barrier) = (0u64, 0u64);
     for e in 0..edges {
         if !view.edge_has_mode(e as u32, mode) {
             continue;
         }
         passable += 1;
         let record = view.edge(e as u32);
-        if sizes[record.tail as usize] >= min_nodes && sizes[record.head as usize] >= min_nodes {
+        if sizes_through[record.tail as usize] >= min_nodes
+            && sizes_through[record.head as usize] >= min_nodes
+        {
+            snappable_through += 1;
+        }
+        let touches = blocked(view, record.tail, mode) || blocked(view, record.head, mode);
+        touching_barrier += u64::from(touches);
+        if edge_snappable(view, &sizes, e as u32, mode, min_nodes) {
             bits[e / 64] |= 1 << (e % 64);
             snappable += 1;
+            snappable_touching_barrier += u64::from(touches);
         }
     }
     let nodes_in_large = sizes.iter().filter(|&&s| s >= min_nodes).count();
@@ -207,6 +300,10 @@ fn snap_bits(view: &GraphView<'_>, mode: Mode, min_nodes: u32) -> SnapResult {
     let audit = json!({
         "edges_passable": passable,
         "edges_snappable": snappable,
+        // 障害物を見ない旧い規則（両端が成分に入る）で数えた吸着可能な辺。差が、障害物の規則で外れた辺
+        "edges_snappable_if_barriers_ignored": snappable_through,
+        "edges_touching_barrier_nodes": touching_barrier,
+        "edges_snappable_touching_barrier_nodes": snappable_touching_barrier,
         // 小数6桁に丸める（JSONの浮動小数の往復で最後の桁がずれないように）
         "snappable_ratio": if passable == 0 { 0.0 } else { (snappable as f64 / passable as f64 * 1e6).round() / 1e6 },
         "nodes_in_large_components": nodes_in_large,
@@ -515,24 +612,73 @@ fn same_road(attrs: &GraphAttrs, a: EdgeId, b: EdgeId) -> bool {
     name_a != 0 && name_a == name_b && !(ref_a != 0 && ref_b != 0 && ref_a != ref_b)
 }
 
-/// `a` の点のうち、`b` の折れ線から `gap` 以内で進行方向が逆向きのものの割合。
-fn opposite_fraction(samples_a: &[Sample], line_b: &XyLine, gap: f64, cos_limit: f64) -> f64 {
-    if samples_a.is_empty() {
+/// 点のうち、`other` の折れ線と並走しているものの割合。並走＝`other` までの距離が `gap` 以内で、
+/// その点での `other` の進行方向が逆向き、かつ最寄りの点が `other` の端の外側にはみ出さない
+/// （`other` の延長線上にあるだけの点は並走とみなさない）。
+fn alongside_fraction(samples: &[Sample], other: &XyLine, gap: f64, cos_limit: f64) -> f64 {
+    if samples.is_empty() {
         return 0.0;
     }
-    let matched = samples_a
+    let matched = samples
         .iter()
-        .filter(|(p, dir_a)| {
-            let (distance, dir_b) = line_b.nearest(*p);
-            distance <= gap && dir_b.is_some_and(|b| dir_a.0 * b.0 + dir_a.1 * b.1 <= -cos_limit)
+        .filter(|(p, dir)| {
+            let (distance, other_dir, overhang) = other.nearest_with_overhang(*p);
+            distance <= gap
+                && !overhang
+                && other_dir.is_some_and(|o| dir.0 * o.0 + dir.1 * o.1 <= -cos_limit)
         })
         .count();
-    matched as f64 / samples_a.len() as f64
+    matched as f64 / samples.len() as f64
 }
 
 struct Twins {
     pairs: Vec<TwinPair>,
     audit: Value,
+}
+
+/// 双子の判定の重なり：短い方の辺（長さが同じなら番号の小さい辺）の点のうち、長い方の辺と並走している
+/// ものの割合（`alongside_fraction`）から、並走している長さを求め、`(並走の長さ, 短い方の辺の長さ)` を返す。
+/// 短い方の辺だけで決めるので、長い1本が短い複数の辺に分かれていても、短い辺それぞれが相手と並走している
+/// 長さで決まり、分割の仕方に左右されない。
+fn twin_overlap(
+    view: &GraphView<'_>,
+    a: EdgeId,
+    b: EdgeId,
+    one_way: impl Fn(EdgeId) -> Option<bool>,
+    cfg: &TopologyConfig,
+    cos_limit: f64,
+) -> (f64, f64) {
+    let (Some(a_forward), Some(b_forward)) = (one_way(a), one_way(b)) else {
+        return (0.0, 0.0);
+    };
+    let polyline_a = view.polyline(a);
+    let frame = LocalFrame::new(polyline_a[polyline_a.len() / 2]);
+    let line_a = travel_line(view, &frame, a, a_forward);
+    let line_b = travel_line(view, &frame, b, b_forward);
+    if line_a.length <= 0.0 || line_b.length <= 0.0 {
+        return (0.0, 0.0);
+    }
+    let a_is_shorter = (line_a.length, a) <= (line_b.length, b);
+    let (short, long) = if a_is_shorter {
+        (&line_a, &line_b)
+    } else {
+        (&line_b, &line_a)
+    };
+    let fraction = alongside_fraction(
+        &short.samples(cfg.twin_sample_step_m),
+        long,
+        cfg.twin_max_gap_m,
+        cos_limit,
+    );
+    (fraction * short.length, short.length)
+}
+
+/// 並走の長さが、双子と認める下限以上か。下限は、短い方の辺の長さの `twin_min_overlap` 倍と
+/// `twin_min_overlap_m` の小さい方。
+fn is_twin_overlap(overlap_m: f64, short_len_m: f64, cfg: &TopologyConfig) -> bool {
+    short_len_m > 0.0
+        && overlap_m >= (cfg.twin_min_overlap * short_len_m).min(cfg.twin_min_overlap_m)
+        && overlap_m > 0.0
 }
 
 fn find_twins(view: &GraphView<'_>, attrs: &GraphAttrs, cfg: &TopologyConfig) -> Twins {
@@ -556,77 +702,81 @@ fn find_twins(view: &GraphView<'_>, attrs: &GraphAttrs, cfg: &TopologyConfig) ->
     // 逆向きとみなす内積の上限は -cos(許容角)。許容角30°なら -0.866 以下
     let cos_limit = cfg.twin_max_angle_deg.to_radians().cos();
 
-    // 辺ごとに最良の相手を探す（並列。結果は辺の順）
-    let best: Vec<Option<(EdgeId, f64)>> = named
+    // 1. 近くにある、同じ名前の一方通行の辺を候補にする（並列。組は（小さい番号, 大きい番号）に揃える）
+    let candidate_pairs: Vec<Vec<(EdgeId, EdgeId)>> = named
         .par_iter()
         .map(|&a| {
-            let a_forward = one_way(a)?;
+            let Some(a_forward) = one_way(a) else {
+                return Vec::new();
+            };
             let polyline = view.polyline(a);
             let frame = LocalFrame::new(polyline[polyline.len() / 2]);
             let line_a = travel_line(view, &frame, a, a_forward);
             if line_a.length <= 0.0 {
-                return None;
+                return Vec::new();
             }
-            let samples_a = line_a.samples(cfg.twin_sample_step_m);
-            // 近くにある、同じ名前の候補
             let mut near = Vec::new();
             let mut found: Vec<EdgeId> = Vec::new();
-            let mut seen = Vec::new();
-            for (point, _) in &samples_a {
+            for (point, _) in &line_a.samples(cfg.twin_sample_step_m) {
                 grid.near(frame.coord(*point), &mut near);
-                for &b in &near {
-                    if b != a && !seen.contains(&b) {
-                        seen.push(b);
-                        if same_road(attrs, a, b) && one_way(b).is_some() {
-                            found.push(b);
-                        }
-                    }
-                }
+                found.extend(
+                    near.iter()
+                        .copied()
+                        .filter(|&b| b != a && same_road(attrs, a, b) && one_way(b).is_some()),
+                );
             }
-            let mut best: Option<(EdgeId, f64)> = None;
-            for b in found {
-                let Some(b_forward) = one_way(b) else {
-                    continue;
-                };
-                let line_b = travel_line(view, &frame, b, b_forward);
-                if line_b.length <= 0.0 {
-                    continue;
-                }
-                let frac_a = opposite_fraction(&samples_a, &line_b, cfg.twin_max_gap_m, cos_limit);
-                let samples_b = line_b.samples(cfg.twin_sample_step_m);
-                let frac_b = opposite_fraction(&samples_b, &line_a, cfg.twin_max_gap_m, cos_limit);
-                let overlap = (frac_a * line_a.length).min(frac_b * line_b.length);
-                let score = overlap / line_a.length.min(line_b.length);
-                if score >= cfg.twin_min_overlap
-                    && best.is_none_or(|(id, s)| score > s || (score == s && b < id))
-                {
-                    best = Some((b, score));
-                }
-            }
-            best
+            found.sort_unstable();
+            found.dedup();
+            found.into_iter().map(|b| (a.min(b), a.max(b))).collect()
+        })
+        .collect();
+    let mut candidate_pairs: Vec<(EdgeId, EdgeId)> =
+        candidate_pairs.into_iter().flatten().collect();
+    candidate_pairs.par_sort_unstable();
+    candidate_pairs.dedup();
+
+    // 2. 組ごとに重なりを調べ、しきい値以上の組をすべて双子にする（多対多）
+    let accepted: Vec<(EdgeId, EdgeId)> = candidate_pairs
+        .par_iter()
+        .copied()
+        .filter(|&(a, b)| {
+            let (overlap_m, short_len_m) = twin_overlap(view, a, b, one_way, cfg, cos_limit);
+            is_twin_overlap(overlap_m, short_len_m, cfg)
         })
         .collect();
 
-    // お互いが最良の相手である組だけを採用する
-    let mut best_of: HashMap<EdgeId, EdgeId> = HashMap::new();
-    for (&a, b) in named.iter().zip(&best) {
-        if let Some((b, _)) = b {
-            best_of.insert(a, *b);
-        }
-    }
     let mut pairs: Vec<TwinPair> = Vec::new();
-    for (&a, &b) in &best_of {
-        if best_of.get(&b) == Some(&a) {
-            pairs.push(TwinPair { a, b });
-        }
+    for (a, b) in accepted {
+        pairs.push(TwinPair { a, b });
+        pairs.push(TwinPair { a: b, b: a });
     }
     pairs.sort_unstable_by_key(|t| (t.a, t.b));
+
+    // 辺ごとの双子の数の分布
+    let mut per_edge: HashMap<EdgeId, u32> = HashMap::new();
+    for t in &pairs {
+        *per_edge.entry(t.a).or_default() += 1;
+    }
+    let mut histogram = [0u64; 6];
+    for &n in per_edge.values() {
+        histogram[(n as usize).min(5)] += 1;
+    }
     let audit = json!({
+        "rule": TWIN_RULE,
         "one_way_car_edges": candidates.len(),
         "one_way_car_edges_with_ref_or_name": named.len(),
-        "edges_with_a_candidate": best_of.len(),
+        "candidate_pairs": candidate_pairs.len(),
         "twin_pairs": pairs.len() / 2,
         "twin_records": pairs.len(),
+        "edges_with_a_twin": per_edge.len(),
+        "max_twins_per_edge": per_edge.values().copied().max().unwrap_or(0),
+        "twins_per_edge_histogram": {
+            "1": histogram[1],
+            "2": histogram[2],
+            "3": histogram[3],
+            "4": histogram[4],
+            "5_or_more": histogram[5],
+        },
     });
     Twins { pairs, audit }
 }
@@ -754,6 +904,7 @@ pub fn build_topology(
     let sidewalks = find_sidewalk_parents(&view, cfg);
 
     let params = json!({
+        "rules_version": TOPOLOGY_RULES_VERSION,
         "nodes": view.node_count(),
         "edges": view.edge_count(),
         "config": cfg.to_json(),
@@ -880,6 +1031,142 @@ mod tests {
         // walkは歩行者だけの辺（ring[1]-ring[2]）しか通れない。2ノードの成分なので、しきい値2なら吸着できる
         let walk = snap_bits(&view, Mode::Walk, 2);
         assert!(bit(&walk.bits, walk_only));
+    }
+
+    /// 障害物（通過できないノード）の向こう側の小さな領域は、吸着先にならない。
+    /// 障害物を無視すると、全体が1つの成分になって吸着可能に見える。
+    #[test]
+    fn pockets_behind_barrier_nodes_are_not_snappable() {
+        let mut b = GraphBuilder::new();
+        // 本線の環：6ノード（しきい値5以上）
+        let main: Vec<u32> = (0..6)
+            .map(|i| node(&mut b, 0.0, f64::from(i) * 30.0))
+            .collect();
+        let main_edges: Vec<u32> = (0..6)
+            .map(|i| road(&mut b, main[i], main[(i + 1) % 6]))
+            .collect();
+        // 本線の環のノードから、障害物のノード bn（carは通過できない）を経て、4ノードの環（ポケット）へ
+        let bn = node(&mut b, 100.0, 0.0);
+        let gate = road(&mut b, main[0], bn);
+        let pocket: Vec<u32> = (0..4)
+            .map(|i| node(&mut b, 200.0, f64::from(i) * 30.0))
+            .collect();
+        let entry = road(&mut b, bn, pocket[0]);
+        let pocket_edges: Vec<u32> = (0..4)
+            .map(|i| road(&mut b, pocket[i], pocket[(i + 1) % 4]))
+            .collect();
+        b.add_node_flags(bn, node_flags::block_bit(Mode::Car));
+        let g = b.build();
+        let view = GraphView::new(g.parts());
+
+        // 障害物を通り抜けられるとすると、全体（6+1+4ノード）が1つの成分
+        assert!(
+            component_sizes_with(&view, Mode::Car, true)
+                .iter()
+                .all(|&s| s == 11)
+        );
+        // 通り抜けられないとすると、本線・障害物・ポケットに分かれる
+        let sizes = component_sizes(&view, Mode::Car);
+        assert_eq!(sizes[main[3] as usize], 6);
+        assert_eq!(sizes[bn as usize], 1);
+        assert_eq!(sizes[pocket[2] as usize], 4);
+
+        let car = snap_bits(&view, Mode::Car, 5);
+        for &e in &main_edges {
+            assert!(bit(&car.bits, e), "本線の辺 {e}");
+        }
+        // 障害物のノードを端点に持つ辺：もう一方が大きい成分で、両方向に通れるので吸着可能
+        assert!(bit(&car.bits, gate));
+        // 障害物の向こうの辺は、吸着不可（ポケットが小さい）
+        assert!(!bit(&car.bits, entry));
+        for &e in &pocket_edges {
+            assert!(!bit(&car.bits, e), "ポケットの辺 {e}");
+        }
+        assert_eq!(car.audit["edges_passable"], 12);
+        assert_eq!(car.audit["edges_snappable"], 7);
+        assert_eq!(car.audit["edges_snappable_if_barriers_ignored"], 12);
+        assert_eq!(car.audit["edges_touching_barrier_nodes"], 2);
+        assert_eq!(car.audit["edges_snappable_touching_barrier_nodes"], 1);
+    }
+
+    /// 障害物は手段ごと：carが通過できないノードでも、walk・bikeは通り抜けられる。
+    #[test]
+    fn barrier_nodes_only_affect_the_blocked_mode() {
+        let mut b = GraphBuilder::new();
+        let main: Vec<u32> = (0..6)
+            .map(|i| node(&mut b, 0.0, f64::from(i) * 30.0))
+            .collect();
+        for i in 0..6 {
+            b.add_edge(EdgeSpec::new(main[i], main[(i + 1) % 6]));
+        }
+        let bn = node(&mut b, 100.0, 0.0);
+        b.add_edge(EdgeSpec::new(main[0], bn));
+        let pocket: Vec<u32> = (0..4)
+            .map(|i| node(&mut b, 200.0, f64::from(i) * 30.0))
+            .collect();
+        let entry = b.add_edge(EdgeSpec::new(bn, pocket[0]));
+        for i in 0..4 {
+            b.add_edge(EdgeSpec::new(pocket[i], pocket[(i + 1) % 4]));
+        }
+        b.add_node_flags(bn, node_flags::block_bit(Mode::Car));
+        let g = b.build();
+        let view = GraphView::new(g.parts());
+        assert!(!bit(&snap_bits(&view, Mode::Car, 5).bits, entry));
+        for mode in [Mode::Bike, Mode::Walk] {
+            let r = snap_bits(&view, mode, 5);
+            assert!(bit(&r.bits, entry), "{mode:?}");
+            assert_eq!(r.audit["edges_snappable"], 12, "{mode:?}");
+            assert_eq!(r.audit["edges_touching_barrier_nodes"], 0, "{mode:?}");
+        }
+    }
+
+    /// 両端が障害物の辺と、障害物のノードの側からしか出られない・障害物のノードへしか入れない一方通行の辺は、
+    /// 吸着不可（出発か到着のどちらかに使えず、探索が到達できない）。
+    #[test]
+    fn edges_between_barriers_and_one_way_edges_next_to_a_barrier_are_not_snappable() {
+        let mut b = GraphBuilder::new();
+        let ring: Vec<u32> = (0..4)
+            .map(|i| node(&mut b, 0.0, f64::from(i) * 30.0))
+            .collect();
+        for i in 0..4 {
+            road(&mut b, ring[i], ring[(i + 1) % 4]);
+        }
+        let block = |b: &mut GraphBuilder, north: f64, east: f64| {
+            let v = node(b, north, east);
+            b.add_node_flags(v, node_flags::block_bit(Mode::Car));
+            v
+        };
+        let (g1, g2) = (block(&mut b, 100.0, 0.0), block(&mut b, 100.0, 30.0));
+        let two_way = road(&mut b, ring[0], g1);
+        let between = road(&mut b, g1, g2);
+        let into_barrier = b.add_edge(EdgeSpec::new(ring[1], g2).access(access::CAR_FWD));
+        let g3 = block(&mut b, -100.0, 0.0);
+        let out_of_barrier = b.add_edge(EdgeSpec::new(g3, ring[2]).access(access::CAR_FWD));
+        let g = b.build();
+        let view = GraphView::new(g.parts());
+        let car = snap_bits(&view, Mode::Car, 3);
+        assert!(bit(&car.bits, two_way));
+        assert!(!bit(&car.bits, between));
+        assert!(!bit(&car.bits, into_barrier));
+        assert!(!bit(&car.bits, out_of_barrier));
+    }
+
+    #[test]
+    fn params_record_the_barrier_rule() {
+        let mut b = GraphBuilder::new();
+        let n: Vec<u32> = (0..3)
+            .map(|i| node(&mut b, 0.0, f64::from(i) * 30.0))
+            .collect();
+        road(&mut b, n[0], n[1]);
+        road(&mut b, n[1], n[2]);
+        road(&mut b, n[2], n[0]);
+        let g = b.build();
+        let t = build_topology(g.parts(), &attrs(&g, &[]), &config()).unwrap();
+        assert_eq!(t.params["config"]["snap_barrier_rule"], SNAP_BARRIER_RULE);
+        let car = &t.params["snap"]["car"];
+        assert_eq!(car["edges_snappable"], 3);
+        assert_eq!(car["edges_snappable_if_barriers_ignored"], 3);
+        assert_eq!(car["edges_touching_barrier_nodes"], 0);
     }
 
     #[test]
@@ -1022,56 +1309,176 @@ mod tests {
         b.add_edge(spec)
     }
 
+    /// `names` は `(辺, nameの添字)`、`refs` は `(辺, refの添字)`。
+    fn attrs_with_refs(graph: &Graph, names: &[(u32, u32)], refs: &[(u32, u32)]) -> GraphAttrs {
+        let mut a = attrs(graph, names);
+        for &(e, r) in refs {
+            a.ref_idx[e as usize] = r;
+        }
+        a
+    }
+
+    fn pairs_of(t: &Twins) -> Vec<(u32, u32)> {
+        t.pairs.iter().map(|p| (p.a, p.b)).collect()
+    }
+
+    /// 双子の組を、無向の組（小さい番号が先）の昇順で返す。
+    fn undirected(t: &Twins) -> Vec<(u32, u32)> {
+        let mut v: Vec<(u32, u32)> = t
+            .pairs
+            .iter()
+            .filter(|p| p.a < p.b)
+            .map(|p| (p.a, p.b))
+            .collect();
+        v.sort_unstable();
+        v
+    }
+
     #[test]
     fn twins_need_opposite_parallel_close_one_ways_with_the_same_name() {
         let mut b = GraphBuilder::new();
         let eb = lane(&mut b, 0.0, 0.0, 200.0, true); // 東行き
         let wb = lane(&mut b, 20.0, 200.0, 0.0, true); // 西行き、20m北：双子
-        let same_dir = lane(&mut b, 40.0, 0.0, 200.0, true); // 東行き：同じ向き
         let other_name = lane(&mut b, -20.0, 200.0, 0.0, true); // 西行きだが別の名前
         let far = lane(&mut b, 150.0, 200.0, 0.0, true); // 西行き、150m北：遠い
         let two_way = lane(&mut b, -60.0, 0.0, 200.0, false); // 両方向：対象外
         let g = b.build();
         let a = attrs(
             &g,
-            &[
-                (eb, 1),
-                (wb, 1),
-                (same_dir, 1),
-                (other_name, 3),
-                (far, 1),
-                (two_way, 1),
-            ],
+            &[(eb, 1), (wb, 1), (other_name, 3), (far, 1), (two_way, 1)],
         );
         let view = GraphView::new(g.parts());
         let t = find_twins(&view, &a, &TopologyConfig::default());
-        // eb の最良は wb（20m）、wb の最良は eb。far・same_dir は条件外
-        assert_eq!(
-            t.pairs,
-            vec![TwinPair { a: eb, b: wb }, TwinPair { a: wb, b: eb }]
-        );
+        // other_name は名前が違い、far は遠く、two_way は一方通行でない
+        assert_eq!(pairs_of(&t), vec![(eb, wb), (wb, eb)]);
         assert_eq!(t.audit["twin_pairs"], 1);
     }
 
     #[test]
-    fn twins_pair_the_best_overlap_only_and_cut_edges_still_match() {
+    fn same_direction_lanes_are_not_twins() {
+        let mut b = GraphBuilder::new();
+        let e1 = lane(&mut b, 0.0, 0.0, 200.0, true);
+        let e2 = lane(&mut b, 20.0, 0.0, 200.0, true);
+        let g = b.build();
+        let a = attrs(&g, &[(e1, 1), (e2, 1)]);
+        let t = find_twins(&GraphView::new(g.parts()), &a, &TopologyConfig::default());
+        assert!(t.pairs.is_empty());
+    }
+
+    #[test]
+    fn different_refs_are_not_twins_but_the_same_ref_is_even_with_different_names() {
+        let mut b = GraphBuilder::new();
+        let eb = lane(&mut b, 0.0, 0.0, 200.0, true);
+        let wb_same_ref = lane(&mut b, 20.0, 200.0, 0.0, true);
+        let wb_other_ref = lane(&mut b, -20.0, 200.0, 0.0, true);
+        let g = b.build();
+        // 名前は同じ(1)だが、refは eb と wb_same_ref が同じ(1)、wb_other_ref は違う(3)。
+        // refが両方にあって違うものは、名前が同じでも組にならない
+        let a = attrs_with_refs(
+            &g,
+            &[(eb, 1), (wb_same_ref, 1), (wb_other_ref, 1)],
+            &[(eb, 1), (wb_same_ref, 1), (wb_other_ref, 3)],
+        );
+        let t = find_twins(&GraphView::new(g.parts()), &a, &TopologyConfig::default());
+        assert_eq!(undirected(&t), vec![(eb, wb_same_ref)]);
+
+        // refが違う（名前はない）辺どうしは組にならない
+        let a = attrs_with_refs(&g, &[], &[(eb, 1), (wb_same_ref, 3), (wb_other_ref, 3)]);
+        let t = find_twins(&GraphView::new(g.parts()), &a, &TopologyConfig::default());
+        assert!(t.pairs.is_empty());
+    }
+
+    #[test]
+    fn a_lane_between_two_opposite_lanes_pairs_with_both() {
+        let mut b = GraphBuilder::new();
+        let east_south = lane(&mut b, 0.0, 0.0, 200.0, true);
+        let west = lane(&mut b, 20.0, 200.0, 0.0, true);
+        let east_north = lane(&mut b, 40.0, 0.0, 200.0, true);
+        let g = b.build();
+        let a = attrs(&g, &[(east_south, 1), (west, 1), (east_north, 1)]);
+        let t = find_twins(&GraphView::new(g.parts()), &a, &TopologyConfig::default());
+        // 西行きは両方の東行きと組になり、東行きどうしは組にならない
+        assert_eq!(undirected(&t), vec![(east_south, west), (west, east_north)]);
+        assert_eq!(t.audit["max_twins_per_edge"], 2);
+    }
+
+    #[test]
+    fn every_cut_edge_on_the_other_side_becomes_a_twin_of_the_long_edge() {
         let mut b = GraphBuilder::new();
         // 東行きの長い辺1本に対して、西行きは前半・後半の2辺に分かれている
         let long = lane(&mut b, 0.0, 0.0, 300.0, true);
         let half_a = lane(&mut b, 20.0, 150.0, 0.0, true);
         let half_b = lane(&mut b, 20.0, 300.0, 150.0, true);
+        // 別の場所の、東行き1本に対して西行きが3辺（長さが不揃い）
+        let long2 = lane(&mut b, 1000.0, 0.0, 300.0, true);
+        let w1 = lane(&mut b, 1020.0, 60.0, 0.0, true);
+        let w2 = lane(&mut b, 1020.0, 270.0, 60.0, true);
+        let w3 = lane(&mut b, 1020.0, 300.0, 270.0, true);
         let g = b.build();
-        let a = attrs(&g, &[(long, 1), (half_a, 1), (half_b, 1)]);
+        let a = attrs(
+            &g,
+            &[
+                (long, 1),
+                (half_a, 1),
+                (half_b, 1),
+                (long2, 1),
+                (w1, 1),
+                (w2, 1),
+                (w3, 1),
+            ],
+        );
         let t = find_twins(&GraphView::new(g.parts()), &a, &TopologyConfig::default());
-        // 重なりは短い方に対する割合なので、どちらの半分もlongと同じ重なり。長い辺は1本としか組めない：
-        // 同点なら辺番号の小さい方（half_a）
+        // 全部が組になる。西行きの断片どうし（同じ向き）は組にならない
         assert_eq!(
-            t.pairs,
+            undirected(&t),
             vec![
-                TwinPair { a: long, b: half_a },
-                TwinPair { a: half_a, b: long }
+                (long, half_a),
+                (long, half_b),
+                (long2, w1),
+                (long2, w2),
+                (long2, w3)
             ]
         );
+        // 記録は両方の向きで、(a, b) の昇順
+        assert_eq!(t.pairs.len(), 10);
+        assert!(
+            t.pairs
+                .windows(2)
+                .all(|w| (w[0].a, w[0].b) < (w[1].a, w[1].b))
+        );
+        assert_eq!(t.audit["twins_per_edge_histogram"]["3"], 1);
+    }
+
+    #[test]
+    fn cut_points_that_do_not_line_up_still_pair_by_the_parallel_length() {
+        let mut b = GraphBuilder::new();
+        // 東行き：0〜100、100〜200、200〜300。西行き：0〜150、150〜300（切れ目が合わない）
+        let e1 = lane(&mut b, 0.0, 0.0, 100.0, true);
+        let e2 = lane(&mut b, 0.0, 100.0, 200.0, true);
+        let e3 = lane(&mut b, 0.0, 200.0, 300.0, true);
+        let w1 = lane(&mut b, 20.0, 150.0, 0.0, true);
+        let w2 = lane(&mut b, 20.0, 300.0, 150.0, true);
+        let g = b.build();
+        let a = attrs(&g, &[(e1, 1), (e2, 1), (e3, 1), (w1, 1), (w2, 1)]);
+        let t = find_twins(&GraphView::new(g.parts()), &a, &TopologyConfig::default());
+        // e2 は w1 と w2 に50mずつ（割合では5割）並走しているが、並走が30m以上なので両方と組になる。
+        // e1–w2・e3–w1 は並走しない
+        assert_eq!(undirected(&t), vec![(e1, w1), (e2, w1), (e2, w2), (e3, w2)]);
+        assert_eq!(t.audit["edges_with_a_twin"], 5);
+    }
+
+    #[test]
+    fn opposite_edges_meeting_end_to_end_are_not_twins() {
+        let mut b = GraphBuilder::new();
+        // 東行き 0〜100 と、西行き 200〜100：端でつながるだけで並走しない（交差点を挟んだ向かい合わせ）
+        let east = lane(&mut b, 0.0, 0.0, 100.0, true);
+        let west = lane(&mut b, 20.0, 200.0, 100.0, true);
+        // 並走するのは 100〜200 の西行きだけ
+        let east_far = lane(&mut b, 0.0, 100.0, 200.0, true);
+        let g = b.build();
+        let a = attrs(&g, &[(east, 1), (west, 1), (east_far, 1)]);
+        let t = find_twins(&GraphView::new(g.parts()), &a, &TopologyConfig::default());
+        assert_eq!(undirected(&t), vec![(west, east_far)]);
     }
 
     #[test]
@@ -1079,16 +1486,12 @@ mod tests {
         let mut b = GraphBuilder::new();
         let long = lane(&mut b, 0.0, 0.0, 1000.0, true);
         let short = lane(&mut b, 25.0, 650.0, 350.0, true);
+        // 8mしかない辺でも、長い辺の中ほどにあれば組になる
+        let tiny = lane(&mut b, 25.0, 108.0, 100.0, true);
         let g = b.build();
-        let a = attrs(&g, &[(long, 1), (short, 1)]);
+        let a = attrs(&g, &[(long, 1), (short, 1), (tiny, 1)]);
         let t = find_twins(&GraphView::new(g.parts()), &a, &TopologyConfig::default());
-        assert_eq!(
-            t.pairs,
-            vec![
-                TwinPair { a: long, b: short },
-                TwinPair { a: short, b: long }
-            ]
-        );
+        assert_eq!(undirected(&t), vec![(long, short), (long, tiny)]);
     }
 
     #[test]
@@ -1163,8 +1566,8 @@ mod tests {
         let a = attrs(&g, &[(eb, 1), (wb, 1)]);
         let t = build_topology(g.parts(), &a, &config()).unwrap();
         t.validate(&g).unwrap();
-        assert_eq!(t.twin_of(eb), Some(wb));
-        assert_eq!(t.twin_of(wb), Some(eb));
+        assert_eq!(t.twins_of(eb).collect::<Vec<_>>(), vec![wb]);
+        assert_eq!(t.twins_of(wb).collect::<Vec<_>>(), vec![eb]);
         assert_eq!(t.sidewalk_parent(s), Some(eb));
         assert_eq!(t.params["nodes"], g.node_count());
         assert_eq!(t.params["edges"], g.edge_count());
