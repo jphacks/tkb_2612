@@ -15,7 +15,7 @@ use super::ArcCost;
 use super::Path;
 use super::SearchContext;
 use super::SearchStatus;
-use super::candidates::{MAX_ROUTE_DISTANCE_DM, select_candidates};
+use super::candidates::{MAX_ROUTE_DISTANCE_DM, select_candidates_with_stats};
 use super::ellipse::{EllipseError, ellipse_subgraph};
 use super::endpoints::{Placement, is_same_position, path_distance_dm, placement};
 use super::fastest::fastest_path;
@@ -78,6 +78,8 @@ pub struct RouteSearch {
     pub budget_ds: u64,
     /// 候補（`select_candidates` の結果。所要時間の昇順、最大6本、すべて `time_ds ≤ B`）。
     pub candidates: Vec<Path>,
+    /// 候補の整理で80,000mを超えるために外した候補の数（評価用）。
+    pub dropped_too_long: u64,
     pub stats: RouteStats,
 }
 
@@ -248,8 +250,8 @@ pub fn find_routes_ds(
 
     // 手順7：候補の整理。p0 だけにする場合は、p0 と同じ経路を1本だけ残す。
     let select_start = Instant::now();
-    let candidates = if fastest_only {
-        select_candidates(
+    let (candidates, select) = if fastest_only {
+        select_candidates_with_stats(
             graph,
             ctx.topology,
             p0.clone(),
@@ -258,7 +260,7 @@ pub fn find_routes_ds(
             budget_ds,
         )
     } else {
-        select_candidates(
+        select_candidates_with_stats(
             graph,
             ctx.topology,
             p0.clone(),
@@ -284,6 +286,7 @@ pub fn find_routes_ds(
         best,
         budget_ds,
         candidates,
+        dropped_too_long: select.dropped_too_long as u64,
         stats: RouteStats {
             fastest_ms,
             ellipse_ms,

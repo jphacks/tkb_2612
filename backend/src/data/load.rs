@@ -70,6 +70,13 @@ fn read_metadata_value(release_dir: &Path) -> Result<Value, LoadError> {
 /// 8つの `.bin` の有無・ファイル全体のSHA-256・`routing_release_id`・マジックナンバー・
 /// `format_version`・節の `count`・`DEPS` を確かめ、各 `decode_*` と型の検査を行う。
 pub fn load_routing_engine(release_dir: &Path) -> Result<Arc<dyn RouteEngine>, LoadError> {
+    Ok(load_routing_engine_typed(release_dir)?)
+}
+
+/// [`load_routing_engine`] と同じ検証・読込を行い、`RoutingEngine` の型のまま返す。
+///
+/// 応答に出さない計測用の値を読む評価コマンド（`routing_eval engine-batch`）が使う。
+pub fn load_routing_engine_typed(release_dir: &Path) -> Result<Arc<RoutingEngine>, LoadError> {
     let started = Instant::now();
     let metadata = read_metadata_routing(release_dir)?;
     let files = routing_files_metadata(&metadata)?;

@@ -10,12 +10,14 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
-use crate::contract::engine::{MAX_ACCIDENT_POINTS, MAX_HIGH_RISK_SECTIONS};
 use crate::contract::{
     AccidentPoint, AccidentTotals, ConditionFilter, DatasetInfo, DayType, EvaluatedRoute,
     HighRiskSegment, LatLon, LonLat, Mode, NavigationData, NavigationSection, Period, RouteOutcome,
     RouteQuery, RoutedPath, Weather,
 };
+
+/// 応答の相関制約の検査。実装は評価モジュールに置き、テストと評価コマンドで共有する。
+pub use crate::domain::routing::evaluate::check_outcome_invariants;
 
 /// `docs/api/fixtures/` 配下のパス。
 pub fn docs_fixture_path(name: &str) -> PathBuf {
@@ -143,110 +145,6 @@ pub fn fixture_dataset_info() -> DatasetInfo {
         load_seconds: 0.0,
         grid_cells: None,
     }
-}
-
-/// `RouteOutcome` の相関制約（openapi.yaml・behavior.md 7〜8章）を検査する。
-/// ②は計算結果に、③はDTO変換前の入力に使える。
-pub fn check_outcome_invariants(outcome: &RouteOutcome) -> Result<(), String> {
-    let n = outcome.candidates.len();
-    if !(1..=6).contains(&n) {
-        return Err(format!("候補数{n}が1〜6の範囲外"));
-    }
-    if outcome.fastest >= n {
-        return Err("fastestが候補にない".into());
-    }
-    if outcome.safest.is_some_and(|s| s >= n) {
-        return Err("safestが候補にない".into());
-    }
-    // safestがnullになるのは、全候補で集合Bが空のときだけ（behavior.md 8章）
-    let any_accident = outcome
-        .candidates
-        .iter()
-        .any(|c| c.totals.accident_count > 0);
-    match (outcome.safest.is_some(), any_accident) {
-        (false, true) => return Err("集合Bが空でない候補があるのにsafestがnull".into()),
-        (true, false) => return Err("全候補で集合Bが空なのにsafestがある".into()),
-        _ => {}
-    }
-    if outcome.extra_minutes.is_some() != outcome.safest.is_some() {
-        return Err("extra_minutesの有無がsafestの有無と一致しない".into());
-    }
-    if outcome.safest.is_none() && outcome.risk_reduction_percent.is_some() {
-        return Err("safestがnullなのにrisk_reduction_percentがある".into());
-    }
-    for (i, c) in outcome.candidates.iter().enumerate() {
-        let id = format!("route-{}", i + 1);
-        let t = &c.totals;
-        if t.fatal_accidents + t.injury_accidents != t.accident_count {
-            return Err(format!("{id}: 死亡事故+負傷事故がaccident_countと異なる"));
-        }
-        if c.weather_match.is_some() != outcome.conditions.weather.is_some() {
-            return Err(format!("{id}: weather_matchの有無が天候指定と一致しない"));
-        }
-        if let Some(w) = &c.weather_match
-            && (w.fatal_accidents + w.injury_accidents != w.accident_count
-                || w.accident_count > t.accident_count)
-        {
-            return Err(format!("{id}: weather_matchの件数が不正"));
-        }
-        let points = (t.accident_count as usize).min(MAX_ACCIDENT_POINTS);
-        if c.accident_points.len() != points {
-            return Err(format!("{id}: 事故点数がmin(accident_count,250)と異なる"));
-        }
-        let sections = (c.high_risk_total as usize).min(MAX_HIGH_RISK_SECTIONS);
-        if c.high_risk_sections.len() != sections {
-            return Err(format!(
-                "{id}: 表示区間数がmin(high_risk_total,100)と異なる"
-            ));
-        }
-        if c.high_risk_sections.iter().any(|s| s.severity_weight < 3) {
-            return Err(format!("{id}: 重み3未満の表示区間がある"));
-        }
-        let selected = i == outcome.fastest || outcome.safest == Some(i);
-        match (&c.navigation, selected) {
-            (Some(nav), true) => check_navigation(&id, c, nav)?,
-            (None, false) => {}
-            (Some(_), false) => return Err(format!("{id}: 未選定なのにnavigationがある")),
-            (None, true) => return Err(format!("{id}: 選定候補なのにnavigationがない")),
-        }
-    }
-    Ok(())
-}
-
-fn check_navigation(id: &str, c: &EvaluatedRoute, nav: &NavigationData) -> Result<(), String> {
-    let d = &nav.vertex_distances_m;
-    if d.len() != c.path.coordinates.len() {
-        return Err(format!("{id}: vertex_distances_mの長さが頂点数と異なる"));
-    }
-    if d.first() != Some(&0.0) || d.last() != Some(&nav.length_m) {
-        return Err(format!(
-            "{id}: vertex_distances_mの先頭が0、末尾がlength_mでない"
-        ));
-    }
-    if d.windows(2).any(|w| w[0] > w[1]) {
-        return Err(format!("{id}: vertex_distances_mが非減少でない"));
-    }
-    let mut covered = 0u64;
-    let mut previous_end: Option<u32> = None;
-    for s in &nav.sections {
-        if s.start_segment_index > s.end_segment_index
-            || !(0.0 <= s.start_m && s.start_m <= s.end_m && s.end_m <= nav.length_m)
-        {
-            return Err(format!("{id}: ナビ区間の範囲が不正"));
-        }
-        if previous_end.is_some_and(|e| s.start_segment_index <= e + 1) {
-            return Err(format!("{id}: ナビ区間の順序・間隔が不正"));
-        }
-        if s.severity_weight < 3 {
-            return Err(format!("{id}: 重み3未満のナビ区間がある"));
-        }
-        covered += u64::from(s.end_segment_index - s.start_segment_index + 1);
-        previous_end = Some(s.end_segment_index);
-    }
-    if covered != c.high_risk_total {
-        return Err(format!("{id}: Σ(E−S+1)がhigh_risk_totalと異なる"));
-    }
-    Ok(())
 }
 
 fn parse_canonical_request(v: &Value) -> RouteQuery {

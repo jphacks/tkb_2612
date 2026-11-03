@@ -712,3 +712,32 @@ edge-severity（深刻度を事故単位、sev_i = 10×死者 + 負傷者）：
 ```
 
 固定小数点は `RISK_SCALE=1e6` のまま。長さは最大80,000m なので、`length` の固定小数点は最大 8e10、`random` でも最大 1.6e11 で `u64` に収まり、0.1m は 1e5 なので長さの丸めで0にならない。
+
+### 18.2 `routing_eval` の評価サブコマンド（M5.5・M5.8）
+
+`backend/src/bin/routing_eval.rs` は、評価と計測のサブコマンドを持つ。`route-batch`・`route-summary` は探索の部品（`find_routes`）を直接呼ぶのに対し、`engine-batch`・`engine-summary` は schema 3のreleaseを読み、サーバと同じ `RoutingEngine::evaluate` の経路で評価する。
+
+`engine-batch`：
+
+```sh
+cargo run --release --manifest-path backend/Cargo.toml --bin routing_eval -- engine-batch \
+  --release <schema 3のreleaseのディレクトリ> --ods <od.jsonl> --out <result.jsonl> \
+  [--threads 4] [--timeout-s 35] [--detour-min 10] [--conditions random|all] [--seed 1]
+```
+
+- releaseは `load_routing_engine` と同じ検証・読込（`data::load`）を通す。ODの形式・条件の選び方・期限は `route-batch` と同じで、ODの `detour_min` があれば `--detour-min` より優先する。`--conditions all` は時間帯・曜日区分・天候をすべて指定なしにする。
+- 1件ごとに `id`・`mode`・`detour_min`・`conditions`・`straight_m`・`status`・エラーのメッセージ・`total_ms`（`evaluate` の壁時計）・`aggregation_ms`・`invariants_ok`（`check_outcome_invariants` の結果と、通らなければメッセージ）・`fastest`・`safest`・`candidate_count`・`risk_reduction_percent`・`dropped_too_long` を記録する。`status` は `ok`・`no_route`・`route_too_long`・`interrupted`・`contract_violation`・`timeout` のいずれかである。
+- 候補ごとに `distance_m`・`duration_s`・`extra_minutes`・`accident_count`・`fatal_accidents`・`deaths`・`injuries`・`weighted_risk`・`high_risk_total`・`high_risk_sections`（数）・`vertex_count`・`full_vertex_count`（間引く前の頂点数）・`simplified`・`accident_point_count` を記録する。
+- 高リスク区間のしきい値の比較のため、候補ごとに、75mのsidごとの集合Bの事故の件数と深刻度の合計から、`t3`（件数3以上、`HIGH_RISK_MIN_ACCIDENTS`）と `t2`（件数2以上かつ深刻度の合計3以上）の「高リスクのsidの数」（`t3_sids`・`t2_sids`）と「表示用の区間の数」（`t3_sections`・`t2_sections`、`display_sections_checked` と同じ組み立て）を記録する。`t3` が応答の `high_risk_total`・`high_risk_sections` と一致しなければ、記録に `t3_mismatch: true` を入れる。
+- `dropped_too_long` は、候補の整理で80,000mを超えるために外した候補の数（探索の結果から数える）。
+- 処理の前後にVmRSS・VmHWM・読込の時間を標準エラーに出す。記録とは別に、`--out` の拡張子を `.meta.json` にしたファイルへ `release_id`・`load_seconds`・`process_seconds`・`vm_hwm_mb`・`threads`・`records` を書く。
+
+`engine-summary`：
+
+```sh
+cargo run --release --manifest-path backend/Cargo.toml --bin routing_eval -- engine-summary \
+  --results <result.jsonl>[,<result2.jsonl>...] [--group-by mode|mode,region] [--out <summary.json>]
+```
+
+- `engine-batch` の記録を、`mode`（と任意で `id` の最初の `-` より前の地域）ごとに集計する。
+- グループごとに、件数と `status` の内訳、`total_ms` の中央値・95%点・99%点・最大（`quantile` と同じ定義）、候補数の分布、`safest` が null の割合、`invariants_ok` が偽の件数、`route_too_long` の割合、`dropped_too_long` の合計と1以上のODの数、間引いた候補の割合、選定候補（`safest`、nullなら `fastest`）の `t3`・`t2` の区間の数の分布（0・1・2・3〜5・6〜10・11以上の件数と中央値・平均）、`safest` の `accident_count` が `fastest` より多いODの割合（分子・分母）を出す。

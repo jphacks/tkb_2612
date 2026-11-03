@@ -78,6 +78,16 @@ impl RoutingEngine {
         &self.snapshot
     }
 
+    /// [`RouteEngine::evaluate`] と同じ計算を行い、応答に出さない計測用の値も返す。
+    /// 評価コマンド（`routing_eval engine-batch`）だけが使う。
+    pub fn evaluate_with_report(
+        &self,
+        query: &RouteQuery,
+        cancel: &CancelToken,
+    ) -> Result<(RouteOutcome, super::evaluate::EvaluationReport), EngineError> {
+        super::evaluate::evaluate_with_report(self, query, cancel)
+    }
+
     pub(crate) fn params(&self) -> SearchParams {
         self.params
     }
