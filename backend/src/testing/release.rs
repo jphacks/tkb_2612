@@ -366,6 +366,7 @@ fn routing_test_risk_params() -> RiskParams {
         years: 1,
         c: 1.0,
         c_groups: vec![5, 6, 7, 8],
+        car_exposure: None,
         beta: crate::domain::routing::graph::time::PerMode {
             walk: 0.2,
             bike: 0.3,

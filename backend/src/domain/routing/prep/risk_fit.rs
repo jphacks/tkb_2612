@@ -126,6 +126,58 @@ impl InheritedFit {
     }
 }
 
+/// 道路区分の名前（motorway・arterial・localの順。`PARAMS.car_exposure` と同じ）。
+pub const EXPOSURE_CATEGORIES: [&str; 3] = ["motorway", "arterial", "local"];
+/// 区分ごとに係数を掛けるgroup（形式書14.4節）。
+pub const EXPOSURE_GROUPS: [&[u8]; 3] = [&[0], &[1, 2, 3], &[4, 5, 6, 7, 8, 9, 10]];
+/// 区分ごとの `route_class`（`route-code` 方式）。
+pub const EXPOSURE_ROUTE_CLASSES: [&[u8]; 3] = [&[5, 6, 7], &[0, 1, 2, 3], &[4]];
+
+/// 曝露の補正の方式。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ExposureMethod {
+    /// 警察の路線コードの区分と、与えた延長から計算する。
+    RouteCode { lengths_km: [f64; 3] },
+    /// 割り当ての重みと、OSMの中心線の延長から計算する。
+    Osm,
+    /// 係数を直接与える。
+    Factors([f64; 3]),
+}
+
+/// 交差点クラスタへの係数の掛け方。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExposureClusters {
+    /// クラスタの最上位の道路の区分（`j/8`）の係数を掛ける。
+    TopGroup,
+    /// 交差点には掛けない。
+    None,
+}
+
+impl ExposureClusters {
+    /// `PARAMS.car_exposure.clusters` に書く文字列。
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ExposureClusters::TopGroup => "top_group",
+            ExposureClusters::None => "none",
+        }
+    }
+}
+
+/// 曝露の補正の設定（計画書5章）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExposureConfig {
+    /// 係数の計算の方式。
+    pub method: ExposureMethod,
+    /// 国交省の死傷事故率（motorway・arterial・localの順）。`Factors` 以外では必須。
+    pub rates: Option<[f64; 3]>,
+    /// 交差点クラスタの扱い。
+    pub clusters: ExposureClusters,
+    /// `osm` 方式でも route-code の値を照合用に計算するときの延長（km）。
+    ///
+    /// `RouteCode` のときは `method` の延長と同じ値を入れる。
+    pub route_code_lengths_km: Option<[f64; 3]>,
+}
+
 /// `fit_risk` の設定。
 #[derive(Debug, Clone, PartialEq)]
 pub struct RiskFitConfig {
@@ -135,6 +187,8 @@ pub struct RiskFitConfig {
     pub validate_year: Option<u16>,
     /// 自動車の生活道路の係数c（計画書5.5節）。
     pub c: f64,
+    /// 道路区分ごとの曝露の補正。ないときは今の `c` の動きのまま。
+    pub exposure: Option<ExposureConfig>,
     /// 検証年の逸脱度で選ぶ値を、参照の推定から引き継ぐとき。
     pub inherit: Option<InheritedFit>,
 }
@@ -393,6 +447,48 @@ fn validate_input(input: &RiskFitInput<'_>, config: &RiskFitConfig) -> Result<()
     }
     if !(config.c.is_finite() && config.c >= 1.0) {
         return Err("--c は1以上の有限の数".to_owned());
+    }
+    if config.exposure.is_some() && config.c != 1.0 {
+        return Err(
+            "曝露の補正（--exposure-*）と--c（1以外）は同時に指定できません（二重に掛けないため）"
+                .to_owned(),
+        );
+    }
+    if let Some(exposure) = &config.exposure {
+        let positive = |values: &[f64; 3]| values.iter().all(|x| x.is_finite() && *x > 0.0);
+        match &exposure.method {
+            ExposureMethod::RouteCode { lengths_km } => {
+                if !positive(lengths_km) {
+                    return Err("--exposure-lengths の延長が有限の正の数ではありません".to_owned());
+                }
+            }
+            ExposureMethod::Osm => {}
+            ExposureMethod::Factors(factors) => {
+                if !positive(factors) {
+                    return Err("--exposure-factors の係数が有限の正の数ではありません".to_owned());
+                }
+            }
+        }
+        if !matches!(exposure.method, ExposureMethod::Factors(_)) {
+            match &exposure.rates {
+                Some(rates) if positive(rates) => {}
+                Some(_) => {
+                    return Err("--exposure-rates の事故率が有限の正の数ではありません".to_owned());
+                }
+                None => {
+                    return Err("--exposure-rates は factors 方式以外では必須です".to_owned());
+                }
+            }
+        } else if let Some(rates) = &exposure.rates
+            && !positive(rates)
+        {
+            return Err("--exposure-rates の事故率が有限の正の数ではありません".to_owned());
+        }
+        if let Some(lengths) = &exposure.route_code_lengths_km
+            && !positive(lengths)
+        {
+            return Err("--exposure-lengths の延長が有限の正の数ではありません".to_owned());
+        }
     }
     if config.inherit.is_some() && config.validate_year.is_some() {
         return Err("引き継ぎ（inherit）と検証年は同時に指定できません".to_owned());
@@ -1174,6 +1270,282 @@ fn cluster_fit_entries(cluster_j: &[u8], map: HashMap<u32, FitStat>) -> Vec<Vec<
     out
 }
 
+/// group（`k/8`・`j/8`）から区分（0〜2）を引く。group 11〜15は係数1なので `None`。
+fn exposure_group_category(group: u8) -> Option<usize> {
+    match group {
+        0 => Some(0),
+        1..=3 => Some(1),
+        4..=10 => Some(2),
+        _ => None,
+    }
+}
+
+/// `route_class` から照合表の行（0：motorway、1：arterial、2：local、3：その他）を引く。
+fn exposure_route_category(route_class: u8) -> Option<usize> {
+    match route_class {
+        5..=7 => Some(0),
+        0..=3 => Some(1),
+        4 => Some(2),
+        8..=14 | 0xFF => Some(3),
+        _ => None,
+    }
+}
+
+/// 方式の名前（`PARAMS.car_exposure.method`）。
+fn exposure_method_name(method: &ExposureMethod) -> &'static str {
+    match method {
+        ExposureMethod::RouteCode { .. } => "route-code",
+        ExposureMethod::Osm => "osm",
+        ExposureMethod::Factors(_) => "factors",
+    }
+}
+
+/// `car_exposure`・監査JSONの区分の配列。`with_t` のときは監査用に `t` も入れる。
+fn calibrated_categories(
+    counts: [f64; 3],
+    lengths: [f64; 3],
+    rates: [f64; 3],
+    method: &str,
+    with_t: bool,
+) -> Vec<Value> {
+    let density: [f64; 3] = std::array::from_fn(|i| {
+        if lengths[i] > 0.0 {
+            counts[i] / lengths[i]
+        } else {
+            0.0
+        }
+    });
+    let t: [f64; 3] = std::array::from_fn(|i| {
+        if rates[i] > 0.0 {
+            density[i] / rates[i]
+        } else {
+            0.0
+        }
+    });
+    let factors: [f64; 3] = std::array::from_fn(|i| {
+        if i == 1 {
+            1.0
+        } else if t[1] > 0.0 && t[i] > 0.0 {
+            t[1] / t[i]
+        } else {
+            1.0
+        }
+    });
+    let mut categories = Vec::with_capacity(3);
+    for cat in 0..3 {
+        let mut entry = json!({
+            "name": EXPOSURE_CATEGORIES[cat],
+            "groups": EXPOSURE_GROUPS[cat],
+            "rate": rates[cat],
+            "length_km": lengths[cat],
+            "count": counts[cat],
+            "density": density[cat],
+            "factor": factors[cat],
+        });
+        if method == "route-code" {
+            entry["route_classes"] = json!(EXPOSURE_ROUTE_CLASSES[cat]);
+        } else if method == "osm" {
+            entry["calib_groups"] = json!(EXPOSURE_GROUPS[cat]);
+        }
+        if with_t {
+            entry["t"] = json!(t[cat]);
+        }
+        categories.push(entry);
+    }
+    categories
+}
+
+/// `factors` 方式の区分の配列。事故率・延長・件数・密度は null。
+fn factors_categories(factors: [f64; 3], with_t: bool) -> Vec<Value> {
+    let mut categories = Vec::with_capacity(3);
+    for cat in 0..3 {
+        let mut entry = json!({
+            "name": EXPOSURE_CATEGORIES[cat],
+            "groups": EXPOSURE_GROUPS[cat],
+            "rate": Value::Null,
+            "length_km": Value::Null,
+            "count": Value::Null,
+            "density": Value::Null,
+            "factor": factors[cat],
+        });
+        if with_t {
+            entry["t"] = Value::Null;
+        }
+        categories.push(entry);
+    }
+    categories
+}
+
+/// `PARAMS.car_exposure` と監査の `exposure` で共通の外側。
+fn exposure_block(method: &str, clusters: &str, categories: Vec<Value>) -> Value {
+    json!({
+        "method": method,
+        "clusters": clusters,
+        "reference": "arterial",
+        "categories": categories,
+    })
+}
+
+/// 学習年の自動車の事故から、区分ごとの件数・延長と照合表を作り、係数を計算する。
+fn compute_exposure(
+    input: &RiskFitInput<'_>,
+    config: &ExposureConfig,
+    edge_k: &[u8],
+    cluster_j: &[u8],
+    train_years: &[u16],
+) -> ExposureComputation {
+    let car = Mode::Car.mask();
+    let mut route_counts = [0.0_f64; 3];
+    let mut osm_counts = [0.0_f64; 3];
+    let mut cross_edges = [[0.0_f64; 3]; 4];
+    let mut cross_clusters = [[0.0_f64; 3]; 4];
+
+    for i in 0..input.accidents.len() {
+        if !train_years.contains(&input.accidents.source_year[i]) {
+            continue;
+        }
+        if input.accidents.modes[i] & car == 0 {
+            continue;
+        }
+        let route_cat = exposure_route_category(input.accident_attrs.attrs[i].route_class);
+        if let Some(cat) = route_cat
+            && cat < 3
+        {
+            route_counts[cat] += 1.0;
+        }
+        let targets = &input.assignment.targets
+            [input.assignment.offsets[i] as usize..input.assignment.offsets[i + 1] as usize];
+        for target in targets {
+            if target.is_mirror() {
+                continue;
+            }
+            let Some(kind) = TargetKind::from_code(target.kind) else {
+                continue;
+            };
+            let dest = match kind {
+                TargetKind::Edge => {
+                    let k = edge_k[target.target as usize];
+                    if k == EDGE_K_NO_RISK || k == EDGE_K_SIDEWALK {
+                        None
+                    } else {
+                        exposure_group_category(k / 8)
+                    }
+                }
+                TargetKind::Cluster => {
+                    let j = cluster_j[target.target as usize];
+                    exposure_group_category(j / 8)
+                }
+            };
+            let Some(dest) = dest else {
+                continue;
+            };
+            let weight = f64::from(target.weight);
+            osm_counts[dest] += weight;
+            if let Some(route_cat) = route_cat {
+                match kind {
+                    TargetKind::Edge => cross_edges[route_cat][dest] += weight,
+                    TargetKind::Cluster => cross_clusters[route_cat][dest] += weight,
+                }
+            }
+        }
+    }
+
+    let mut osm_lengths = [0.0_f64; 3];
+    for (e, &k) in edge_k.iter().enumerate() {
+        if k == EDGE_K_NO_RISK || k == EDGE_K_SIDEWALK {
+            continue;
+        }
+        if input.graph.edges[e].access & crate::domain::routing::graph::access::both(Mode::Car) == 0
+        {
+            continue;
+        }
+        let Some(cat) = exposure_group_category(k / 8) else {
+            continue;
+        };
+        let mut length_km = f64::from(input.graph.edges[e].length_dm) / 10_000.0;
+        if input.topology.has_twin(e as u32) {
+            length_km *= 0.5;
+        }
+        osm_lengths[cat] += length_km;
+    }
+
+    let method_name = exposure_method_name(&config.method);
+    let clusters = config.clusters.as_str();
+    let (categories, audit_categories, alternate) = match &config.method {
+        ExposureMethod::RouteCode { lengths_km } => {
+            let rates = config.rates.expect("validate_inputで事故率を検査済み");
+            let categories =
+                calibrated_categories(route_counts, *lengths_km, rates, "route-code", false);
+            let audit_categories =
+                calibrated_categories(route_counts, *lengths_km, rates, "route-code", true);
+            let alternate = {
+                let categories = calibrated_categories(osm_counts, osm_lengths, rates, "osm", true);
+                exposure_block("osm", clusters, categories)
+            };
+            (categories, audit_categories, alternate)
+        }
+        ExposureMethod::Osm => {
+            let rates = config.rates.expect("validate_inputで事故率を検査済み");
+            let categories = calibrated_categories(osm_counts, osm_lengths, rates, "osm", false);
+            let audit_categories =
+                calibrated_categories(osm_counts, osm_lengths, rates, "osm", true);
+            let alternate = match (rates, config.route_code_lengths_km) {
+                (rates, Some(lengths_km)) => {
+                    let categories =
+                        calibrated_categories(route_counts, lengths_km, rates, "route-code", true);
+                    exposure_block("route-code", clusters, categories)
+                }
+                _ => Value::Null,
+            };
+            (categories, audit_categories, alternate)
+        }
+        ExposureMethod::Factors(factors) => (
+            factors_categories(*factors, false),
+            factors_categories(*factors, true),
+            match (config.rates, config.route_code_lengths_km) {
+                (Some(rates), _) => {
+                    let categories =
+                        calibrated_categories(osm_counts, osm_lengths, rates, "osm", true);
+                    exposure_block("osm", clusters, categories)
+                }
+                _ => Value::Null,
+            },
+        ),
+    };
+
+    let mut cross_total = [[0.0_f64; 3]; 4];
+    for row in 0..4 {
+        for col in 0..3 {
+            cross_total[row][col] = cross_edges[row][col] + cross_clusters[row][col];
+        }
+    }
+    let car_exposure = exposure_block(method_name, clusters, categories);
+    let audit = json!({
+        "method": method_name,
+        "clusters": clusters,
+        "reference": "arterial",
+        "categories": audit_categories,
+        "alternate": alternate,
+        "cross_tab": {
+            "route_class": ["motorway", "arterial", "local", "other"],
+            "assignment": EXPOSURE_CATEGORIES,
+            "edges": cross_edges,
+            "clusters": cross_clusters,
+            "total": cross_total,
+        },
+    });
+    ExposureComputation {
+        car_exposure,
+        audit,
+    }
+}
+
+/// 曝露の補正の計算結果（`PARAMS` に書く値と監査）。
+struct ExposureComputation {
+    car_exposure: Value,
+    audit: Value,
+}
+
 /// 推定を実行する。ファイルの読み書きはしない。
 ///
 /// # Errors
@@ -1191,6 +1563,19 @@ pub fn fit_risk(
     log("EDGEKを決める");
     let edge_k = build_edge_k(input, &config.train_years, log);
     let cluster_j = build_cluster_j(input.topology);
+    let exposure = match &config.exposure {
+        Some(exposure) => {
+            log("曝露の補正の係数を計算する");
+            Some(compute_exposure(
+                input,
+                exposure,
+                &edge_k,
+                &cluster_j,
+                &config.train_years,
+            ))
+        }
+        None => None,
+    };
 
     let mut edge_length = vec![0.0_f64; EDGE_KINDS];
     for (e, &k) in edge_k.iter().enumerate() {
@@ -1681,6 +2066,11 @@ pub fn fit_risk(
         "edges": {"count": edges, "sidewalk": sidewalk_edges, "no_risk": no_risk_edges},
         "clusters": {"count": clusters},
     });
+    if let Some(exposure) = &exposure
+        && let Some(object) = params.as_object_mut()
+    {
+        object.insert("car_exposure".to_owned(), exposure.car_exposure.clone());
+    }
     if let Some(inherit) = &config.inherit
         && let Some(object) = params.as_object_mut()
     {
@@ -1712,6 +2102,11 @@ pub fn fit_risk(
         "edges": {"count": edges},
         "clusters": {"count": clusters},
     });
+    if let Some(exposure) = &exposure
+        && let Some(object) = audit.as_object_mut()
+    {
+        object.insert("exposure".to_owned(), exposure.audit.clone());
+    }
     if let Some(inherit) = &config.inherit
         && let Some(object) = audit.as_object_mut()
     {

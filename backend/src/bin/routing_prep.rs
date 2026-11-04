@@ -27,7 +27,7 @@
 //! | `restrictions` | `--pbf <PBF> --graph <graph.bin> --attrs <graph_attrs.bin> --output <restrictions.bin>`：監査は `<output>` の拡張子を `audit.json` にしたもの |
 //! | `topology` | `--graph <graph.bin> --attrs <graph_attrs.bin> --output <topology.bin> [--scc-min-nodes N] [--threads N]`（`--scc-min-nodes` の既定は200。小さなグラフのテスト用） |
 //! | `accident-snap` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --accidents <accidents.csv.gz> --output <assignment.bin> [--sigma0 M] [--likelihood true|false] [--clusters true|false] [--threads N] [--review-dir DIR --review-count N --review-seed N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--review-dir` を付けると人手判定用の `review_sample.json` を書く。`--likelihood false` は尤度表を使わず距離だけで、`--clusters false` は交差点クラスタを候補にせず辺だけで割り当てる（要素を外した比較用） |
-//! | `risk-fit` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --accidents <accidents.csv.gz> --output <risk.bin> [--train-years 2019-2022] [--validate-year 2023] [--inherit-from <参照のrisk.bin>] [--c 1.0] [--threads N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--inherit-from` を付けると、W・β・β_clusterを参照から引き継ぎ、検証年を使わない |
+//! | `risk-fit` | `--graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --accidents <accidents.csv.gz> --output <risk.bin> [--train-years 2019-2022] [--validate-year 2023] [--inherit-from <参照のrisk.bin>] [--c 1.0] [--exposure-method route-code\|osm\|factors] [--exposure-rates motorway=9,arterial=62,local=142] [--exposure-lengths motorway=12675,arterial=181204,local=1015861] [--exposure-factors motorway=0.27,arterial=1,local=13.5] [--exposure-clusters top_group\|none] [--threads N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--inherit-from` を付けると、W・β・β_clusterを参照から引き継ぎ、検証年を使わない。曝露の補正は、道路区分（motorway・arterial・local）ごとの係数を学習年の事故から計算し、`PARAMS.car_exposure` に記録する。`--exposure-method` を付けなければ今の `c` の動きのまま（出力はバイト単位で変わらない） |
 //! | `od-index` | `--graph <graph.bin> --output <odindex.bin> [--threads N]` |
 //! | `alt` | `--graph <graph.bin> --output <alt.bin> [--modes car,bike,walk] [--landmarks 16] [--unit-ds 40] [--with-to false] [--start-node N]`：監査は `<output>` の拡張子を `audit.json` にしたもの。`--modes` の既定は `car` |
 //! | `package` | `--base-release <schema2のrelease> --graph <graph.bin> --restrictions <restrictions.bin> --topology <topology.bin> --odindex <odindex.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --risk <risk.bin> --alt <alt.bin> --output <出力の根>`：`<output>/releases/<release_id>/` に11ファイルを作る |
@@ -691,6 +691,43 @@ fn parse_train_years(value: &str) -> Result<Vec<u16>, String> {
     Ok(years)
 }
 
+/// `motorway=9,arterial=62,local=142` を読む（3区分をすべて1回ずつ）。
+fn parse_exposure_values(
+    value: &str,
+    option: &str,
+    categories: &[&str; 3],
+) -> Result<[f64; 3], String> {
+    let mut values: [Option<f64>; 3] = [None; 3];
+    for part in value.split(',') {
+        let (name, number) = part.split_once('=').ok_or_else(|| {
+            format!("{option} は 名前=値 の列です（例: motorway=9,arterial=62,local=142）")
+        })?;
+        let name = name.trim();
+        let index = categories
+            .iter()
+            .position(|&category| category == name)
+            .ok_or_else(|| {
+                format!("{option} の区分名 {name} が不明です（motorway・arterial・local）")
+            })?;
+        if values[index].is_some() {
+            return Err(format!("{option} に区分 {name} が2回あります"));
+        }
+        let parsed = number
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|x| x.is_finite() && *x > 0.0)
+            .ok_or_else(|| format!("{option} の {name} が有限の正の数ではありません"))?;
+        values[index] = Some(parsed);
+    }
+    if values.iter().any(Option::is_none) {
+        return Err(format!(
+            "{option} に motorway・arterial・local の3つを指定してください"
+        ));
+    }
+    Ok(values.map(|value| value.expect("3区分を検査済み")))
+}
+
 /// P6：リスクの係数を推定して `risk.bin` を作る（形式書14章、作業書M3b.1）。
 ///
 /// 入力の `DEPS` が渡した実ファイルのSHA-256と一致しなければ失敗する。書いたあとに読み直して、
@@ -705,11 +742,12 @@ fn risk_fit(options: &Options) -> Result<(), String> {
         decode_risk, decode_topology, encode_risk, required_deps,
     };
     use accident_route_backend::domain::routing::prep::risk_fit::{
-        InheritedFit, RiskFitConfig, RiskFitInput, fit_risk,
+        EXPOSURE_CATEGORIES, ExposureClusters, ExposureConfig, ExposureMethod, InheritedFit,
+        RiskFitConfig, RiskFitInput, fit_risk,
     };
 
-    const USAGE: &str = "使い方: routing_prep risk-fit --graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --accidents <accidents.csv.gz> --output <risk.bin> [--train-years 2019-2022] [--validate-year 2023] [--inherit-from <参照のrisk.bin>] [--c 1.0] [--threads N]";
-    const KNOWN: [&str; 12] = [
+    const USAGE: &str = "使い方: routing_prep risk-fit --graph <graph.bin> --attrs <graph_attrs.bin> --topology <topology.bin> --accident-attrs <accident_attrs.bin> --assignment <assignment.bin> --accidents <accidents.csv.gz> --output <risk.bin> [--train-years 2019-2022] [--validate-year 2023] [--inherit-from <参照のrisk.bin>] [--c 1.0] [--exposure-method route-code|osm|factors] [--exposure-rates motorway=9,arterial=62,local=142] [--exposure-lengths motorway=12675,arterial=181204,local=1015861] [--exposure-factors motorway=0.27,arterial=1,local=13.5] [--exposure-clusters top_group|none] [--threads N]";
+    const KNOWN: [&str; 17] = [
         "graph",
         "attrs",
         "topology",
@@ -721,6 +759,11 @@ fn risk_fit(options: &Options) -> Result<(), String> {
         "validate-year",
         "inherit-from",
         "c",
+        "exposure-method",
+        "exposure-rates",
+        "exposure-lengths",
+        "exposure-factors",
+        "exposure-clusters",
         "threads",
     ];
     if let Some(unknown) = options.0.keys().find(|k| !KNOWN.contains(&k.as_str())) {
@@ -770,6 +813,95 @@ fn risk_fit(options: &Options) -> Result<(), String> {
             .filter(|x| x.is_finite() && *x >= 1.0)
             .ok_or_else(|| "--c は1以上の有限の数".to_owned())?,
         None => 1.0,
+    };
+    let exposure_option_used = [
+        "exposure-rates",
+        "exposure-lengths",
+        "exposure-factors",
+        "exposure-clusters",
+    ]
+    .iter()
+    .any(|name| options.0.contains_key(*name));
+    let exposure = match options.0.get("exposure-method") {
+        Some(method) => {
+            let rates = options
+                .0
+                .get("exposure-rates")
+                .map(|value| parse_exposure_values(value, "--exposure-rates", &EXPOSURE_CATEGORIES))
+                .transpose()?;
+            let lengths = options
+                .0
+                .get("exposure-lengths")
+                .map(|value| {
+                    parse_exposure_values(value, "--exposure-lengths", &EXPOSURE_CATEGORIES)
+                })
+                .transpose()?;
+            let factors = options
+                .0
+                .get("exposure-factors")
+                .map(|value| {
+                    parse_exposure_values(value, "--exposure-factors", &EXPOSURE_CATEGORIES)
+                })
+                .transpose()?;
+            let clusters = match options
+                .0
+                .get("exposure-clusters")
+                .map_or("top_group", String::as_str)
+            {
+                "top_group" => ExposureClusters::TopGroup,
+                "none" => ExposureClusters::None,
+                other => {
+                    return Err(format!(
+                        "--exposure-clusters は top_group か none です（{other}）"
+                    ));
+                }
+            };
+            let method = match method.as_str() {
+                "route-code" => {
+                    let lengths_km = lengths.ok_or_else(|| {
+                        "--exposure-method route-code には --exposure-lengths が必要です".to_owned()
+                    })?;
+                    if rates.is_none() {
+                        return Err(
+                            "--exposure-method route-code には --exposure-rates が必要です"
+                                .to_owned(),
+                        );
+                    }
+                    ExposureMethod::RouteCode { lengths_km }
+                }
+                "osm" => {
+                    if rates.is_none() {
+                        return Err(
+                            "--exposure-method osm には --exposure-rates が必要です".to_owned()
+                        );
+                    }
+                    ExposureMethod::Osm
+                }
+                "factors" => {
+                    let factors = factors.ok_or_else(|| {
+                        "--exposure-method factors には --exposure-factors が必要です".to_owned()
+                    })?;
+                    ExposureMethod::Factors(factors)
+                }
+                other => {
+                    return Err(format!(
+                        "--exposure-method は route-code・osm・factors のいずれかです（{other}）"
+                    ));
+                }
+            };
+            Some(ExposureConfig {
+                method,
+                rates,
+                clusters,
+                route_code_lengths_km: lengths,
+            })
+        }
+        None => {
+            if exposure_option_used {
+                return Err("--exposure-method を指定せずに他の--exposure-*は使えません".to_owned());
+            }
+            None
+        }
     };
 
     log("入力を読む");
@@ -879,6 +1011,7 @@ fn risk_fit(options: &Options) -> Result<(), String> {
         train_years,
         validate_year,
         c,
+        exposure,
         inherit,
     };
     let result = fit_risk(&input, &config, &log)?;

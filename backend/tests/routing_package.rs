@@ -66,6 +66,7 @@ fn risk_params() -> RiskParams {
         years: 4,
         c: 1.5,
         c_groups: vec![5, 6, 7, 8],
+        car_exposure: None,
         beta: PerMode {
             walk: 0.2,
             bike: 0.3,

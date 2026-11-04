@@ -4,8 +4,9 @@
 //! 事故の列から、探索で触れた辺だけ計算する。
 use std::collections::{HashMap, HashSet};
 
+use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::contract::{ConditionFilter, DayType, Mode, Period, Weather};
 use crate::domain::AccidentSnapshot;
@@ -117,6 +118,92 @@ pub struct WeatherMultiplier {
     pub snow: f64,
 }
 
+/// `risk.bin` の `PARAMS.car_exposure`：道路区分ごとの曝露の補正（形式書14.4節）。
+///
+/// `categories` の `factor` を、自動車の辺（と `clusters=top_group` の交差点クラスタ）の
+/// リスクに掛ける。`method`・`clusters` 以外のキーは、読む側では使わないが `raw_params` に
+/// 残る。`RiskParams` のJSONへの書き戻しでも落とさないように、未知のキーは `extra` に持つ。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CarExposure {
+    /// `route-code`・`osm`・`factors` のいずれか。
+    pub method: String,
+    /// `top_group`（交差点にも掛ける）か `none`（掛けない）。
+    pub clusters: String,
+    /// 区分（motorway・arterial・localの順）。
+    #[serde(default)]
+    pub categories: Vec<CarExposureCategory>,
+    /// 読む側で使わないキー（`reference`・`route_classes` など）。
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+/// `CarExposure` の区分1つ分。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CarExposureCategory {
+    /// 区分の名前。
+    pub name: String,
+    /// 係数を掛けるgroup（`k/8`・`j/8`）。
+    #[serde(default)]
+    pub groups: Vec<u8>,
+    /// 係数。有限の正の数。
+    pub factor: f64,
+    /// 読む側で使わないキー（`rate`・`length_km`・`route_classes` など）。
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
+impl CarExposure {
+    /// group 0〜15 ごとの係数の表（既定1.0）。
+    pub fn group_factors(&self) -> [f64; 16] {
+        let mut factors = [1.0_f64; 16];
+        for category in &self.categories {
+            for &group in &category.groups {
+                if group < 16 {
+                    factors[usize::from(group)] = category.factor;
+                }
+            }
+        }
+        factors
+    }
+
+    /// 読込時の検査（形式書14.4節）。
+    ///
+    /// # Errors
+    /// `clusters` が `top_group`・`none` 以外、`factor` が有限の正の数でない、groupが16以上、
+    /// またはgroupが区分の間で重複しているとき。
+    fn validate(&self) -> Result<(), String> {
+        if self.clusters != "top_group" && self.clusters != "none" {
+            return Err(format!(
+                "car_exposure.clustersが{}です（top_groupかnone）",
+                self.clusters
+            ));
+        }
+        let mut seen = [false; 16];
+        for category in &self.categories {
+            if !(category.factor.is_finite() && category.factor > 0.0) {
+                return Err(format!(
+                    "car_exposure.categories[{}].factorが有限の正の数ではありません",
+                    category.name
+                ));
+            }
+            for &group in &category.groups {
+                if group >= 16 {
+                    return Err(format!(
+                        "car_exposure.categories[{}].groupsの{group}が16以上です",
+                        category.name
+                    ));
+                }
+                if std::mem::replace(&mut seen[usize::from(group)], true) {
+                    return Err(format!(
+                        "car_exposureのgroup {group}が区分の間で重複しています"
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 /// `risk.bin` の `PARAMS`（形式書14.4節）。
 ///
 /// `beta_cluster` は古いJSONにないことがあるので、`beta` と同じ値で補う
@@ -131,6 +218,9 @@ pub struct RiskParams {
     pub c: f64,
     /// cを掛けるgroup（`[5, 6, 7, 8]`）。
     pub c_groups: Vec<u8>,
+    /// 道路区分ごとの曝露の補正。ないときはキーを書かない（今の `c` の動きのまま）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub car_exposure: Option<CarExposure>,
     /// 天候の縮小の母数β（手段ごと）。
     pub beta: PerMode<f64>,
     /// 交差点の天候の縮小の母数β_cluster（手段ごと）。
@@ -154,6 +244,8 @@ struct RiskParamsJson {
     years: u32,
     c: f64,
     c_groups: Vec<u8>,
+    #[serde(default)]
+    car_exposure: Option<CarExposure>,
     beta: PerMode<f64>,
     #[serde(default)]
     beta_cluster: Option<PerMode<f64>>,
@@ -173,11 +265,15 @@ impl<'de> Deserialize<'de> for RiskParams {
     {
         let raw = RiskParamsJson::deserialize(deserializer)?;
         let beta_cluster = raw.beta_cluster.unwrap_or_else(|| raw.beta.clone());
+        if let Some(exposure) = &raw.car_exposure {
+            exposure.validate().map_err(D::Error::custom)?;
+        }
         Ok(RiskParams {
             train_source_years: raw.train_source_years,
             years: raw.years,
             c: raw.c,
             c_groups: raw.c_groups,
+            car_exposure: raw.car_exposure,
             beta: raw.beta,
             beta_cluster,
             weather_multiplier: raw.weather_multiplier,
@@ -330,6 +426,8 @@ pub struct RiskView<'a> {
     weather_term: Option<(u8, f64)>,
     /// 評価用の計算の切り替え（既定は [`RiskVariant::Standard`]）。
     variant: RiskVariant,
+    /// `car_exposure` のgroupごとの係数（既定1.0）。
+    car_factors: [f64; 16],
     edge_cache: HashMap<EdgeId, f64>,
     cluster_cache: HashMap<ClusterId, f64>,
 }
@@ -383,6 +481,11 @@ impl<'a> RiskView<'a> {
             train_years: model.params.train_source_years.iter().copied().collect(),
             weather_term,
             variant: RiskVariant::Standard,
+            car_factors: model
+                .params
+                .car_exposure
+                .as_ref()
+                .map_or([1.0; 16], CarExposure::group_factors),
             edge_cache: HashMap::new(),
             cluster_cache: HashMap::new(),
         }
@@ -626,15 +729,37 @@ impl<'a> RiskView<'a> {
         }
     }
 
-    /// 自動車の生活道路の係数 `c_k`（形式書14.5節）。
+    /// 自動車の道路区分の係数 `c_k`（形式書14.5節）。`car_exposure` があれば `f[k/8]`、
+    /// なければ生活道路の係数 `c` の規則。
     fn c_factor(&self, k: u8) -> f64 {
-        if self.mode == Mode::Car
-            && self.variant != RiskVariant::ExpectedCount
-            && k != EDGE_K_NO_RISK
-            && k != EDGE_K_SIDEWALK
-            && self.model.params.c_groups.contains(&(k / 8))
+        if self.mode != Mode::Car
+            || self.variant == RiskVariant::ExpectedCount
+            || k == EDGE_K_NO_RISK
+            || k == EDGE_K_SIDEWALK
         {
+            return 1.0;
+        }
+        if self.model.params.car_exposure.is_some() {
+            return self.car_factors[usize::from(k / 8)];
+        }
+        if self.model.params.c_groups.contains(&(k / 8)) {
             self.model.params.c
+        } else {
+            1.0
+        }
+    }
+
+    /// 交差点クラスタの道路区分の係数（形式書14.5節）。自動車で `car_exposure` があり
+    /// `clusters=top_group` のときだけ `f[j/8]`、それ以外は1。
+    fn cluster_factor(&self, j: u8) -> f64 {
+        if self.mode != Mode::Car || self.variant == RiskVariant::ExpectedCount {
+            return 1.0;
+        }
+        let Some(exposure) = &self.model.params.car_exposure else {
+            return 1.0;
+        };
+        if exposure.clusters == "top_group" {
+            self.car_factors[usize::from(j / 8)]
         } else {
             1.0
         }
@@ -703,7 +828,8 @@ impl<'a> RiskView<'a> {
         let sums = self.coef_sums(&self.model.j_table, j);
         let a = self.coefficient_a(&self.model.j_table, j);
         let beta = *self.model.params.beta_cluster.get(self.mode);
-        self.risk_value(sums, 1.0, observed, a, beta)
+        let risk = self.risk_value(sums, 1.0, observed, a, beta);
+        self.cluster_factor(j) * risk
     }
 }
 
