@@ -166,7 +166,7 @@ export function CommunityMap(props: Props) {
           className="route-schematic community-canvas"
           viewBox={`0 0 ${size.width} ${size.height}`}
           role="application"
-          aria-label="みんなの安全情報の地図"
+          aria-label="安全危険情報共有モードの地図"
           tabIndex={0}
           onPointerDown={(event) => {
             if (event.button !== 0) return;

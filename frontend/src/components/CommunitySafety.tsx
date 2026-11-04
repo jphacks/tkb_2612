@@ -174,7 +174,7 @@ export function CommunitySafety() {
   }
 
   return (
-    <main className="community-page" aria-label="みんなの安全情報モード">
+    <main className="community-page" aria-label="安全危険情報共有モード">
       <CommunityMap
         center={center}
         currentPosition={currentPosition}

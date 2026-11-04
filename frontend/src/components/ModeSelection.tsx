@@ -34,7 +34,7 @@ export function ModeSelection({
         {(
           [
             ["navigation", "安全経路選択ナビモード", Route],
-            ["community", "みんなの安全情報モード", UsersRound],
+            ["community", "安全危険情報共有モード", UsersRound],
           ] as const
         ).map(([mode, label, Icon]) => (
           <button

@@ -29,7 +29,7 @@ describe("mode selection and logo restart", () => {
       name: "安全経路選択ナビモード",
     });
     const community = screen.getByRole("button", {
-      name: "みんなの安全情報モード",
+      name: "安全危険情報共有モード",
     });
     expect(navigation).toHaveAttribute("aria-pressed", "true");
     fireEvent.pointerEnter(community);
@@ -56,7 +56,7 @@ describe("mode selection and logo restart", () => {
       name: "安全経路選択ナビモード",
     });
     const community = screen.getByRole("button", {
-      name: "みんなの安全情報モード",
+      name: "安全危険情報共有モード",
     });
     await user.click(community);
     expect(community).toHaveAttribute("aria-pressed", "true");
@@ -69,14 +69,14 @@ describe("mode selection and logo restart", () => {
     await screen.findByRole("combobox", { name: "出発地" });
     await user.click(screen.getByRole("button", { name: "モード選択" }));
     const nextCommunity = screen.getByRole("button", {
-      name: "みんなの安全情報モード",
+      name: "安全危険情報共有モード",
     });
     await user.click(nextCommunity);
     expect(screen.queryByRole("application")).not.toBeInTheDocument();
     await user.click(nextCommunity);
     expect(
       await screen.findByRole("application", {
-        name: "みんなの安全情報の地図",
+        name: "安全危険情報共有モードの地図",
       }),
     ).toBeVisible();
     expect(
@@ -96,7 +96,7 @@ describe("mode selection and logo restart", () => {
   it("cancels a pending mode transition when the logo is clicked", async () => {
     const user = await start();
     const community = screen.getByRole("button", {
-      name: "みんなの安全情報モード",
+      name: "安全危険情報共有モード",
     });
     await user.click(community);
     await user.click(community);
