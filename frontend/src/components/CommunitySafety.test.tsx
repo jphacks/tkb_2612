@@ -56,7 +56,7 @@ describe("community safety reports", () => {
         expect(icon).toHaveAttribute("fill", "none");
       }
       await user.click(within(choices).getByRole("button", { name: label }));
-      const input = screen.getByRole("textbox", { name: "口コミ" });
+      const input = screen.getByRole("textbox", { name: "詳細情報を記入" });
       expect(input).toHaveAttribute("placeholder", "例：夜道は危ない");
       expect(input).toHaveFocus();
       await user.type(input, text);
@@ -71,6 +71,9 @@ describe("community safety reports", () => {
           text,
           lat: expect.any(Number),
           lon: expect.any(Number),
+          createdAt: expect.any(String),
+          supportCount: 1,
+          comments: [],
         }),
       ]);
       first.unmount();
@@ -81,6 +84,10 @@ describe("community safety reports", () => {
       expect(screen.getByRole("region", { name: "口コミ" })).toHaveTextContent(
         text,
       );
+      expect(screen.getByRole("heading", { name: "詳細情報" })).toBeVisible();
+      expect(
+        screen.getByRole("region", { name: "口コミ" }).querySelector("time"),
+      ).toHaveAttribute("datetime", saved[0].createdAt);
     },
   );
 
@@ -122,13 +129,29 @@ describe("community safety reports", () => {
   it("keeps a draft when an older GPS request completes after picking a point", async () => {
     const user = userEvent.setup();
     let resolveLocation!: PositionCallback;
-    vi.mocked(navigator.geolocation.getCurrentPosition).mockImplementation(success => { resolveLocation = success; });
+    vi.mocked(navigator.geolocation.getCurrentPosition).mockImplementation(
+      (success) => {
+        resolveLocation = success;
+      },
+    );
     render(<CommunitySafety />);
-    fireEvent.click(screen.getByRole("application"), { clientX: 195, clientY: 320 });
+    fireEvent.click(screen.getByRole("application"), {
+      clientX: 195,
+      clientY: 320,
+    });
     await user.click(screen.getByRole("button", { name: "危険" }));
-    await user.type(screen.getByRole("textbox", { name: "口コミ" }), "夜道は危ない");
-    act(() => resolveLocation({ coords: { latitude: 36, longitude: 140 } } as GeolocationPosition));
-    expect(screen.getByRole("textbox", { name: "口コミ" })).toHaveValue("夜道は危ない");
+    await user.type(
+      screen.getByRole("textbox", { name: "詳細情報を記入" }),
+      "夜道は危ない",
+    );
+    act(() =>
+      resolveLocation({
+        coords: { latitude: 36, longitude: 140 },
+      } as GeolocationPosition),
+    );
+    expect(screen.getByRole("textbox", { name: "詳細情報を記入" })).toHaveValue(
+      "夜道は危ない",
+    );
     await user.click(screen.getByRole("button", { name: "投稿" }));
     const [report] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
     expect(report.lat).toBeCloseTo(35.6812, 5);
@@ -144,7 +167,7 @@ describe("community safety reports", () => {
     });
     await user.click(screen.getByRole("button", { name: "危険" }));
     await user.type(
-      screen.getByRole("textbox", { name: "口コミ" }),
+      screen.getByRole("textbox", { name: "詳細情報を記入" }),
       "夜道は危ない",
     );
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
@@ -154,11 +177,141 @@ describe("community safety reports", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(
       "口コミを保存できませんでした。",
     );
-    expect(screen.getByRole("textbox", { name: "口コミ" })).toHaveValue(
+    expect(screen.getByRole("textbox", { name: "詳細情報を記入" })).toHaveValue(
       "夜道は危ない",
     );
     expect(
       screen.queryByRole("button", { name: /危険の口コミ/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each(["", "夜は暗い"])(
+    "shows the recorded date with and without details: %s",
+    async (text) => {
+      const user = userEvent.setup();
+      localStorage.setItem(
+        REPORTS_KEY,
+        JSON.stringify([
+          {
+            id: "dated",
+            kind: "danger",
+            text,
+            lat: 35.6812,
+            lon: 139.7671,
+            createdAt: "2026-11-04T09:15:00.000Z",
+          },
+        ]),
+      );
+      render(<CommunitySafety />);
+      await user.click(
+        screen.getByRole("button", {
+          name: text ? `危険の口コミ：${text}` : "危険の口コミ",
+        }),
+      );
+      expect(screen.getByText("2026/11/04 18:15")).toBeVisible();
+      expect(!!screen.queryByRole("heading", { name: "詳細情報" })).toBe(
+        !!text,
+      );
+      expect(screen.queryByLabelText("1票")).not.toBeInTheDocument();
+    },
+  );
+
+  it("counts each support once, skips optional details, and retains successive dated comments", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      REPORTS_KEY,
+      JSON.stringify([
+        {
+          id: "supported",
+          kind: "danger",
+          text: "夜は暗い",
+          lat: 35.6812,
+          lon: 139.7671,
+          createdAt: "2026-11-04T09:15:00.000Z",
+        },
+      ]),
+    );
+    const first = render(<CommunitySafety />);
+    await user.click(
+      screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
+    );
+    expect(screen.queryByLabelText("1票")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "私もそう思う" }));
+    expect(screen.getByLabelText("2票")).toBeVisible();
+    expect(
+      screen.getByRole("textbox", { name: "詳細情報を入力" }),
+    ).toHaveFocus();
+    expect(screen.getByRole("button", { name: "確定" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "スキップ" }));
+    expect(JSON.parse(localStorage.getItem(REPORTS_KEY)!)[0]).toMatchObject({
+      supportCount: 2,
+      comments: [],
+    });
+    await user.click(screen.getByRole("button", { name: "私もそう思う" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "詳細情報を入力" }),
+      "歩道も狭い",
+    );
+    await user.click(screen.getByRole("button", { name: "確定" }));
+    expect(screen.getByLabelText("3票")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "私もそう思う" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "詳細情報を入力" }),
+      "街灯が少ない",
+    );
+    await user.click(screen.getByRole("button", { name: "確定" }));
+    first.unmount();
+    render(<CommunitySafety />);
+    await user.click(
+      screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
+    );
+    const review = screen.getByRole("region", { name: "口コミ" });
+    expect(within(review).getByLabelText("4票")).toBeVisible();
+    expect(
+      within(review)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "夜は暗い",
+      expect.stringContaining("歩道も狭い"),
+      expect.stringContaining("街灯が少ない"),
+    ]);
+    const [saved] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
+    expect(saved.supportCount).toBe(4);
+    expect(saved.comments).toHaveLength(2);
+    for (const comment of saved.comments)
+      expect(Number.isFinite(Date.parse(comment.createdAt))).toBe(true);
+  });
+
+  it("keeps the vote unchanged if browser storage cannot save support", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(
+      REPORTS_KEY,
+      JSON.stringify([
+        {
+          id: "legacy",
+          kind: "safe",
+          text: "見通しが良い",
+          lat: 35.6812,
+          lon: 139.7671,
+        },
+      ]),
+    );
+    render(<CommunitySafety />);
+    await user.click(
+      screen.getByRole("button", { name: "安全の口コミ：見通しが良い" }),
+    );
+    expect(screen.getByText("日時不明")).toBeVisible();
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("unavailable");
+    });
+    await user.click(screen.getByRole("button", { name: "私もそう思う" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "口コミを保存できませんでした。",
+    );
+    expect(screen.queryByLabelText("2票")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: "詳細情報を入力" }),
     ).not.toBeInTheDocument();
   });
 });

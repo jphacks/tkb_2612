@@ -31,6 +31,7 @@ type Props = {
   children?: ReactNode;
   popupWidth: number;
   popupHeight: number;
+  bottomInset?: number;
 };
 
 export function CommunityMap(props: Props) {
@@ -147,7 +148,13 @@ export function CommunityMap(props: Props) {
       )
     : 0;
   const popupY = popup
-    ? Math.max(80, Math.min(size.height - popupHeight - 16, popup.y + 24))
+    ? Math.max(
+        80,
+        Math.min(
+          size.height - popupHeight - (props.bottomInset ?? 16),
+          popup.y + 24,
+        ),
+      )
     : 0;
 
   return (
@@ -283,6 +290,11 @@ export function CommunityMap(props: Props) {
             onClick={() => props.onReport(report)}
           >
             <span />
+            {report.supportCount > 1 && (
+              <span className="community-marker-count" aria-hidden="true">
+                {report.supportCount}
+              </span>
+            )}
           </button>
         );
       })}

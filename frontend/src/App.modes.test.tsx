@@ -23,6 +23,12 @@ describe("mode selection and logo restart", () => {
     const community = screen.getByRole("button", {
       name: "みんなの安全情報モード",
     });
+    expect(navigation).toHaveAttribute("aria-pressed", "true");
+    expect(community).toHaveAttribute("aria-pressed", "false");
+    fireEvent.pointerEnter(community);
+    fireEvent.focus(community);
+    expect(navigation).toHaveAttribute("aria-pressed", "true");
+    expect(community).toHaveAttribute("aria-pressed", "false");
     await user.click(navigation);
     expect(navigation).toHaveAttribute("aria-pressed", "true");
     expect(community).toHaveAttribute("aria-pressed", "false");
@@ -52,9 +58,14 @@ describe("mode selection and logo restart", () => {
     );
     await screen.findByRole("combobox", { name: "出発地" });
     await user.click(screen.getByRole("button", { name: "モード選択" }));
-    await user.click(
-      screen.getByRole("button", { name: "みんなの安全情報モード" }),
-    );
+    const community = screen.getByRole("button", {
+      name: "みんなの安全情報モード",
+    });
+    await user.click(community);
+    expect(community).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: "安全経路選択ナビモード" }),
+    ).toHaveAttribute("aria-pressed", "false");
     expect(
       await screen.findByRole("application", {
         name: "みんなの安全情報の地図",
