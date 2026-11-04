@@ -12,7 +12,6 @@ export function ModeSelection({
   visible: boolean;
 }) {
   const [active, setActive] = useState<AppMode>("navigation");
-  const [armed, setArmed] = useState<AppMode | null>(null);
   const [chosen, setChosen] = useState<AppMode | null>(null);
   const container = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -44,11 +43,8 @@ export function ModeSelection({
             className={`mode-option mode-option-${mode}${active === mode ? " is-active" : ""}`}
             aria-pressed={active === mode}
             onClick={() => {
-              if (active === mode && armed === mode) setChosen(mode);
-              else {
-                setActive(mode);
-                setArmed(mode);
-              }
+              if (active === mode) setChosen(mode);
+              else setActive(mode);
             }}
           >
             <Icon size={32} strokeWidth={1.8} aria-hidden="true" />

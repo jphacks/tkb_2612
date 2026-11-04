@@ -19,7 +19,7 @@ async function start() {
 }
 
 describe("mode selection and logo restart", () => {
-  it("centers a heading-free selector and requires two clicks even for the initial navigation selection", async () => {
+  it("centers a heading-free selector and enters the initially selected navigation mode with one click", async () => {
     const user = await start();
     expect(
       screen.queryByRole("heading", { name: "モード選択" }),
@@ -35,10 +35,6 @@ describe("mode selection and logo restart", () => {
     fireEvent.pointerEnter(community);
     fireEvent.focus(community);
     expect(community).toHaveAttribute("aria-pressed", "false");
-    await user.click(navigation);
-    expect(
-      screen.queryByRole("combobox", { name: "出発地" }),
-    ).not.toBeInTheDocument();
     await user.click(navigation);
     const input = await screen.findByRole("combobox", { name: "出発地" });
     fireEvent.change(input, { target: { value: "途中の入力" } });
