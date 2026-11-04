@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
 import type { LatLon } from "../lib/types";
 import { INITIAL_CENTER } from "../community/coordinates";
 import {
@@ -188,8 +187,8 @@ export function CommunitySafety() {
           setViewing(report);
         }}
         onLocate={locate}
-        popupWidth={viewing || composingPost ? 320 : kind ? 260 : 128}
-        popupHeight={viewing || composingPost ? 200 : 64}
+        popupWidth={viewing || composingPost ? 320 : 146}
+        popupHeight={viewing || composingPost ? 200 : kind ? 136 : 82}
       >
         {viewing ? (
           addingSupport ? (
@@ -208,6 +207,7 @@ export function CommunitySafety() {
             />
           ) : (
             <CommunityReview
+              key={viewing.id}
               report={viewing}
               onClose={close}
               onSupport={support}
@@ -228,7 +228,7 @@ export function CommunitySafety() {
             />
           ) : (
             <div
-              className="community-composer"
+              className="community-composer community-choice-panel"
               role="group"
               aria-label="安全情報を投稿"
               onKeyDown={(event) => {
@@ -256,26 +256,16 @@ export function CommunitySafety() {
                     <SafetyIcon kind={value} />
                   </button>
                 ))}
-                {kind && (
-                  <>
-                    <button
-                      type="button"
-                      className="primary community-publish"
-                      onClick={() => setComposingPost(true)}
-                    >
-                      投稿
-                    </button>
-                    <button
-                      type="button"
-                      className="icon-button community-close"
-                      aria-label="投稿を閉じる"
-                      onClick={close}
-                    >
-                      <X size={18} />
-                    </button>
-                  </>
-                )}
               </div>
+              {kind && (
+                <button
+                  type="button"
+                  className="primary community-publish"
+                  onClick={() => setComposingPost(true)}
+                >
+                  投票
+                </button>
+              )}
             </div>
           ))
         )}

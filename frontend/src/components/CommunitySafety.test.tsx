@@ -69,7 +69,7 @@ async function beginPost(
   expect(
     screen.queryByRole("textbox", { name: "詳細情報を入力" }),
   ).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "投稿" }));
+  await user.click(screen.getByRole("button", { name: "投票" }));
   const input = screen.getByRole("textbox", { name: "詳細情報を入力" });
   expect(input).toHaveFocus();
   return input;
@@ -95,10 +95,14 @@ describe("community safety reports", () => {
         expect(icon).toHaveAttribute("fill", "none");
       }
       await user.click(within(choices).getByRole("button", { name: label }));
+      expect(within(choices).getAllByRole("button")).toHaveLength(2);
+      expect(
+        screen.queryByRole("button", { name: "投稿を閉じる" }),
+      ).not.toBeInTheDocument();
       expect(
         screen.queryByRole("textbox", { name: "詳細情報を入力" }),
       ).not.toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: "投稿" }));
+      await user.click(screen.getByRole("button", { name: "投票" }));
       const input = screen.getByRole("textbox", { name: "詳細情報を入力" });
       expect(input).toHaveAttribute("placeholder", "例：夜道は危ない");
       await user.type(input, text);
@@ -106,7 +110,10 @@ describe("community safety reports", () => {
       expect(screen.getByRole("region", { name: "口コミ" })).toHaveTextContent(
         text,
       );
-      expect(screen.getByRole("button", { name: "共感" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "投票" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
       const [saved] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
       expect(saved).toMatchObject({
         kind,
@@ -127,7 +134,10 @@ describe("community safety reports", () => {
         "datetime",
         saved.createdAt,
       );
-      expect(screen.getByRole("button", { name: "共感" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "投票" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
     },
   );
 
@@ -140,12 +150,15 @@ describe("community safety reports", () => {
     expect(
       screen.queryByRole("heading", { name: "詳細情報" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "共感" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "投票" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     await user.click(screen.getByRole("button", { name: "口コミを閉じる" }));
     pick();
     expect(screen.getByRole("region", { name: "口コミ" })).toBeVisible();
     expect(
-      screen.queryByRole("button", { name: "投稿" }),
+      screen.queryByRole("group", { name: "安全・危険" }),
     ).not.toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem(REPORTS_KEY)!)).toHaveLength(1);
   });
@@ -250,11 +263,11 @@ describe("community safety reports", () => {
     await user.click(
       screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
     );
-    await user.click(screen.getByRole("button", { name: "共感" }));
+    await user.click(screen.getByRole("button", { name: "投票" }));
     expect(screen.getByLabelText("2票")).toBeVisible();
     expect(screen.getByRole("button", { name: "確定" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "スキップ" }));
-    await user.click(screen.getByRole("button", { name: "共感" }));
+    await user.click(screen.getByRole("button", { name: "投票" }));
     expect(JSON.parse(localStorage.getItem(REPORTS_KEY)!)[0]).toMatchObject({
       supportCount: 2,
       comments: [],
@@ -264,8 +277,11 @@ describe("community safety reports", () => {
     await user.click(
       screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
     );
-    expect(screen.getByRole("button", { name: "共感" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "共感" }));
+    expect(screen.getByRole("button", { name: "投票" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.click(screen.getByRole("button", { name: "投票" }));
     expect(
       within(screen.getByRole("region", { name: "口コミ" })).getByLabelText(
         "2票",
@@ -280,17 +296,35 @@ describe("community safety reports", () => {
     const user = userEvent.setup();
     seed();
     const [first] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
-    localStorage.setItem(REPORTS_KEY, JSON.stringify([first, { ...first, id: "other", text: "別の地点", lat: first.lat + 0.01 }]));
+    localStorage.setItem(
+      REPORTS_KEY,
+      JSON.stringify([
+        first,
+        { ...first, id: "other", text: "別の地点", lat: first.lat + 0.01 },
+      ]),
+    );
     render(<CommunitySafety />);
     for (const text of ["夜は暗い", "別の地点"]) {
-      await user.click(screen.getByRole("button", { name: `危険の口コミ：${text}` }));
-      expect(screen.getByRole("button", { name: "共感" })).toBeEnabled();
-      await user.click(screen.getByRole("button", { name: "共感" }));
+      await user.click(
+        screen.getByRole("button", { name: `危険の口コミ：${text}` }),
+      );
+      expect(screen.getByRole("button", { name: "投票" })).toHaveAttribute(
+        "aria-disabled",
+        "false",
+      );
+      await user.click(screen.getByRole("button", { name: "投票" }));
       await user.click(screen.getByRole("button", { name: "スキップ" }));
-      expect(screen.getByRole("button", { name: "共感" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "投票" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
       await user.click(screen.getByRole("button", { name: "口コミを閉じる" }));
     }
-    expect(JSON.parse(localStorage.getItem(REPORTS_KEY)!).map((report: { supportCount: number }) => report.supportCount)).toEqual([2, 2]);
+    expect(
+      JSON.parse(localStorage.getItem(REPORTS_KEY)!).map(
+        (report: { supportCount: number }) => report.supportCount,
+      ),
+    ).toEqual([2, 2]);
   });
 
   it("retains successive dated comments from different sessions without replacing earlier details", async () => {
@@ -301,13 +335,16 @@ describe("community safety reports", () => {
       await user.click(
         screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
       );
-      await user.click(screen.getByRole("button", { name: "共感" }));
+      await user.click(screen.getByRole("button", { name: "投票" }));
       await user.type(
         screen.getByRole("textbox", { name: "詳細情報を入力" }),
         text,
       );
       await user.click(screen.getByRole("button", { name: "確定" }));
-      expect(screen.getByRole("button", { name: "共感" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "投票" })).toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
       view.unmount();
       sessionStorage.clear();
       view = render(<CommunitySafety />);
@@ -332,6 +369,48 @@ describe("community safety reports", () => {
       expect(Number.isFinite(Date.parse(comment.createdAt))).toBe(true);
   });
 
+  it("explains the voting restriction on hover, focus, and click without casting another vote", async () => {
+    const user = userEvent.setup();
+    seed();
+    const savedBeforeVote = localStorage.getItem(REPORTS_KEY);
+    sessionStorage.setItem(
+      SESSION_VOTES_KEY,
+      JSON.stringify([pointKey({ lat: 35.6812, lon: 139.7671 })]),
+    );
+    render(<CommunitySafety />);
+    await user.click(
+      screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
+    );
+    const vote = screen.getByRole("button", { name: "投票" });
+    expect(vote).toHaveAttribute("aria-disabled", "true");
+    expect(
+      screen.queryByText("同一地点には一度しか投票できません"),
+    ).not.toBeInTheDocument();
+    await user.hover(vote);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "同一地点には一度しか投票できません",
+    );
+    await user.unhover(vote);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    fireEvent.focus(vote);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "同一地点には一度しか投票できません",
+    );
+    fireEvent.blur(vote);
+    await user.click(vote);
+    await user.unhover(vote);
+    fireEvent.blur(vote);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "同一地点には一度しか投票できません",
+    );
+    expect(
+      screen.queryByRole("textbox", { name: "詳細情報を入力" }),
+    ).not.toBeInTheDocument();
+    expect(localStorage.getItem(REPORTS_KEY)).toBe(savedBeforeVote);
+    fireEvent.keyDown(vote, { key: "Escape" });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("rolls back the session marker when saving an agreement fails", async () => {
     const user = userEvent.setup();
     seed();
@@ -349,12 +428,15 @@ describe("community safety reports", () => {
       if (this === localStorage) throw new Error("unavailable");
       original.call(this, key, value);
     });
-    await user.click(screen.getByRole("button", { name: "共感" }));
+    await user.click(screen.getByRole("button", { name: "投票" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "口コミを保存できませんでした。",
     );
     expect(screen.queryByLabelText("2票")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "共感" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "投票" })).toHaveAttribute(
+      "aria-disabled",
+      "false",
+    );
     expect(sessionStorage.getItem(SESSION_VOTES_KEY)).toBeNull();
     expect(localStorage.getItem(REPORTS_KEY)).toBe(savedBeforeVote);
   });

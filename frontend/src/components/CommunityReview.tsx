@@ -1,3 +1,4 @@
+import { useId, useState } from "react";
 import { X } from "lucide-react";
 import type { SafetyReport } from "../community/reports";
 import { SafetyIcon } from "./icons/SafetyIcon";
@@ -33,6 +34,11 @@ export function CommunityReview({
   error: string;
   supported: boolean;
 }) {
+  const reasonId = useId();
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [reasonPinned, setReasonPinned] = useState(false);
+  const showReason = supported && (hovered || focused || reasonPinned);
   const comments = [
     ...(report.text
       ? [{ id: report.id, text: report.text, createdAt: report.createdAt }]
@@ -72,15 +78,37 @@ export function CommunityReview({
         </div>
       )}
       {error && <p role="alert">{error}</p>}
-      <button
-        type="button"
-        className="community-support-button"
-        onClick={onSupport}
-        disabled={supported}
-        aria-pressed={supported}
-      >
-        共感
-      </button>
+      <div className="community-vote-action">
+        <button
+          type="button"
+          className="community-support-button"
+          onPointerEnter={() => setHovered(true)}
+          onPointerLeave={() => setHovered(false)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onClick={() => {
+            if (supported) setReasonPinned(true);
+            else onSupport();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setReasonPinned(false);
+              setHovered(false);
+              setFocused(false);
+            }
+          }}
+          aria-disabled={supported}
+          aria-pressed={supported}
+          aria-describedby={showReason ? reasonId : undefined}
+        >
+          投票
+        </button>
+        {showReason && (
+          <p id={reasonId} className="community-vote-notice" role="status">
+            同一地点には一度しか投票できません
+          </p>
+        )}
+      </div>
     </section>
   );
 }
