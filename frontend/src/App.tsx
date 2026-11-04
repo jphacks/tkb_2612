@@ -303,13 +303,15 @@ function NavigationApp({
         <span />
         <span />
       </div>
-      <LocationInput
-        label="目的地"
-        value={dest}
-        onChange={(next) => changePlace("dest", next)}
-        scenario={scenario}
-        onAttribution={setGeocodeAttribution}
-      />
+      <div className="destination-field">
+        <LocationInput
+          label="目的地"
+          value={dest}
+          onChange={(next) => changePlace("dest", next)}
+          scenario={scenario}
+          onAttribution={setGeocodeAttribution}
+        />
+      </div>
       {location.message && (
         <p role="status" className="field-help">
           {location.message}

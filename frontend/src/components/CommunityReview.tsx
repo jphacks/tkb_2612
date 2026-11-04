@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import type { SafetyReport } from "../community/reports";
-import { SAFETY_COLORS, SafetyIcon } from "./icons/SafetyIcon";
+import { SafetyIcon } from "./icons/SafetyIcon";
 
 export function RecordedAt({ value }: { value: string | null }) {
   return value ? (
@@ -25,11 +25,13 @@ export function CommunityReview({
   onClose,
   onSupport,
   error,
+  supported,
 }: {
   report: SafetyReport;
   onClose: () => void;
   onSupport: () => void;
   error: string;
+  supported: boolean;
 }) {
   const comments = [
     ...(report.text
@@ -38,11 +40,7 @@ export function CommunityReview({
     ...report.comments,
   ];
   return (
-    <section
-      className="community-review"
-      aria-label="口コミ"
-      style={{ borderColor: SAFETY_COLORS[report.kind] }}
-    >
+    <section className="community-review" aria-label="口コミ">
       <div className="community-review-meta">
         <SafetyIcon kind={report.kind} size={32} count={report.supportCount} />
         <div>
@@ -78,8 +76,10 @@ export function CommunityReview({
         type="button"
         className="community-support-button"
         onClick={onSupport}
+        disabled={supported}
+        aria-pressed={supported}
       >
-        私もそう思う
+        共感
       </button>
     </section>
   );

@@ -15,6 +15,47 @@ export type SafetyReport = LatLon & {
   comments: SafetyComment[];
 };
 export const REPORTS_KEY = "accilessnavi.safety-reports.v1";
+export const SESSION_VOTES_KEY = "accilessnavi.safety-votes.v1";
+
+export function pointKey(point: LatLon) {
+  return `${point.lat.toFixed(6)},${point.lon.toFixed(6)}`;
+}
+
+export function readSessionVotes(): Set<string> {
+  try {
+    const saved: unknown = JSON.parse(
+      sessionStorage.getItem(SESSION_VOTES_KEY) ?? "[]",
+    );
+    return new Set(
+      Array.isArray(saved)
+        ? saved.filter((key): key is string => typeof key === "string")
+        : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/** Store the session marker first; restore it if saving the report fails. */
+export function saveReportsWithVote(
+  reports: SafetyReport[],
+  point: LatLon,
+): Set<string> {
+  const votes = readSessionVotes();
+  const key = pointKey(point);
+  if (votes.has(key)) throw new Error("この地点には投票済みです。");
+  const previous = sessionStorage.getItem(SESSION_VOTES_KEY);
+  votes.add(key);
+  sessionStorage.setItem(SESSION_VOTES_KEY, JSON.stringify([...votes]));
+  try {
+    saveReports(reports);
+  } catch (error) {
+    if (previous === null) sessionStorage.removeItem(SESSION_VOTES_KEY);
+    else sessionStorage.setItem(SESSION_VOTES_KEY, previous);
+    throw error;
+  }
+  return votes;
+}
 
 export function readReports(): SafetyReport[] {
   try {

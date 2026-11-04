@@ -12,10 +12,11 @@ export function ModeSelection({
   visible: boolean;
 }) {
   const [active, setActive] = useState<AppMode>("navigation");
+  const [armed, setArmed] = useState<AppMode | null>(null);
   const [chosen, setChosen] = useState<AppMode | null>(null);
-  const heading = useRef<HTMLHeadingElement>(null);
+  const container = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (visible) heading.current?.focus();
+    if (visible) container.current?.focus();
   }, [visible]);
   useEffect(() => {
     if (!chosen) return;
@@ -24,10 +25,12 @@ export function ModeSelection({
   }, [chosen, onSelect]);
 
   return (
-    <main className="mode-selection">
-      <h1 ref={heading} tabIndex={-1}>
-        モード選択
-      </h1>
+    <main
+      className="mode-selection"
+      ref={container}
+      tabIndex={-1}
+      aria-label="モード選択"
+    >
       <div className="mode-options">
         {(
           [
@@ -41,8 +44,11 @@ export function ModeSelection({
             className={`mode-option mode-option-${mode}${active === mode ? " is-active" : ""}`}
             aria-pressed={active === mode}
             onClick={() => {
-              setActive(mode);
-              setChosen(mode);
+              if (active === mode && armed === mode) setChosen(mode);
+              else {
+                setActive(mode);
+                setArmed(mode);
+              }
             }}
           >
             <Icon size={32} strokeWidth={1.8} aria-hidden="true" />

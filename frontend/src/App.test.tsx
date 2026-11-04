@@ -113,6 +113,7 @@ async function openConditions() {
     screen.getByRole("button", { name: "動画をスキップして開始" }),
   );
   await user.click(screen.getByRole("button", { name: "安全経路選択ナビモード" }));
+  await user.click(screen.getByRole("button", { name: "安全経路選択ナビモード" }));
   await screen.findByRole("combobox", { name: "出発地" });
   await user.click(
     screen.getByRole("button", { name: "現在地を使う（デモ）" }),
@@ -380,6 +381,7 @@ describe("App search flow and condition ownership", () => {
       screen.getByRole("button", { name: "動画をスキップして開始" }),
     );
     await user.click(screen.getByRole("button", { name: "安全経路選択ナビモード" }));
+    await user.click(screen.getByRole("button", { name: "安全経路選択ナビモード" }));
     await screen.findByRole("combobox", { name: "出発地" });
     for (const [name, query, index] of [
       ["出発地", "東京", 0],
@@ -569,6 +571,7 @@ describe("App result comparison and failures (frontend-spec 5, 10)", () => {
     await user.click(
       screen.getByRole("button", { name: "動画をスキップして開始" }),
     );
+    await user.click(screen.getByRole("button", { name: "安全経路選択ナビモード" }));
     await user.click(screen.getByRole("button", { name: "安全経路選択ナビモード" }));
     await screen.findByRole("combobox", { name: "出発地" });
     const footer = screen.getByRole("contentinfo", { name: "データの出典" });

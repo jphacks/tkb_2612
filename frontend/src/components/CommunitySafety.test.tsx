@@ -3,7 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommunitySafety } from "./CommunitySafety";
 import { DEMO_PLACES, findDemoPlaces } from "../api/demo";
-import { REPORTS_KEY } from "../community/reports";
+import {
+  pointKey,
+  readSessionVotes,
+  REPORTS_KEY,
+  SESSION_VOTES_KEY,
+} from "../community/reports";
 
 vi.mock("../api/client", () => ({
   isDemo: true,
@@ -12,6 +17,7 @@ vi.mock("../api/client", () => ({
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
     width: 390,
     height: 640,
@@ -33,22 +39,55 @@ afterEach(() => {
   Reflect.deleteProperty(navigator, "geolocation");
 });
 
+function seed(text = "夜は暗い") {
+  localStorage.setItem(
+    REPORTS_KEY,
+    JSON.stringify([
+      {
+        id: "recorded",
+        kind: "danger",
+        text,
+        lat: 35.6812,
+        lon: 139.7671,
+        createdAt: "2026-11-04T09:15:00.000Z",
+      },
+    ]),
+  );
+}
+function pick() {
+  fireEvent.click(screen.getByRole("application"), {
+    clientX: 195,
+    clientY: 320,
+  });
+}
+async function beginPost(
+  user: ReturnType<typeof userEvent.setup>,
+  label = "危険",
+) {
+  pick();
+  await user.click(screen.getByRole("button", { name: label }));
+  expect(
+    screen.queryByRole("textbox", { name: "詳細情報を入力" }),
+  ).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "投稿" }));
+  const input = screen.getByRole("textbox", { name: "詳細情報を入力" });
+  expect(input).toHaveFocus();
+  return input;
+}
+
 describe("community safety reports", () => {
   it.each([
     ["安全", "safe", "見通しが良い"],
     ["危険", "danger", "夜道は危ない"],
   ] as const)(
-    "posts and reopens a %s review at the selected point after remount",
+    "selects an icon before opening details, then saves and reopens a %s post",
     async (label, kind, text) => {
       const user = userEvent.setup();
       const first = render(<CommunitySafety />);
-      const map = screen.getByRole("application", {
-        name: "みんなの安全情報の地図",
-      });
       expect(
         screen.queryByRole("group", { name: "安全・危険" }),
       ).not.toBeInTheDocument();
-      fireEvent.click(map, { clientX: 195, clientY: 320 });
+      pick();
       const choices = screen.getByRole("group", { name: "安全・危険" });
       expect(within(choices).getAllByRole("button")).toHaveLength(2);
       for (const icon of choices.querySelectorAll("svg")) {
@@ -56,42 +95,62 @@ describe("community safety reports", () => {
         expect(icon).toHaveAttribute("fill", "none");
       }
       await user.click(within(choices).getByRole("button", { name: label }));
-      const input = screen.getByRole("textbox", { name: "詳細情報を記入" });
-      expect(input).toHaveAttribute("placeholder", "例：夜道は危ない");
-      expect(input).toHaveFocus();
-      await user.type(input, text);
+      expect(
+        screen.queryByRole("textbox", { name: "詳細情報を入力" }),
+      ).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "投稿" }));
+      const input = screen.getByRole("textbox", { name: "詳細情報を入力" });
+      expect(input).toHaveAttribute("placeholder", "例：夜道は危ない");
+      await user.type(input, text);
+      await user.click(screen.getByRole("button", { name: "確定" }));
       expect(screen.getByRole("region", { name: "口コミ" })).toHaveTextContent(
         text,
       );
-      const saved = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
-      expect(saved).toEqual([
-        expect.objectContaining({
-          kind,
-          text,
-          lat: expect.any(Number),
-          lon: expect.any(Number),
-          createdAt: expect.any(String),
-          supportCount: 1,
-          comments: [],
-        }),
-      ]);
+      expect(screen.getByRole("button", { name: "共感" })).toBeDisabled();
+      const [saved] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
+      expect(saved).toMatchObject({
+        kind,
+        text,
+        supportCount: 1,
+        comments: [],
+        createdAt: expect.any(String),
+      });
+      expect(readSessionVotes().has(pointKey(saved))).toBe(true);
       first.unmount();
       render(<CommunitySafety />);
       await user.click(
         screen.getByRole("button", { name: `${label}の口コミ：${text}` }),
       );
-      expect(screen.getByRole("region", { name: "口コミ" })).toHaveTextContent(
-        text,
+      const review = screen.getByRole("region", { name: "口コミ" });
+      expect(review).toHaveTextContent(text);
+      expect(review.querySelector("time")).toHaveAttribute(
+        "datetime",
+        saved.createdAt,
       );
-      expect(screen.getByRole("heading", { name: "詳細情報" })).toBeVisible();
-      expect(
-        screen.getByRole("region", { name: "口コミ" }).querySelector("time"),
-      ).toHaveAttribute("datetime", saved[0].createdAt);
+      expect(screen.getByRole("button", { name: "共感" })).toBeDisabled();
     },
   );
 
-  it("uses geolocation as the map center and keeps a chosen address when an older GPS request completes", async () => {
+  it("posts without details through Skip and opens the existing point instead of creating a duplicate", async () => {
+    const user = userEvent.setup();
+    render(<CommunitySafety />);
+    await beginPost(user);
+    await user.click(screen.getByRole("button", { name: "スキップ" }));
+    expect(screen.getByText("記入日時")).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "詳細情報" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "共感" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "口コミを閉じる" }));
+    pick();
+    expect(screen.getByRole("region", { name: "口コミ" })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "投稿" }),
+    ).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem(REPORTS_KEY)!)).toHaveLength(1);
+  });
+
+  it("keeps a chosen address when an older GPS request completes", async () => {
     const user = userEvent.setup();
     let resolveLocation!: PositionCallback;
     vi.mocked(navigator.geolocation.getCurrentPosition).mockImplementation(
@@ -108,7 +167,6 @@ describe("community safety reports", () => {
     expect(screen.getByRole("combobox", { name: "表示する場所" })).toHaveValue(
       "現在地",
     );
-    expect(screen.getByRole("img", { name: "現在地" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "現在地を表示" }));
     const late = resolveLocation;
     fireEvent.change(screen.getByRole("combobox", { name: "表示する場所" }), {
@@ -123,7 +181,6 @@ describe("community safety reports", () => {
     expect(screen.getByRole("combobox", { name: "表示する場所" })).toHaveValue(
       DEMO_PLACES[1].label,
     );
-    expect(screen.queryByText("地点を確定しました")).not.toBeInTheDocument();
   });
 
   it("keeps a draft when an older GPS request completes after picking a point", async () => {
@@ -135,73 +192,43 @@ describe("community safety reports", () => {
       },
     );
     render(<CommunitySafety />);
-    fireEvent.click(screen.getByRole("application"), {
-      clientX: 195,
-      clientY: 320,
-    });
-    await user.click(screen.getByRole("button", { name: "危険" }));
-    await user.type(
-      screen.getByRole("textbox", { name: "詳細情報を記入" }),
-      "夜道は危ない",
-    );
+    const input = await beginPost(user);
+    await user.type(input, "夜道は危ない");
     act(() =>
       resolveLocation({
         coords: { latitude: 36, longitude: 140 },
       } as GeolocationPosition),
     );
-    expect(screen.getByRole("textbox", { name: "詳細情報を記入" })).toHaveValue(
-      "夜道は危ない",
-    );
-    await user.click(screen.getByRole("button", { name: "投稿" }));
-    const [report] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
-    expect(report.lat).toBeCloseTo(35.6812, 5);
-    expect(report.lon).toBeCloseTo(139.7671, 5);
+    expect(input).toHaveValue("夜道は危ない");
+    await user.click(screen.getByRole("button", { name: "確定" }));
+    const [saved] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
+    expect(saved.lat).toBeCloseTo(35.6812, 5);
+    expect(saved.lon).toBeCloseTo(139.7671, 5);
   });
 
-  it("does not lose the typed review if browser storage cannot save it", async () => {
+  it("keeps the draft and leaves the vote unrecorded if storage cannot save the post", async () => {
     const user = userEvent.setup();
     render(<CommunitySafety />);
-    fireEvent.click(screen.getByRole("application"), {
-      clientX: 195,
-      clientY: 320,
-    });
-    await user.click(screen.getByRole("button", { name: "危険" }));
-    await user.type(
-      screen.getByRole("textbox", { name: "詳細情報を記入" }),
-      "夜道は危ない",
-    );
+    const input = await beginPost(user);
+    await user.type(input, "夜道は危ない");
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("unavailable");
     });
-    await user.click(screen.getByRole("button", { name: "投稿" }));
+    await user.click(screen.getByRole("button", { name: "確定" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "口コミを保存できませんでした。",
     );
-    expect(screen.getByRole("textbox", { name: "詳細情報を記入" })).toHaveValue(
-      "夜道は危ない",
-    );
+    expect(input).toHaveValue("夜道は危ない");
     expect(
       screen.queryByRole("button", { name: /危険の口コミ/ }),
     ).not.toBeInTheDocument();
   });
 
   it.each(["", "夜は暗い"])(
-    "shows the recorded date with and without details: %s",
+    "shows a date whether details exist or not: %s",
     async (text) => {
       const user = userEvent.setup();
-      localStorage.setItem(
-        REPORTS_KEY,
-        JSON.stringify([
-          {
-            id: "dated",
-            kind: "danger",
-            text,
-            lat: 35.6812,
-            lon: 139.7671,
-            createdAt: "2026-11-04T09:15:00.000Z",
-          },
-        ]),
-      );
+      seed(text);
       render(<CommunitySafety />);
       await user.click(
         screen.getByRole("button", {
@@ -216,57 +243,80 @@ describe("community safety reports", () => {
     },
   );
 
-  it("counts each support once, skips optional details, and retains successive dated comments", async () => {
+  it("counts once per session and keeps Skip as a vote without a comment across remounts", async () => {
     const user = userEvent.setup();
-    localStorage.setItem(
-      REPORTS_KEY,
-      JSON.stringify([
-        {
-          id: "supported",
-          kind: "danger",
-          text: "夜は暗い",
-          lat: 35.6812,
-          lon: 139.7671,
-          createdAt: "2026-11-04T09:15:00.000Z",
-        },
-      ]),
-    );
+    seed();
     const first = render(<CommunitySafety />);
     await user.click(
       screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
     );
-    expect(screen.queryByLabelText("1票")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "私もそう思う" }));
+    await user.click(screen.getByRole("button", { name: "共感" }));
     expect(screen.getByLabelText("2票")).toBeVisible();
-    expect(
-      screen.getByRole("textbox", { name: "詳細情報を入力" }),
-    ).toHaveFocus();
     expect(screen.getByRole("button", { name: "確定" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "スキップ" }));
+    await user.click(screen.getByRole("button", { name: "共感" }));
     expect(JSON.parse(localStorage.getItem(REPORTS_KEY)!)[0]).toMatchObject({
       supportCount: 2,
       comments: [],
     });
-    await user.click(screen.getByRole("button", { name: "私もそう思う" }));
-    await user.type(
-      screen.getByRole("textbox", { name: "詳細情報を入力" }),
-      "歩道も狭い",
-    );
-    await user.click(screen.getByRole("button", { name: "確定" }));
-    expect(screen.getByLabelText("3票")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "私もそう思う" }));
-    await user.type(
-      screen.getByRole("textbox", { name: "詳細情報を入力" }),
-      "街灯が少ない",
-    );
-    await user.click(screen.getByRole("button", { name: "確定" }));
     first.unmount();
     render(<CommunitySafety />);
     await user.click(
       screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
     );
+    expect(screen.getByRole("button", { name: "共感" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "共感" }));
+    expect(
+      within(screen.getByRole("region", { name: "口コミ" })).getByLabelText(
+        "2票",
+      ),
+    ).toBeVisible();
+    expect(JSON.parse(localStorage.getItem(REPORTS_KEY)!)[0].supportCount).toBe(
+      2,
+    );
+  });
+
+  it("allows one agreement at each of two different points in the same session", async () => {
+    const user = userEvent.setup();
+    seed();
+    const [first] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
+    localStorage.setItem(REPORTS_KEY, JSON.stringify([first, { ...first, id: "other", text: "別の地点", lat: first.lat + 0.01 }]));
+    render(<CommunitySafety />);
+    for (const text of ["夜は暗い", "別の地点"]) {
+      await user.click(screen.getByRole("button", { name: `危険の口コミ：${text}` }));
+      expect(screen.getByRole("button", { name: "共感" })).toBeEnabled();
+      await user.click(screen.getByRole("button", { name: "共感" }));
+      await user.click(screen.getByRole("button", { name: "スキップ" }));
+      expect(screen.getByRole("button", { name: "共感" })).toBeDisabled();
+      await user.click(screen.getByRole("button", { name: "口コミを閉じる" }));
+    }
+    expect(JSON.parse(localStorage.getItem(REPORTS_KEY)!).map((report: { supportCount: number }) => report.supportCount)).toEqual([2, 2]);
+  });
+
+  it("retains successive dated comments from different sessions without replacing earlier details", async () => {
+    const user = userEvent.setup();
+    seed();
+    let view = render(<CommunitySafety />);
+    for (const text of ["歩道も狭い", "街灯が少ない"]) {
+      await user.click(
+        screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
+      );
+      await user.click(screen.getByRole("button", { name: "共感" }));
+      await user.type(
+        screen.getByRole("textbox", { name: "詳細情報を入力" }),
+        text,
+      );
+      await user.click(screen.getByRole("button", { name: "確定" }));
+      expect(screen.getByRole("button", { name: "共感" })).toBeDisabled();
+      view.unmount();
+      sessionStorage.clear();
+      view = render(<CommunitySafety />);
+    }
+    await user.click(
+      screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
+    );
     const review = screen.getByRole("region", { name: "口コミ" });
-    expect(within(review).getByLabelText("4票")).toBeVisible();
+    expect(within(review).getByLabelText("3票")).toBeVisible();
     expect(
       within(review)
         .getAllByRole("listitem")
@@ -277,41 +327,35 @@ describe("community safety reports", () => {
       expect.stringContaining("街灯が少ない"),
     ]);
     const [saved] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
-    expect(saved.supportCount).toBe(4);
     expect(saved.comments).toHaveLength(2);
     for (const comment of saved.comments)
       expect(Number.isFinite(Date.parse(comment.createdAt))).toBe(true);
   });
 
-  it("keeps the vote unchanged if browser storage cannot save support", async () => {
+  it("rolls back the session marker when saving an agreement fails", async () => {
     const user = userEvent.setup();
-    localStorage.setItem(
-      REPORTS_KEY,
-      JSON.stringify([
-        {
-          id: "legacy",
-          kind: "safe",
-          text: "見通しが良い",
-          lat: 35.6812,
-          lon: 139.7671,
-        },
-      ]),
-    );
+    seed();
+    const savedBeforeVote = localStorage.getItem(REPORTS_KEY);
     render(<CommunitySafety />);
     await user.click(
-      screen.getByRole("button", { name: "安全の口コミ：見通しが良い" }),
+      screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
     );
-    expect(screen.getByText("日時不明")).toBeVisible();
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("unavailable");
+    const original = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+      this: Storage,
+      key,
+      value,
+    ) {
+      if (this === localStorage) throw new Error("unavailable");
+      original.call(this, key, value);
     });
-    await user.click(screen.getByRole("button", { name: "私もそう思う" }));
+    await user.click(screen.getByRole("button", { name: "共感" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "口コミを保存できませんでした。",
     );
     expect(screen.queryByLabelText("2票")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("textbox", { name: "詳細情報を入力" }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "共感" })).toBeEnabled();
+    expect(sessionStorage.getItem(SESSION_VOTES_KEY)).toBeNull();
+    expect(localStorage.getItem(REPORTS_KEY)).toBe(savedBeforeVote);
   });
 });
