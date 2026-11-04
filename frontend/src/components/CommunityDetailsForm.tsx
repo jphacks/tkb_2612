@@ -39,7 +39,7 @@ export function CommunityDetailsForm({
           id={id}
           ref={input}
           value={value}
-          placeholder="例：夜道は危ない"
+          placeholder="例：夜は見通しが悪くて危険"
           maxLength={2000}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {

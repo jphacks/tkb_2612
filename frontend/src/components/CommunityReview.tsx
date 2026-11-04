@@ -46,69 +46,80 @@ export function CommunityReview({
     ...report.comments,
   ];
   return (
-    <section className="community-review" aria-label="口コミ">
-      <div className="community-review-meta">
-        <SafetyIcon kind={report.kind} size={32} count={report.supportCount} />
-        <div>
-          <span>記入日時</span>
-          <RecordedAt value={report.createdAt} />
+    <div className="community-review-shell">
+      <section className="community-review" aria-label="口コミ">
+        <div className="community-review-meta">
+          <SafetyIcon
+            kind={report.kind}
+            size={32}
+            count={report.supportCount}
+          />
+          <div>
+            <span>記入日時</span>
+            <RecordedAt value={report.createdAt} />
+          </div>
         </div>
-      </div>
-      <button
-        type="button"
-        className="icon-button community-close"
-        aria-label="口コミを閉じる"
-        onClick={onClose}
-      >
-        <X size={18} />
-      </button>
-      {comments.length > 0 && (
-        <div className="community-review-detail">
-          <h2>詳細情報</h2>
-          <ol className="community-comment-list">
-            {comments.map((comment) => (
-              <li key={comment.id}>
-                {comment.id !== report.id && (
-                  <RecordedAt value={comment.createdAt} />
-                )}
-                <p>{comment.text}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
-      {error && <p role="alert">{error}</p>}
-      <div className="community-vote-action">
         <button
           type="button"
-          className="community-support-button"
-          onPointerEnter={() => setHovered(true)}
-          onPointerLeave={() => setHovered(false)}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onClick={() => {
-            if (supported) setReasonPinned(true);
-            else onSupport();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              setReasonPinned(false);
-              setHovered(false);
-              setFocused(false);
-            }
-          }}
-          aria-disabled={supported}
-          aria-pressed={supported}
-          aria-describedby={showReason ? reasonId : undefined}
+          className="icon-button community-close"
+          aria-label="口コミを閉じる"
+          onClick={onClose}
         >
-          投票
+          <X size={18} />
         </button>
-        {showReason && (
-          <p id={reasonId} className="community-vote-notice" role="status">
-            同一地点には一度しか投票できません
-          </p>
+        {comments.length > 0 && (
+          <div className="community-review-detail">
+            <h2>詳細情報</h2>
+            <ol className="community-comment-list">
+              {comments.map((comment) => (
+                <li key={comment.id}>
+                  {comment.id !== report.id && (
+                    <RecordedAt value={comment.createdAt} />
+                  )}
+                  <p>{comment.text}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
         )}
-      </div>
-    </section>
+        {error && <p role="alert">{error}</p>}
+        <div className="community-vote-action">
+          <button
+            type="button"
+            className="community-support-button"
+            onPointerEnter={() => setHovered(true)}
+            onPointerLeave={() => setHovered(false)}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onClick={() => {
+              if (supported) setReasonPinned(true);
+              else onSupport();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setReasonPinned(false);
+                setHovered(false);
+                setFocused(false);
+              }
+            }}
+            aria-disabled={supported}
+            aria-pressed={supported}
+            aria-describedby={showReason ? reasonId : undefined}
+          >
+            投票
+          </button>
+        </div>
+      </section>
+      {showReason && (
+        <p
+          id={reasonId}
+          className="community-vote-notice"
+          role="tooltip"
+          aria-live="polite"
+        >
+          ※ 同一地点には一度しか入力できません
+        </p>
+      )}
+    </div>
   );
 }

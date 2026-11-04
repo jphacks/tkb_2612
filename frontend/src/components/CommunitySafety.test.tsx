@@ -104,7 +104,10 @@ describe("community safety reports", () => {
       ).not.toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "投票" }));
       const input = screen.getByRole("textbox", { name: "詳細情報を入力" });
-      expect(input).toHaveAttribute("placeholder", "例：夜道は危ない");
+      expect(input).toHaveAttribute(
+        "placeholder",
+        "例：夜は見通しが悪くて危険",
+      );
       await user.type(input, text);
       await user.click(screen.getByRole("button", { name: "確定" }));
       expect(screen.getByRole("region", { name: "口コミ" })).toHaveTextContent(
@@ -383,32 +386,30 @@ describe("community safety reports", () => {
     );
     const vote = screen.getByRole("button", { name: "投票" });
     expect(vote).toHaveAttribute("aria-disabled", "true");
-    expect(
-      screen.queryByText("同一地点には一度しか投票できません"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     await user.hover(vote);
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "同一地点には一度しか投票できません",
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "※ 同一地点には一度しか入力できません",
     );
     await user.unhover(vote);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     fireEvent.focus(vote);
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "同一地点には一度しか投票できません",
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "※ 同一地点には一度しか入力できません",
     );
     fireEvent.blur(vote);
     await user.click(vote);
     await user.unhover(vote);
     fireEvent.blur(vote);
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "同一地点には一度しか投票できません",
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "※ 同一地点には一度しか入力できません",
     );
     expect(
       screen.queryByRole("textbox", { name: "詳細情報を入力" }),
     ).not.toBeInTheDocument();
     expect(localStorage.getItem(REPORTS_KEY)).toBe(savedBeforeVote);
     fireEvent.keyDown(vote, { key: "Escape" });
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
   it("rolls back the session marker when saving an agreement fails", async () => {
