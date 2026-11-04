@@ -111,7 +111,7 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
     expect(within(panel).getByRole("status")).toHaveTextContent("再検索中");
     expect(within(panel).queryAllByRole("button")).toHaveLength(0);
     expect(screen.getByText("模擬位置から条件と経路を取得します")).toBeVisible();
-    expect(screen.getByRole("button", { name: "AcciLessNavi 地点入力へ" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "AcciLessNavi ホームへ" })).toBeEnabled();
     expect(conditionCalls()).toBe(before.conditions + 1);
     expect(searches()).toBe(before.searches + 1);
     const request: RouteRequest = api.searchRoutes.mock.calls.at(-1)![0];

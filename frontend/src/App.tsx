@@ -41,6 +41,9 @@ import { UpdateNotice } from "./components/UpdateNotice";
 import { setUpdateBlocked } from "./pwa/register";
 import { useRouteSearch } from "./state/useRouteSearch";
 import type { RouteResponse } from "./lib/types";
+import { AppHeader } from "./components/AppHeader";
+import { ModeSelection, type AppMode } from "./components/ModeSelection";
+import { CommunitySafety } from "./components/CommunitySafety";
 
 type Page = "places" | "conditions" | "results";
 const noop = () => {};
@@ -58,6 +61,48 @@ const scenarios: { id: Scenario; label: string }[] = [
 
 export default function App() {
   const [intro, setIntro] = useState(true);
+  const [mode, setMode] = useState<AppMode | null>(null);
+  const [introVersion, setIntroVersion] = useState(0);
+  const restart = () => {
+    setMode(null);
+    setIntro(true);
+    setIntroVersion((version) => version + 1);
+  };
+  return (
+    <>
+      <div inert={intro} aria-hidden={intro || undefined}>
+        {mode === "navigation" ? (
+          <NavigationApp
+            onRestart={restart}
+            onChooseMode={() => setMode(null)}
+          />
+        ) : (
+          <div className={`app${mode === "community" ? " app-community" : ""}`}>
+            <AppHeader onRestart={restart} />
+            {mode === "community" ? (
+              <CommunitySafety />
+            ) : (
+              <ModeSelection
+                key={introVersion}
+                onSelect={setMode}
+                visible={!intro}
+              />
+            )}
+          </div>
+        )}
+      </div>
+      {intro && <LogoIntro onComplete={() => setIntro(false)} />}
+    </>
+  );
+}
+
+function NavigationApp({
+  onRestart,
+  onChooseMode,
+}: {
+  onRestart: () => void;
+  onChooseMode: () => void;
+}) {
   const [page, setPage] = useState<Page>("places");
   const [origin, setOrigin] = useState<LocationValue>(blank);
   const [dest, setDest] = useState<LocationValue>(blank);
@@ -149,13 +194,12 @@ export default function App() {
 
   const panel = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (intro) return;
     // The page heading of the result page sits in the closed sidebar.
     (page === "results" && !sidebarOpen
       ? sidebarToggle
       : heading
     ).current?.focus();
-  }, [page, intro, navigationBusy]);
+  }, [page, navigationBusy]);
   useEffect(() => {
     panel.current?.scrollTo?.(0, 0);
   }, [navigationBusy, reSearch.state.status]);
@@ -310,28 +354,8 @@ export default function App() {
     <>
       <div
         className={`app ${page === "results" ? "app-results" : ""}`}
-        inert={intro}
-        aria-hidden={intro || undefined}
       >
-        <header className="app-header">
-          <button
-            className="wordmark"
-            type="button"
-            disabled={searching || navigationBusy}
-            onClick={() => {
-              if (page !== "places") {
-                edit();
-                setPage("places");
-              }
-            }}
-            aria-label="AcciLessNavi 地点入力へ"
-          >
-            AcciLess<span>Navi</span>
-          </button>
-          <span className={`mode-badge ${isDemo ? "" : "live"}`}>
-            {isDemo ? "デモデータ" : "API接続"}
-          </span>
-        </header>
+        <AppHeader onRestart={onRestart} showBadge />
         {page !== "results" ? (
           <main className={`form-page ${page}`}>
             <h1 ref={heading} tabIndex={-1}>
@@ -340,14 +364,20 @@ export default function App() {
             {page === "places" ? (
               <div className="place-form">
                 {places}
-                <button
-                  className="primary next-button"
-                  disabled={!confirmed}
-                  onClick={() => setPage("conditions")}
-                >
-                  条件を選ぶ
-                  <ArrowRight size={18} />
-                </button>
+                <div className="form-actions place-form-actions">
+                  <button className="secondary" onClick={onChooseMode}>
+                    <ArrowLeft size={16} />
+                    モード選択
+                  </button>
+                  <button
+                    className="primary next-button"
+                    disabled={!confirmed}
+                    onClick={() => setPage("conditions")}
+                  >
+                    条件を選ぶ
+                    <ArrowRight size={18} />
+                  </button>
+                </div>
               </div>
             ) : (
               <>
@@ -612,7 +642,6 @@ export default function App() {
           </details>
         )}
       </div>
-      {intro && <LogoIntro onComplete={() => setIntro(false)} />}
     </>
   );
 }

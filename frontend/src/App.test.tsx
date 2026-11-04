@@ -112,6 +112,8 @@ async function openConditions() {
   await user.click(
     screen.getByRole("button", { name: "動画をスキップして開始" }),
   );
+  await user.click(screen.getByRole("button", { name: "安全経路選択ナビモード" }));
+  await screen.findByRole("combobox", { name: "出発地" });
   await user.click(
     screen.getByRole("button", { name: "現在地を使う（デモ）" }),
   );
@@ -285,8 +287,8 @@ describe("App search flow and condition ownership", () => {
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "再検索" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "AcciLessNavi 地点入力へ" }),
-    ).toBeDisabled();
+      screen.getByRole("button", { name: "AcciLessNavi ホームへ" }),
+    ).toBeEnabled();
     for (const input of screen.getAllByRole("combobox"))
       expect(input).toBeDisabled();
     await act(async () =>
@@ -377,6 +379,8 @@ describe("App search flow and condition ownership", () => {
     await user.click(
       screen.getByRole("button", { name: "動画をスキップして開始" }),
     );
+    await user.click(screen.getByRole("button", { name: "安全経路選択ナビモード" }));
+    await screen.findByRole("combobox", { name: "出発地" });
     for (const [name, query, index] of [
       ["出発地", "東京", 0],
       ["目的地", "上野", 1],
@@ -565,6 +569,8 @@ describe("App result comparison and failures (frontend-spec 5, 10)", () => {
     await user.click(
       screen.getByRole("button", { name: "動画をスキップして開始" }),
     );
+    await user.click(screen.getByRole("button", { name: "安全経路選択ナビモード" }));
+    await screen.findByRole("combobox", { name: "出発地" });
     const footer = screen.getByRole("contentinfo", { name: "データの出典" });
     await waitFor(() =>
       expect(

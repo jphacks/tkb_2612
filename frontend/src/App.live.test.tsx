@@ -184,6 +184,8 @@ async function start() {
   await user.click(
     screen.getByRole("button", { name: "動画をスキップして開始" }),
   );
+  await user.click(screen.getByRole("button", { name: "安全経路選択ナビモード" }));
+  await screen.findByRole("combobox", { name: "出発地" });
   return user;
 }
 async function choose(

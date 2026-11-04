@@ -116,8 +116,8 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
     expect(screen.getByLabelText("地図の凡例")).toHaveTextContent("ナビ経路");
     advance(3000);
     expect(document.querySelector(".map-nav-location")).not.toBeNull();
-    // 比較入力の抑止：ヘッダーのロゴ（地点入力へ戻る）と状態切替も使えない。
-    expect(screen.getByRole("button", { name: "AcciLessNavi 地点入力へ" })).toBeDisabled();
+    // 比較入力と状態切替を抑止。ロゴは動画・モード選択へ戻る入口として使用できる。
+    expect(screen.getByRole("button", { name: "AcciLessNavi ホームへ" })).toBeEnabled();
     fireEvent.click(within(panel).getByRole("button", { name: "ナビを停止" }));
     expect(screen.getByRole("complementary", { name: "検索条件" })).toBeVisible();
     expect(screen.getByRole("group", { name: "表示する経路" })).toBeVisible();

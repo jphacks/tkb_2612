@@ -12,6 +12,7 @@ type Props = {
   onChange: (value: LocationValue) => void;
   scenario: Scenario;
   action?: React.ReactNode;
+  variant?: "form" | "map";
   /** Receives the provider attribution of each geocode response (frontend-spec 10). */
   onAttribution?: (attribution: GeocodeAttribution) => void;
 };
@@ -22,6 +23,7 @@ export default function LocationInput({
   onChange,
   scenario,
   action,
+  variant = "form",
   onAttribution,
 }: Props) {
   const id = useId();
@@ -117,12 +119,16 @@ export default function LocationInput({
 
   return (
     <div className="location-field" ref={container}>
-      <div className="field-label">
+      <div className={variant === "map" ? "sr-only" : "field-label"}>
         <label htmlFor={id}>{label}</label>
         {action}
       </div>
       <div className={`location-control ${value.place ? "is-confirmed" : ""}`}>
-        <MapPin size={19} aria-hidden="true" />
+        {variant === "map" ? (
+          <Search size={20} aria-hidden="true" />
+        ) : (
+          <MapPin size={19} aria-hidden="true" />
+        )}
         <input
           id={id}
           ref={input}
@@ -136,7 +142,9 @@ export default function LocationInput({
           aria-activedescendant={
             open && active >= 0 ? `${id}-${active}` : undefined
           }
-          aria-describedby={value.place ? `${id}-help` : undefined}
+          aria-describedby={
+            variant !== "map" && value.place ? `${id}-help` : undefined
+          }
           onChange={(event) => edit(event.target.value)}
           onCompositionStart={() => {
             isComposing.current = true;
@@ -208,7 +216,7 @@ export default function LocationInput({
           </button>
         )}
       </div>
-      {value.place && (
+      {variant !== "map" && value.place && (
         <div id={`${id}-help`} className="field-help confirmed">
           <Check size={14} />
           地点を確定しました
@@ -216,9 +224,11 @@ export default function LocationInput({
       )}
       {open && !value.place && (
         <div className="suggestions">
-          <div className="suggestion-heading">
-            {isDemo ? "デモ候補" : "住所候補"}
-          </div>
+          {variant !== "map" && (
+            <div className="suggestion-heading">
+              {isDemo ? "デモ候補" : "住所候補"}
+            </div>
+          )}
           {busy && (
             <div className="suggestion-status" role="status">
               <LoaderCircle size={16} className="spin" />
@@ -246,7 +256,7 @@ export default function LocationInput({
               {message}
             </p>
           )}
-          {attribution.length > 0 && (
+          {attribution.length > 0 && (variant !== "map" || !isDemo) && (
             <div className="attribution">
               {attribution.map((item) => (
                 <a
