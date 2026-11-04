@@ -137,6 +137,7 @@ describe("community safety reports", () => {
         "datetime",
         saved.createdAt,
       );
+      expect(within(review).getByRole("listitem").querySelector("time")).toHaveAttribute("datetime", saved.createdAt);
       expect(screen.getByRole("button", { name: "投票" })).toHaveAttribute(
         "aria-disabled",
         "true",
@@ -251,7 +252,7 @@ describe("community safety reports", () => {
           name: text ? `危険の口コミ：${text}` : "危険の口コミ",
         }),
       );
-      expect(screen.getByText("2026/11/04 18:15")).toBeVisible();
+      expect(screen.getAllByText("2026/11/04 18:15")).toHaveLength(text ? 2 : 1);
       expect(!!screen.queryByRole("heading", { name: "詳細情報" })).toBe(
         !!text,
       );
@@ -360,7 +361,7 @@ describe("community safety reports", () => {
     expect(
       within(review)
         .getAllByRole("listitem")
-        .map((item) => item.textContent),
+        .map((item) => item.querySelector("p")?.textContent),
     ).toEqual([
       "夜は暗い",
       expect.stringContaining("歩道も狭い"),

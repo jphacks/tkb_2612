@@ -126,9 +126,7 @@ export function CommunityReview({
             <ol className="community-comment-list">
               {comments.map((comment) => (
                 <li key={comment.id}>
-                  {comment.id !== report.id && (
-                    <RecordedAt value={comment.createdAt} />
-                  )}
+                  <RecordedAt value={comment.createdAt} />
                   <p>{comment.text}</p>
                 </li>
               ))}
