@@ -14,13 +14,14 @@ use super::RoutingData;
 use super::graph::restrictions::TurnAutomaton;
 use super::search::SearchParams;
 
-/// 新方式のエンジンが使う探索の設定（M3b.md 4章の決定）。
+/// 新方式のエンジンが使う探索の設定（M5.6の決定。M5.md の時間予算の節）。
 ///
+/// 自動車600組（全国300・関東4地域300）の計測で、処理時間の99%点が10秒以下に収まる範囲から選んだ。
 /// `SearchParams::DEFAULT` は既存のテストが固定しているので変えず、エンジンではこちらを使う。
 pub const ENGINE_SEARCH_PARAMS: SearchParams = SearchParams {
-    rcsp_budget_ms: 1_000,
+    rcsp_budget_ms: 2_000,
     larac_iterations: 10,
-    ellipse_node_limit: 1_000_000,
+    ellipse_node_limit: 300_000,
     rcsp_label_limit: 2_000_000,
 };
 
