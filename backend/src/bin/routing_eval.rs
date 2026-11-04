@@ -84,8 +84,12 @@
 //! 外した候補・間引いた候補の割合、`safest` の事故件数が `fastest` より多いODの割合を出す。
 //!
 //! `y-metrics`：`--dir <DIR> --assignment <assignment.bin> --accidents <accidents.csv.gz>
-//! --routes <in.jsonl> --out <out.jsonl> --years 2024,2025`。任意：`--threads N`（既定4）。
+//! --routes <in.jsonl> --out <out.jsonl> --years 2024,2025`。任意：`--threads N`（既定4）、
+//! `--exposure-factors motorway=..,arterial=..,local=..`（道路区分の曝露の係数。3つとも必要）、
+//! `--exposure-clusters top_group|none`（既定 `top_group`。`--exposure-factors` と一緒にだけ使える）。
 //! 入力の各候補に `y`（Y1・Y2・Y3・`length_m`）を足し、行の順を保って書く（形式書18.3節）。
+//! `--exposure-factors` があるときは、`y` に補正版の `y1x`・`y2x`・`y3x`（浮動小数）を足し、
+//! 使った係数の表を標準エラーに1行出す。係数がなければ今の出力のまま。
 //!
 //! `match-routes`：`--dir <DIR> --in <current.jsonl> --out <matched.jsonl>`。任意：
 //! `--corridor-m M`（既定20）、`--threads N`（既定4）。現行方式の折れ線を自前のグラフの
@@ -119,7 +123,8 @@ use accident_route_backend::domain::routing::eval::matching::{
     class_lengths_m as matched_class_lengths_m, distance_m as matched_distance_m, match_route,
 };
 use accident_route_backend::domain::routing::eval::metrics::{
-    EvalPath, Y2Assignments, length_m as y_length_m, y1_count, y2_count, y3_weight,
+    EvalPath, ExposureClusterMode, ExposureFactors, Y2Assignments, length_m as y_length_m,
+    y1_count, y1_weighted, y2_count, y2_weighted, y3_weight, y3_weighted,
 };
 use accident_route_backend::domain::routing::eval::region::{
     BoundaryWay, RegionBBox, RegionFeature, RegionGeometry, assemble_rings, feature_collection,
@@ -3298,6 +3303,88 @@ fn parse_years(text: &str) -> Result<Vec<u16>, String> {
     Ok(years)
 }
 
+/// `--exposure-factors motorway=..,arterial=..,local=..` を読み、group 0〜15の係数の表にする。
+///
+/// 3つの名前がそろい、値が有限の正の数であること。違反はエラー。
+fn parse_exposure_factors(text: &str) -> Result<[f64; 16], String> {
+    let mut values: [Option<f64>; 3] = [None; 3];
+    for part in text.split(',') {
+        let (name, value) = part
+            .split_once('=')
+            .ok_or_else(|| format!("--exposure-factors の要素が 名前=値 ではありません: {part}"))?;
+        let slot = match name {
+            "motorway" => 0,
+            "arterial" => 1,
+            "local" => 2,
+            _ => {
+                return Err(format!(
+                    "--exposure-factors の名前は motorway・arterial・local のどれかです: {name}"
+                ));
+            }
+        };
+        if values[slot].is_some() {
+            return Err(format!("--exposure-factors の {name} が重複しています"));
+        }
+        let parsed: f64 = value
+            .parse()
+            .map_err(|_| format!("--exposure-factors の {name} の値が数ではありません: {value}"))?;
+        if !parsed.is_finite() || parsed <= 0.0 {
+            return Err(format!(
+                "--exposure-factors の {name} は有限の正の数です: {value}"
+            ));
+        }
+        values[slot] = Some(parsed);
+    }
+    let [Some(motorway), Some(arterial), Some(local)] = values else {
+        return Err("--exposure-factors には motorway・arterial・local の3つが必要です".to_owned());
+    };
+    let mut groups = [1.0_f64; 16];
+    groups[0] = motorway;
+    groups[1..=3].fill(arterial);
+    groups[4..=10].fill(local);
+    Ok(groups)
+}
+
+/// 曝露の補正の引数（`--exposure-factors`・`--exposure-clusters`）を読む。
+///
+/// `--exposure-factors` がなければ `None`（今の出力のまま）。`--exposure-clusters` だけの指定はエラー。
+fn exposure_options(options: &Options) -> Result<Option<ExposureFactors>, String> {
+    let clusters = match options.0.get("exposure-clusters").map(String::as_str) {
+        None => ExposureClusterMode::TopGroup,
+        Some("top_group") => ExposureClusterMode::TopGroup,
+        Some("none") => ExposureClusterMode::None,
+        Some(value) => {
+            return Err(format!(
+                "--exposure-clusters は top_group か none です: {value}"
+            ));
+        }
+    };
+    let Some(text) = options.0.get("exposure-factors") else {
+        if options.0.contains_key("exposure-clusters") {
+            return Err(
+                "--exposure-clusters は --exposure-factors と一緒に指定してください".to_owned(),
+            );
+        }
+        return Ok(None);
+    };
+    Ok(Some(ExposureFactors {
+        groups: parse_exposure_factors(text)?,
+        clusters,
+    }))
+}
+
+/// 標準エラーに出す、使った係数の1行。
+fn exposure_factors_line(factors: &ExposureFactors) -> String {
+    let groups = factors
+        .groups
+        .iter()
+        .enumerate()
+        .map(|(group, factor)| format!("{group}={factor}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("曝露係数: {groups}")
+}
+
 /// 共通の形式の `path` を読む。形が正しくなければ理由を返す。
 fn path_from_json(graph: &Graph, value: &Value) -> Result<RoutePath, String> {
     let point = |name: &str| -> Result<SnapPoint, String> {
@@ -3355,12 +3442,14 @@ fn path_from_json(graph: &Graph, value: &Value) -> Result<RoutePath, String> {
 }
 
 /// 1行分の経路の `y` を足す。`path` がない・null の候補は `y` を null にする。
+/// `exposure` があれば、`y` に補正版の `y1x`・`y2x`・`y3x`（浮動小数）を足す。
 fn eval_route_record(
     data: &Data,
     accidents: &EdgeAccidentIndex,
     snapshot: &AccidentSnapshot,
     years: &[u16],
     assigns: &Y2Assignments,
+    exposure: Option<&ExposureFactors>,
     record: &mut Value,
 ) -> Result<(), String> {
     let id = record
@@ -3418,17 +3507,54 @@ fn eval_route_record(
             eval_path,
         );
         let length = y_length_m(&data.graph, eval_path);
-        match (y1, y2, y3, length) {
-            (Some(y1), Some(y2), Some(y3), Some(length)) => {
-                object.insert(
-                    "y".into(),
-                    json!({"y1": y1, "y2": y2, "y3": y3, "length_m": length}),
+        let (Some(y1), Some(y2), Some(y3), Some(length)) = (y1, y2, y3, length) else {
+            object.insert("y".into(), Value::Null);
+            continue;
+        };
+        let weighted = match exposure {
+            None => None,
+            Some(factors) if mode == Mode::Car => {
+                let y1x = y1_weighted(&data.graph, snapshot, years, mode, eval_path, factors);
+                let y2x = y2_weighted(
+                    &data.graph,
+                    &data.topology,
+                    snapshot,
+                    years,
+                    mode,
+                    assigns,
+                    eval_path,
+                    factors,
                 );
+                let y3x = y3_weighted(
+                    &data.graph,
+                    &data.topology,
+                    accidents,
+                    snapshot,
+                    years,
+                    mode,
+                    eval_path,
+                    factors,
+                );
+                match (y1x, y2x, y3x) {
+                    (Some(y1x), Some(y2x), Some(y3x)) => Some((y1x, y2x, y3x)),
+                    _ => return Err(format!("{id}: 補正版のYを計算できません")),
+                }
             }
-            _ => {
-                object.insert("y".into(), Value::Null);
-            }
-        }
+            Some(_) => Some((y1 as f64, y2 as f64, y3)),
+        };
+        let y = match weighted {
+            None => json!({"y1": y1, "y2": y2, "y3": y3, "length_m": length}),
+            Some((y1x, y2x, y3x)) => json!({
+                "y1": y1,
+                "y2": y2,
+                "y3": y3,
+                "y1x": y1x,
+                "y2x": y2x,
+                "y3x": y3x,
+                "length_m": length,
+            }),
+        };
+        object.insert("y".into(), y);
     }
     Ok(())
 }
@@ -3452,6 +3578,10 @@ fn y_metrics(options: &Options) -> Result<(), String> {
     let threads: usize = number_option(options, "threads", Some(4))?;
     if threads == 0 {
         return Err("--threads は1以上です".to_owned());
+    }
+    let exposure = exposure_options(options)?;
+    if let Some(factors) = &exposure {
+        eprintln!("{}", exposure_factors_line(factors));
     }
 
     let started = Instant::now();
@@ -3541,7 +3671,15 @@ fn y_metrics(options: &Options) -> Result<(), String> {
     let batch_started = Instant::now();
     pool.install(|| {
         records.par_iter_mut().try_for_each(|record| {
-            eval_route_record(&data, &accidents, &snapshot, &years, &assigns, record)
+            eval_route_record(
+                &data,
+                &accidents,
+                &snapshot,
+                &years,
+                &assigns,
+                exposure.as_ref(),
+                record,
+            )
         })
     })?;
     let batch_s = batch_started.elapsed().as_secs_f64();

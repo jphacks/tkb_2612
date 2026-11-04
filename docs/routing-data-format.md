@@ -757,7 +757,9 @@ cargo run --release --manifest-path backend/Cargo.toml --bin routing_eval -- eng
 ```sh
 routing_eval y-metrics --dir <グラフ一式> --assignment <assignment.bin> \
   --accidents <accidents.csv.gz> --routes <in.jsonl> --out <out.jsonl> \
-  --years 2024,2025 [--threads N]
+  --years 2024,2025 [--threads N] \
+  [--exposure-factors motorway=0.27,arterial=1,local=15.0] \
+  [--exposure-clusters top_group|none]
 ```
 
 入力の各行の各候補に `"y": {"y1", "y2", "y3", "length_m"}` を足し、ほかの欄はそのまま
@@ -777,7 +779,26 @@ routing_eval y-metrics --dir <グラフ一式> --assignment <assignment.bin> \
   親の辺の長さに対する同じ割合の範囲に写して、親の辺の割り当てを数える。
 - `length_m`：経路の道のり（m）。
 
+`--exposure-factors` は、自動車のリスクに掛ける道路区分の係数（計画書5章）を、`motorway`・
+`arterial`・`local` の3つの名前で与える。3つとも必要で、値は有限の正の数（違反はエラー）。
+group 0が `motorway`、group 1〜3が `arterial`、group 4〜10が `local`、それ以外（group 11〜15と
+`road_group` が `None`）は1になる。`--exposure-clusters` は `top_group`（既定）か `none` で、
+`--exposure-factors` と一緒にだけ指定できる（単独の指定はエラー）。
+
+`--exposure-factors` があるとき、各候補の `y` に補正版の `y1x`・`y2x`・`y3x`（浮動小数）を足す。
+`y1`・`y2`・`y3`・`length_m` は変えない。`y` が null の候補は null のまま。
+
+- Y1x：Y1で数える事故1件ごとに、その事故に最も近い経路の辺（出発・到着の部分辺を含む。
+  距離が同じなら辺番号の小さい方）の group の係数を足す。
+- Y2x：Y2で数える事故1件ごとに、Y2の割り当て先の辺（`Y2Target.edge`）の group の係数を足す。
+- Y3x：Y3で足す割り当ての重みに、辺の割り当てなら辺の group の係数、交差点クラスタの
+  割り当てなら `top_group` のときクラスタの `top_class` の group の係数（`none` のときは1）を
+  掛けて足す。歩道の辺を通るときは親の車道の辺の group を使う。
+- 辺の group は `road_group(edge の HighwayClass::code)`。
+- 徒歩・自転車では `y1x = y1`、`y2x = y2`、`y3x = y3`（浮動小数にした値）。
+
 標準エラーに、評価年×手段ごとの事故の件数、Y2で辺に割り当てた割合、読み込みと処理の時間を出す。
+`--exposure-factors` があるときは、使った係数のgroupごとの表も1行出す。
 
 #### `match-routes`
 

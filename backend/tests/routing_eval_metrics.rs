@@ -10,13 +10,14 @@ use accident_route_backend::domain::routing::accident::{
 };
 use accident_route_backend::domain::routing::eval::matching::{class_lengths_m, match_route};
 use accident_route_backend::domain::routing::eval::metrics::{
-    EvalPath, Y2Assignments, y1_count, y2_count, y3_weight,
+    EvalPath, ExposureClusterMode, ExposureFactors, Y2Assignments, y1_count, y1_weighted, y2_count,
+    y2_weighted, y3_weight, y3_weighted,
 };
 use accident_route_backend::domain::routing::graph::synthetic::{EdgeSpec, GraphBuilder};
 use accident_route_backend::domain::routing::graph::{Coord, DirEdge, Graph, HighwayClass};
 use accident_route_backend::domain::routing::prep::odindex::build_odindex;
 use accident_route_backend::domain::routing::search::endpoints::path_distance_dm;
-use accident_route_backend::domain::routing::snap::{OdIndex, SnapPoint};
+use accident_route_backend::domain::routing::snap::{OdIndex, SnapPoint, point_on_edge};
 use accident_route_backend::domain::routing::topology::{ClusterRecord, Topology};
 use accident_route_backend::domain::snapshot::{AccidentColumns, AccidentSnapshot};
 use serde_json::Value;
@@ -40,6 +41,42 @@ fn graph() -> Graph {
     builder.add_edge(EdgeSpec::new(n2, n3).class(HighwayClass::Residential));
     builder.add_edge(EdgeSpec::new(n4, n5).class(HighwayClass::Residential));
     builder.build()
+}
+
+/// 区分の違う2辺（自専道と生活道路）がつながった経路。
+fn class_graph() -> Graph {
+    let mut builder = GraphBuilder::new();
+    let n0 = builder.add_node_deg(35.0, 139.0);
+    let n1 = builder.add_node_deg(35.0, 139.001);
+    let n2 = builder.add_node_deg(35.0, 139.002);
+    builder.add_edge(EdgeSpec::new(n0, n1).class(HighwayClass::Motorway));
+    builder.add_edge(EdgeSpec::new(n1, n2).class(HighwayClass::Residential));
+    builder.build()
+}
+
+/// 東向きの辺0のあと、北へ上がって西へ戻る辺1・辺2。事故は辺0と辺2から等距離になる。
+fn symmetric_graph() -> Graph {
+    let mut builder = GraphBuilder::new();
+    let n0 = builder.add_node_deg(35.0, 139.0);
+    let n1 = builder.add_node_deg(35.0, 139.001);
+    let n2 = builder.add_node_deg(35.0001, 139.001);
+    let n3 = builder.add_node_deg(35.0001, 139.0);
+    builder.add_edge(EdgeSpec::new(n0, n1).class(HighwayClass::Motorway));
+    builder.add_edge(EdgeSpec::new(n1, n2).class(HighwayClass::Residential));
+    builder.add_edge(EdgeSpec::new(n2, n3).class(HighwayClass::Residential));
+    builder.build()
+}
+
+/// 自専道0.27・幹線1・生活15の係数。
+fn factors(motorway: f64, arterial: f64, local: f64) -> ExposureFactors {
+    let mut groups = [1.0_f64; 16];
+    groups[0] = motorway;
+    groups[1..=3].fill(arterial);
+    groups[4..=10].fill(local);
+    ExposureFactors {
+        groups,
+        clusters: ExposureClusterMode::TopGroup,
+    }
 }
 
 /// 全辺を全手段で吸着可にした位相。交差点クラスタと歩道の親を指定できる。
@@ -93,6 +130,13 @@ fn cluster(node_start: u32, node_count: u16) -> ClusterRecord {
     }
 }
 
+/// `top_class` を指定した交差点クラスタ。
+fn cluster_top(node_start: u32, node_count: u16, top_class: u8) -> ClusterRecord {
+    let mut record = cluster(node_start, node_count);
+    record.top_class = top_class;
+    record
+}
+
 /// 事故の列。`(緯度, 経度, 手段のビット, source_year)`。
 fn snapshot(points: &[(f64, f64, u8, u16)]) -> AccidentSnapshot {
     let mut columns = AccidentColumns::default();
@@ -109,6 +153,12 @@ fn snapshot(points: &[(f64, f64, u8, u16)]) -> AccidentSnapshot {
         columns.date.push(20240101);
     }
     AccidentSnapshot::new(columns)
+}
+
+/// 辺の上の位置の座標（緯度, 経度）。事故を狙った位置に置くために使う。
+fn at(graph: &Graph, edge: u32, pos_dm: u32) -> (f64, f64) {
+    let point = point_on_edge(graph, edge, pos_dm).to_latlon();
+    (point.lat, point.lon)
 }
 
 fn odindex(graph: &Graph) -> OdIndex {
@@ -470,6 +520,447 @@ fn y3_counts_a_sidewalk_through_its_parent_edge() {
     )
     .unwrap();
     assert!((y3 - 1.0).abs() < 1e-6, "y3={y3}");
+}
+
+// ---------------------------------------------------------------------------------------------
+// 曝露の補正（Y1x・Y2x・Y3x）
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn weighted_metrics_equal_the_counts_when_all_factors_are_one() {
+    let graph = graph();
+    let topology = topology(
+        &graph,
+        vec![NONE; graph.node_count()],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    );
+    let snapshot = snapshot(&[
+        (
+            at(&graph, 0, 450).0,
+            at(&graph, 0, 450).1,
+            Mode::Car.mask(),
+            2024,
+        ),
+        (
+            at(&graph, 1, 450).0,
+            at(&graph, 1, 450).1,
+            Mode::Car.mask(),
+            2024,
+        ),
+    ]);
+    let years = [2024_u16];
+    let assigns = Y2Assignments::build(&graph, &topology, &odindex(&graph), &snapshot, &years);
+    let assignment = assignment(vec![
+        vec![edge_target(0, 400, 0.6)],
+        vec![edge_target(1, 400, 0.4)],
+    ]);
+    let index = EdgeAccidentIndex::build(&assignment, graph.edge_count(), 0);
+    let (start, end, dedges) = full_path(&graph, 0, 1);
+    let eval_path = eval_at(&start, &end, &dedges);
+    let ones = factors(1.0, 1.0, 1.0);
+
+    let y1 = y1_count(&graph, &snapshot, &years, Mode::Car, eval_path).unwrap();
+    let y2 = y2_count(
+        &graph,
+        &topology,
+        &snapshot,
+        &years,
+        Mode::Car,
+        &assigns,
+        eval_path,
+    )
+    .unwrap();
+    let y3 = y3_weight(
+        &graph,
+        &topology,
+        &index,
+        &snapshot,
+        &years,
+        Mode::Car,
+        eval_path,
+    )
+    .unwrap();
+    assert_eq!(
+        y1_weighted(&graph, &snapshot, &years, Mode::Car, eval_path, &ones),
+        Some(y1 as f64)
+    );
+    assert_eq!(
+        y2_weighted(
+            &graph,
+            &topology,
+            &snapshot,
+            &years,
+            Mode::Car,
+            &assigns,
+            eval_path,
+            &ones,
+        ),
+        Some(y2 as f64)
+    );
+    assert_eq!(
+        y3_weighted(
+            &graph,
+            &topology,
+            &index,
+            &snapshot,
+            &years,
+            Mode::Car,
+            eval_path,
+            &ones,
+        ),
+        Some(y3)
+    );
+}
+
+#[test]
+fn weighted_metrics_use_the_group_of_each_travelled_edge() {
+    let graph = class_graph();
+    let topology = topology(
+        &graph,
+        vec![NONE; graph.node_count()],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    );
+    let snapshot = snapshot(&[
+        (
+            at(&graph, 0, 450).0,
+            at(&graph, 0, 450).1,
+            Mode::Car.mask(),
+            2024,
+        ),
+        (
+            at(&graph, 1, 450).0,
+            at(&graph, 1, 450).1,
+            Mode::Car.mask(),
+            2024,
+        ),
+    ]);
+    let years = [2024_u16];
+    let assigns = Y2Assignments::build(&graph, &topology, &odindex(&graph), &snapshot, &years);
+    let assignment = assignment(vec![
+        vec![edge_target(0, 450, 0.5)],
+        vec![edge_target(1, 450, 0.25)],
+    ]);
+    let index = EdgeAccidentIndex::build(&assignment, graph.edge_count(), 0);
+    let (start, end, dedges) = full_path(&graph, 0, 1);
+    let eval_path = eval_at(&start, &end, &dedges);
+    let f = factors(0.27, 1.0, 15.0);
+
+    assert_eq!(
+        y1_weighted(&graph, &snapshot, &years, Mode::Car, eval_path, &f),
+        Some(0.27 + 15.0)
+    );
+    assert_eq!(
+        y2_weighted(
+            &graph,
+            &topology,
+            &snapshot,
+            &years,
+            Mode::Car,
+            &assigns,
+            eval_path,
+            &f,
+        ),
+        Some(0.27 + 15.0)
+    );
+    assert_eq!(
+        y3_weighted(
+            &graph,
+            &topology,
+            &index,
+            &snapshot,
+            &years,
+            Mode::Car,
+            eval_path,
+            &f,
+        ),
+        Some(0.5 * 0.27 + 0.25 * 15.0)
+    );
+}
+
+#[test]
+fn y1x_uses_the_smaller_edge_number_when_two_path_edges_are_equidistant() {
+    let graph = symmetric_graph();
+    // 辺0と辺2のちょうど中間（どちらも約5.6m）。同じ距離なら辺番号の小さい辺0。
+    let snapshot = snapshot(&[(35.00005, 139.0005, Mode::Car.mask(), 2024)]);
+    let years = [2024_u16];
+    let (start, end, dedges) = full_path(&graph, 0, 2);
+    let eval_path = eval_at(&start, &end, &dedges);
+    let f = factors(0.27, 1.0, 15.0);
+    assert_eq!(
+        y1_count(&graph, &snapshot, &years, Mode::Car, eval_path),
+        Some(1)
+    );
+    assert_eq!(
+        y1_weighted(&graph, &snapshot, &years, Mode::Car, eval_path, &f),
+        Some(0.27)
+    );
+}
+
+#[test]
+fn y3x_uses_the_cluster_top_class_or_one() {
+    let graph = graph();
+    // ノード1のクラスタ0の最上位の道路種別は自専道（group 0）。
+    let topology = topology(
+        &graph,
+        vec![NONE, 0, NONE, NONE, NONE, NONE],
+        vec![cluster_top(0, 1, HighwayClass::Motorway.code())],
+        vec![1],
+        Vec::new(),
+    );
+    let assignment = assignment(vec![vec![cluster_target(0, 0.5)]]);
+    let index = EdgeAccidentIndex::build(&assignment, graph.edge_count(), 1);
+    let snapshot = snapshot(&[(
+        at(&graph, 0, 450).0,
+        at(&graph, 0, 450).1,
+        Mode::Car.mask(),
+        2024,
+    )]);
+    let years = [2024_u16];
+    let (start, end, dedges) = full_path(&graph, 0, 1);
+    let eval_path = eval_at(&start, &end, &dedges);
+    let mut top = factors(0.27, 1.0, 15.0);
+    top.clusters = ExposureClusterMode::TopGroup;
+    let mut none = top;
+    none.clusters = ExposureClusterMode::None;
+
+    assert_eq!(
+        y3_weight(
+            &graph,
+            &topology,
+            &index,
+            &snapshot,
+            &years,
+            Mode::Car,
+            eval_path,
+        ),
+        Some(0.5)
+    );
+    assert_eq!(
+        y3_weighted(
+            &graph,
+            &topology,
+            &index,
+            &snapshot,
+            &years,
+            Mode::Car,
+            eval_path,
+            &top,
+        ),
+        Some(0.5 * 0.27)
+    );
+    assert_eq!(
+        y3_weighted(
+            &graph,
+            &topology,
+            &index,
+            &snapshot,
+            &years,
+            Mode::Car,
+            eval_path,
+            &none,
+        ),
+        Some(0.5)
+    );
+}
+
+#[test]
+fn weighted_metrics_exclude_accidents_outside_partial_edges() {
+    let graph = class_graph();
+    let topology = topology(
+        &graph,
+        vec![NONE; graph.node_count()],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    );
+    // 出発の辺0は300dmから、到着の辺1は200dmまで通る。外側の事故は数えない。
+    let points = [(0, 100), (0, 500), (1, 100), (1, 500)];
+    let snapshot = snapshot(
+        &points
+            .iter()
+            .map(|&(edge, pos)| {
+                (
+                    at(&graph, edge, pos).0,
+                    at(&graph, edge, pos).1,
+                    Mode::Car.mask(),
+                    2024,
+                )
+            })
+            .collect::<Vec<_>>(),
+    );
+    let years = [2024_u16];
+    let assigns = Y2Assignments::build(&graph, &topology, &odindex(&graph), &snapshot, &years);
+    let assignment = assignment(vec![
+        vec![edge_target(0, 100, 0.1)],
+        vec![edge_target(0, 500, 0.2)],
+        vec![edge_target(1, 100, 0.3)],
+        vec![edge_target(1, 500, 0.4)],
+    ]);
+    let index = EdgeAccidentIndex::build(&assignment, graph.edge_count(), 0);
+    let start = SnapPoint::on_edge(&graph, 0, 300);
+    let end = SnapPoint::on_edge(&graph, 1, 200);
+    let dedges = [DirEdge::new(0, false), DirEdge::new(1, false)];
+    let eval_path = eval_at(&start, &end, &dedges);
+    let f = factors(0.27, 1.0, 15.0);
+
+    // 通る範囲の事故は辺0の500dm（自専道）と辺1の100dm（生活道路）の2件。
+    assert_eq!(
+        y1_count(&graph, &snapshot, &years, Mode::Car, eval_path),
+        Some(2)
+    );
+    assert_eq!(
+        y1_weighted(&graph, &snapshot, &years, Mode::Car, eval_path, &f),
+        Some(0.27 + 15.0)
+    );
+    assert_eq!(
+        y2_weighted(
+            &graph,
+            &topology,
+            &snapshot,
+            &years,
+            Mode::Car,
+            &assigns,
+            eval_path,
+            &f,
+        ),
+        Some(0.27 + 15.0)
+    );
+    // Y3の辺の割り当ては、通る範囲の0.2（自専道）と0.3（生活道路）だけ。
+    let y3x = y3_weighted(
+        &graph,
+        &topology,
+        &index,
+        &snapshot,
+        &years,
+        Mode::Car,
+        eval_path,
+        &f,
+    )
+    .unwrap();
+    assert!((y3x - (0.2 * 0.27 + 0.3 * 15.0)).abs() < 1e-6, "y3x={y3x}");
+}
+
+#[test]
+fn y3x_uses_the_parent_edge_group_for_a_sidewalk() {
+    let graph = class_graph();
+    // 辺1を辺0（自専道）の歩道にする。
+    let topology = topology(
+        &graph,
+        vec![NONE; graph.node_count()],
+        Vec::new(),
+        Vec::new(),
+        vec![(1, 0)],
+    );
+    let assignment = assignment(vec![vec![edge_target(0, 450, 0.5)]]);
+    let index = EdgeAccidentIndex::build(&assignment, graph.edge_count(), 0);
+    let snapshot = snapshot(&[(
+        at(&graph, 1, 450).0,
+        at(&graph, 1, 450).1,
+        Mode::Car.mask(),
+        2024,
+    )]);
+    let years = [2024_u16];
+    let start = SnapPoint::on_edge(&graph, 1, 0);
+    let end = SnapPoint::on_edge(&graph, 1, graph.edge(1).length_dm);
+    let dedges = [DirEdge::new(1, false)];
+    let eval_path = eval_at(&start, &end, &dedges);
+    let f = factors(0.27, 1.0, 15.0);
+    assert_eq!(
+        y3_weight(
+            &graph,
+            &topology,
+            &index,
+            &snapshot,
+            &years,
+            Mode::Car,
+            eval_path,
+        ),
+        Some(0.5)
+    );
+    assert_eq!(
+        y3_weighted(
+            &graph,
+            &topology,
+            &index,
+            &snapshot,
+            &years,
+            Mode::Car,
+            eval_path,
+            &f,
+        ),
+        Some(0.5 * 0.27)
+    );
+}
+
+#[test]
+fn walk_and_bike_keep_the_counts_under_non_unit_factors() {
+    let graph = class_graph();
+    let topology = topology(
+        &graph,
+        vec![NONE; graph.node_count()],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    );
+    let snapshot = snapshot(&[
+        (
+            at(&graph, 0, 450).0,
+            at(&graph, 0, 450).1,
+            Mode::Walk.mask(),
+            2024,
+        ),
+        (
+            at(&graph, 1, 450).0,
+            at(&graph, 1, 450).1,
+            Mode::Walk.mask(),
+            2024,
+        ),
+    ]);
+    let years = [2024_u16];
+    let assigns = Y2Assignments::build(&graph, &topology, &odindex(&graph), &snapshot, &years);
+    let assignment = assignment(vec![
+        vec![edge_target(0, 450, 0.5)],
+        vec![edge_target(1, 450, 0.25)],
+    ]);
+    let index = EdgeAccidentIndex::build(&assignment, graph.edge_count(), 0);
+    let (start, end, dedges) = full_path(&graph, 0, 1);
+    let eval_path = eval_at(&start, &end, &dedges);
+    let f = factors(0.27, 1.0, 15.0);
+
+    assert_eq!(
+        y1_weighted(&graph, &snapshot, &years, Mode::Walk, eval_path, &f),
+        Some(2.0)
+    );
+    assert_eq!(
+        y2_weighted(
+            &graph,
+            &topology,
+            &snapshot,
+            &years,
+            Mode::Walk,
+            &assigns,
+            eval_path,
+            &f,
+        ),
+        Some(2.0)
+    );
+    assert_eq!(
+        y3_weighted(
+            &graph,
+            &topology,
+            &index,
+            &snapshot,
+            &years,
+            Mode::Walk,
+            eval_path,
+            &f,
+        ),
+        Some(0.75)
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
