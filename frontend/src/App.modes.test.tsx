@@ -89,6 +89,12 @@ describe("mode selection and logo restart", () => {
     expect(
       screen.queryByText(/マップ上の地点を押して/),
     ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "モード選択" }));
+    expect(screen.getByRole("main", { name: "モード選択" })).toBeVisible();
+    expect(screen.queryByRole("application")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "動画をスキップして開始" }),
+    ).not.toBeInTheDocument();
   });
 
   it("cancels a pending mode transition when the logo is clicked", async () => {

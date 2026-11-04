@@ -80,7 +80,17 @@ export default function App() {
           <div className={`app${mode === "community" ? " app-community" : ""}`}>
             <AppHeader onRestart={restart} />
             {mode === "community" ? (
-              <CommunitySafety />
+              <>
+                <CommunitySafety />
+                <button
+                  type="button"
+                  className="secondary community-back"
+                  onClick={() => setMode(null)}
+                >
+                  <ArrowLeft size={16} />
+                  モード選択
+                </button>
+              </>
             ) : (
               <ModeSelection
                 key={introVersion}

@@ -189,6 +189,7 @@ export function CommunitySafety() {
         onLocate={locate}
         popupWidth={viewing || composingPost ? 320 : 146}
         popupHeight={viewing || composingPost ? 200 : kind ? 136 : 82}
+        bottomInset={80}
       >
         {viewing ? (
           addingSupport ? (
