@@ -211,6 +211,7 @@ fn run_output(
         train_years: train.to_vec(),
         validate_year: validate,
         c: 1.0,
+        exposure: None,
         inherit,
     };
     fit_risk(&input, &config, &|_| {}).unwrap()

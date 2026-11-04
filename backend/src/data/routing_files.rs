@@ -2127,6 +2127,7 @@ mod tests {
                 years: 4,
                 c: 1.5,
                 c_groups: vec![5, 6, 7, 8],
+                car_exposure: None,
                 beta: PerMode {
                     walk: 0.1,
                     bike: 0.2,

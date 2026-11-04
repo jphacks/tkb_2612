@@ -549,6 +549,7 @@ urban（人口集中地区か）：人口集中地区の境界データは手元
 | `inherited_from` | 参照の推定からW・β・β_clusterを引き継いだときの参照元（ファイルのパス・SHA-256・参照の `train_source_years`）。引き継がないときはキーがない |
 | `c` | 自動車の生活道路の係数（計画書5.5節）。初期値1.0 |
 | `c_groups` | cを掛けるgroup（residential・unclassified・living_street・service＝`[5, 6, 7, 8]`） |
+| `car_exposure` | 道路区分（motorway・arterial・local）ごとの曝露の補正（下の説明）。ないときはキーがない（今の `c` の動きのまま） |
 | `rules_version` | `jp-risk-1` |
 | `beta` | 辺の天候の縮小の母数β（手段ごと `{"walk", "bike", "car"}`、1mあたり） |
 | `beta_cluster` | 交差点の天候の縮小の母数β_cluster（手段ごと）。ないJSONでは `beta` と同じ値とする |
@@ -557,6 +558,28 @@ urban（人口集中地区か）：人口集中地区の境界データは手元
 | `pooling`・`fit` | 種別のまとめ方、推定の監査値（逸脱度、グリッド探索の結果）。引き継いだWには `w_source`（`inherited`・`inherited-parent`・`default`）を付ける |
 
 `inherited_from` があるときは、検証年の事故を集計せず、W・β・β_clusterを参照から引き継ぎ、`a` を新しい学習年のRとTから `a = T·R·(1/W − 1)` で換算する。このとき `validate_year` は null になる。
+
+`car_exposure` は、道路区分（motorway・arterial・local）ごとに自動車のリスクへ掛ける係数を持つ（計画書5章）。形は次のとおり。
+
+```json
+"car_exposure": {
+  "method": "route-code",
+  "clusters": "top_group",
+  "reference": "arterial",
+  "categories": [
+    {"name": "motorway", "groups": [0], "route_classes": [5, 6, 7], "rate": 9.0,
+     "length_km": 12675.0, "count": 22682.0, "density": 1.79, "factor": 0.27},
+    {"name": "arterial", "groups": [1, 2, 3], "route_classes": [0, 1, 2, 3], "rate": 62.0,
+     "length_km": 181204.0, "count": 601679.0, "density": 3.32, "factor": 1.0},
+    {"name": "local", "groups": [4, 5, 6, 7, 8, 9, 10], "route_classes": [4], "rate": 142.0,
+     "length_km": 1015861.0, "count": 515898.0, "density": 0.508, "factor": 15.0}
+  ]
+}
+```
+
+- `method` は `route-code`（警察の路線コードの区分と与えた延長から計算）・`osm`（割り当ての重みとOSMの中心線の延長から計算）・`factors`（係数を直接与える）のいずれか。`clusters` は `top_group`（交差点クラスタにも掛ける）か `none`（掛けない）。`reference` は `arterial`。
+- `groups` は係数を掛けるgroup（`k/8`・`j/8`）。`route_classes` は `route-code` のときだけ、`calib_groups` は `osm` のときだけ書く。`rate`・`length_km`・`count`・`density` は `factors` のとき null。
+- 既定（`car_exposure` なし）ではキーを書かず、`c`・`c_groups` の動きのままにする。`car_exposure` があるときに `c` が1でない推定はエラーにする（二重に掛けないため）。
 
 ### 14.5 リクエストごとのリスク（`RiskView`）
 
@@ -573,7 +596,8 @@ urban（人口集中地区か）：人口集中地区の境界データは手元
   S    = Σ_C s[C]·r[C] / Σ_C r[C]          // 期待件数で重み付け
   Y_e  = ŷ_e                              // 天候allまたは晴・曇
        = ŷ_e + (M_w − 1)·ŷ_e^w            // 雨・霧・雪（下の「天候の項」）
-  risk_e = c_k · S · Y_e                  // c_k は car かつ group∈c_groups のとき c、それ以外1
+  risk_e = c_k · S · Y_e                  // c_k は car_exposure があれば区分の係数 f[k/8]、
+                                          //   なければ car かつ group∈c_groups のとき c、それ以外1
 
 天候の項（雨・霧・雪、w）：
   ρ_k   = Σ_C r[C]·rho[C][w] / Σ_C r[C]   // R=0 なら0
@@ -584,7 +608,8 @@ urban（人口集中地区か）：人口集中地区の境界データは手元
 交差点クラスタv（j = CLUSJ[v]）：
   μ_v = T·Σ_C r_v[C]、W_v = μ_v / (μ_v + α_j)、ŷ_v = (1 − W_v)·μ_v + W_v·n_v
   天候の項は辺と同じ形で、ℓ=1、β の代わりに β_cluster[m] を使う
-  risk_v = S_v · Y_v（c は掛けない）
+  risk_v = f[j/8] · S_v · Y_v              // car_exposure があり clusters=top_group で car のとき。
+                                           // それ以外は S_v · Y_v（c は掛けない）
 ```
 
 - 天候の項は、M3b.2で、M0の形（`ŷ_e·(1 + (M_w−1)·ρ_e)`、`ρ_e = (n_e^w + β·ρ_k)/(n_e + β)`）から上の線形の形に変えた。M0の形は `n_e` と `n_e^w` の比を取るので、辺を2つに分けると合計が変わり、分割の不変性（behavior.md）が雨・霧・雪で崩れるため。線形の形では、`μ_e` も `n_e^w` も通った長さ・位置について加法的なので、どの天候でも分割の不変性が成り立つ。βは「1mあたり」の母数になる（辺の母数 `a` と同じ単位）。
