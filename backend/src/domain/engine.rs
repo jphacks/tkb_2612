@@ -51,7 +51,7 @@ impl AccidentEngine {
 }
 
 /// `{d}` の表記。整数ならそのまま（10）、それ以外は最短の表記（7.5）。
-fn format_minutes(minutes: f64) -> String {
+pub fn format_minutes(minutes: f64) -> String {
     if minutes.fract() == 0.0 {
         format!("{}", minutes as i64)
     } else {

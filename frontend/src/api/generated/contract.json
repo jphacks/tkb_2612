@@ -435,7 +435,7 @@
             "severity_weight": {
               "type": "integer",
               "minimum": 3,
-              "description": "この最寄り小線分へ割り当てた72m以内の事故の死者×10+負傷者の合計、重み点。距離減衰・天候倍率を含まない。"
+              "description": "この小線分に置いた集合Bの事故の死者×10+負傷者の合計、重み点。距離減衰・天候倍率・割り当て重みを含まない。新方式では事故件数がしきい値（3件）以上の小線分だけを返す。"
             },
             "segment_index": {
               "type": "integer",
@@ -479,7 +479,7 @@
           }
         }
       },
-      "description": "重み降順、同値はsegment_index昇順の最大100区間、重み3以上。\n切り捨ての有無は候補のhigh_risk_totalとの比較で判定する。\n連結しない。全高リスク区間の網羅ではなく表示用の上位集合。空ならfeatures=[]。\nGPS接近通知に流用しない。全対象区間は別フィールドnavigation.sectionsで配信する。\n"
+      "description": "重み降順、同値はsegment_index昇順の最大100区間、重み3以上（新方式は事故3件以上の小線分。behavior.md 7章）。\n切り捨ての有無は候補のhigh_risk_totalとの比較で判定する。\n連結しない。全高リスク区間の網羅ではなく表示用の上位集合。空ならfeatures=[]。\nGPS接近通知に流用しない。全対象区間は別フィールドnavigation.sectionsで配信する。\n"
     },
     "NavigationSection": {
       "type": "object",
@@ -529,7 +529,7 @@
           "description": "結合した対象小線分の深刻度の和。距離減衰・天候倍率なし。通知頻度や安全度の順位に使わない。"
         }
       },
-      "description": "重み3以上の小線分でsidが連続する最大列を結合した区間。元geometryは重複送信しない。\n元geometryとnavigation.vertex_distances_mから表示位置を補間する。区間の計算・順序はbackendだけで決める。\n"
+      "description": "高リスクの小線分（high_risk_totalで数えるもの）でsidが連続する最大列を結合した区間。元geometryは重複送信しない。\n元geometryとnavigation.vertex_distances_mから表示位置を補間する。区間の計算・順序はbackendだけで決める。\n"
     },
     "NavigationData": {
       "type": "object",
@@ -551,7 +551,7 @@
           "type": "number",
           "minimum": 0,
           "maximum": 110000,
-          "description": "局所平面での経路全長L、m。OSRM distance・geometry_lengthと異なる。0ならナビ開始不可、候補は保持。"
+          "description": "局所平面での経路全長L、m。候補のdistance・geometry_lengthと異なる。0ならナビ開始不可、候補は保持。"
         },
         "vertex_distances_m": {
           "type": "array",
@@ -636,20 +636,20 @@
         "duration": {
           "type": "number",
           "exclusiveMinimum": 0,
-          "description": "OSRM等の推定所要時間、秒"
+          "description": "推定所要時間、秒（新方式は道路グラフの所要時間モデル、旧方式はOSRM）"
         },
         "distance": {
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 80000,
-          "description": "OSRM等の経路距離、メートル"
+          "description": "経路距離、メートル（新方式は通った辺の長さの和、旧方式はOSRM）"
         },
         "geometry": {
           "$ref": "#/$defs/LineString"
         },
         "accident_count": {
           "$ref": "#/$defs/Count",
-          "description": "集合B（72m以内・移動手段・時間帯・曜日区分。天候では絞らない）の事故件数、間引き前"
+          "description": "集合B（新方式は経路の辺・交差点に割り当てた事故と72m以内の帰属不明の事故、旧方式は72m以内。移動手段・時間帯・曜日区分で絞り、天候では絞らない）の事故件数、間引き前"
         },
         "fatal_accidents": {
           "$ref": "#/$defs/Count",
@@ -681,7 +681,7 @@
         "weighted_risk": {
           "type": "number",
           "minimum": 0,
-          "description": "Σ exp(-d²/(2·24²)) × 天候倍率 × (10×死者+負傷者)、小数2桁に丸め。重み点。\n天候倍率は指定天候が雨で一致なら2、霧/雪で一致なら4、それ以外1。候補の選定に使用。\n"
+          "description": "経路の推定リスク、小数2桁に丸め。候補の選定に使用。\n新方式：経路の辺と交差点のモデルの値の和（道路種別ごとの平均で補正した期待件数×深刻度。\n自動車は生活道路の係数、雨・霧・雪の指定時は同じ天候の事故の割合に応じた倍率を含む）。\n集合Bが空でも正になり得る。帰属不明の事故は含めない（behavior.md 7章）。\n旧方式：Σ exp(-d²/(2·24²)) × 天候倍率 × (10×死者+負傷者)。\n天候倍率は指定天候が雨で一致なら2、霧/雪で一致なら4、それ以外1。\n"
         },
         "risk_per_km": {
           "type": "number",
@@ -702,7 +702,7 @@
         },
         "high_risk_total": {
           "$ref": "#/$defs/Count",
-          "description": "severity_weightが3以上の小線分の総数（100件で切る前）。high_risk_sections.features.length=min(high_risk_total,100)。"
+          "description": "高リスクの小線分の総数（100件で切る前）。新方式は事故3件以上、旧方式はseverity_weightが3以上の小線分。high_risk_sections.features.length=min(high_risk_total,100)。"
         },
         "navigation": {
           "oneOf": [
@@ -856,7 +856,7 @@
           "items": {
             "type": "string"
           },
-          "description": "追加候補失敗、比較不可、全候補0件等。なしは空配列。"
+          "description": "追加候補失敗（旧方式のみ）、比較不可、全候補0件等。探索の打ち切りでは出さない。なしは空配列。"
         },
         "relaxed_conditions": {
           "type": "array",
@@ -873,17 +873,17 @@
         "radius_m": {
           "type": "number",
           "const": 72,
-          "description": "事故集計（集合B）の経路周辺半径、メートル"
+          "description": "事故集計（集合B）の経路周辺半径、メートル。新方式では帰属不明の事故を数える範囲"
         },
         "distance_weight_sigma_m": {
           "type": "number",
           "const": 24,
-          "description": "距離重みのガウスσ、メートル"
+          "description": "距離重みのガウスσ、メートル。旧方式だけが使い、新方式では互換のための固定値"
         },
         "aggregation_ms": {
           "type": "number",
           "minimum": 0,
-          "description": "候補取得後の集計・選定・ナビデータ構築時間、ミリ秒、小数2桁。外部通信と転送を除く。"
+          "description": "集計・選定・ナビデータ構築時間（新方式は経路探索を含む。旧方式は候補取得後から）、ミリ秒、小数2桁。外部通信と転送を除く。"
         },
         "data_years": {
           "$ref": "#/$defs/Years"
@@ -891,7 +891,7 @@
         "risk_note": {
           "type": "string",
           "minLength": 1,
-          "description": "参考指標であり曝露補正した事故確率ではない旨"
+          "description": "推定指標の説明と、曝露補正した事故確率ではない旨。文面はbehavior.md 8章"
         }
       }
     },
@@ -1096,7 +1096,7 @@
         "release_id": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
-          "description": "事故CSVと同梱祝日表を合わせた配信物の識別子。sha256(dataset_id + \"\\n\" + 祝日表のSHA-256)。"
+          "description": "配信物の識別子。schema 2はsha256(dataset_id + \"\\n\" + 祝日表のSHA-256)。schema 3は道路グラフ等の追加ファイルのSHA-256も連結する（behavior.md 3章）。"
         },
         "dataset_id": {
           "$ref": "#/$defs/DatasetId"

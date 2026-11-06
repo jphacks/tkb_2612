@@ -129,7 +129,7 @@ pub fn score_route(
     })
 }
 
-fn accident_point(snapshot: &AccidentSnapshot, id: u32) -> AccidentPoint {
+pub fn accident_point(snapshot: &AccidentSnapshot, id: u32) -> AccidentPoint {
     let c = snapshot.columns();
     let i = id as usize;
     AccidentPoint {

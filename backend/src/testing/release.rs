@@ -143,7 +143,10 @@ pub fn write_example_release(example: &RouteExample, dir: &Path) -> std::io::Res
 /// 一時ディレクトリに作った人工release。破棄時にディレクトリごと消える。
 #[derive(Debug)]
 pub struct TestRelease {
+    /// `data::load_engine` に渡すディレクトリ。
     dir: PathBuf,
+    /// schema 3の人工releaseで、破棄する一時ディレクトリの根（schema 2では `None`）。
+    root: Option<PathBuf>,
     pub ids: ReleaseIds,
 }
 
@@ -166,7 +169,38 @@ impl TestRelease {
         ));
         let ids = write_example_release(example, &dir)
             .unwrap_or_else(|e| panic!("人工releaseを作れません: {e}"));
-        Self { dir, ids }
+        Self {
+            dir,
+            root: None,
+            ids,
+        }
+    }
+
+    /// 小さな合成グラフから作ったschema 3の人工release。
+    pub fn routing() -> (Self, RoutingTestQuery) {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let root = std::env::temp_dir().join(format!(
+            "accident-routing-release-{}-{}-{nanos}",
+            std::process::id(),
+            NEXT_DIR.fetch_add(1, Ordering::Relaxed),
+        ));
+        let release = write_routing_test_release(&root)
+            .unwrap_or_else(|e| panic!("schema 3の人工releaseを作れません: {e}"));
+        let query = release.query();
+        let ids = ReleaseIds {
+            dataset_id: release.dataset_id,
+            release_id: release.release_id,
+        };
+        (
+            Self {
+                dir: release.release_dir,
+                root: Some(root),
+                ids,
+            },
+            query,
+        )
     }
 
     /// `data::load_calendar`・`data::load_engine` に渡すディレクトリ。
@@ -177,7 +211,7 @@ impl TestRelease {
 
 impl Drop for TestRelease {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
+        let _ = std::fs::remove_dir_all(self.root.as_deref().unwrap_or(&self.dir));
     }
 }
 
@@ -200,4 +234,306 @@ pub fn example_router(example: &RouteExample) -> ScriptedRouter {
         responses.push(valid_routes(&example.routes));
     }
     ScriptedRouter::new(responses)
+}
+
+// ---------------------------------------------------------------------------------------------
+// schema 3の人工release（M4.2・M4.4）
+// ---------------------------------------------------------------------------------------------
+
+use crate::contract::{LatLon, Mode};
+use crate::data::release::{ACCIDENTS_FILE, ROUTING_FILES, sha256_hex};
+use crate::data::routing_files::{
+    Deps, encode_accident_attrs, encode_alt, encode_assignment, encode_graph, encode_odindex,
+    encode_restrictions, encode_risk, encode_topology,
+};
+use crate::data::routing_package::{PackageInputs, package_routing_release};
+use crate::domain::routing::NONE;
+use crate::domain::routing::accident::{
+    AccidentAttr, AccidentAttrTable, AssignTarget, Assignment, UnassignedReason, UnassignedRecord,
+};
+use crate::domain::routing::graph::synthetic::{EdgeSpec, GraphBuilder};
+use crate::domain::routing::graph::{EdgeId, Graph, NodeId};
+use crate::domain::routing::prep::odindex::build_odindex;
+use crate::domain::routing::risk::{
+    CoefRecord, RiskModel, RiskParams, TABLE_LEN, WeatherMultiplier,
+};
+use crate::domain::routing::search::alt::Landmarks;
+use crate::domain::routing::topology::{ClusterRecord, Topology};
+
+/// 人工のschema 3 releaseが確実に見つけられる検索。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RoutingTestQuery {
+    pub origin: LatLon,
+    pub dest: LatLon,
+    pub mode: Mode,
+}
+
+/// 書き出したschema 3の人工release。
+#[derive(Debug, Clone)]
+pub struct RoutingTestRelease {
+    /// `data::load_engine` に渡すディレクトリ（`<dir>/releases/<release_id>`）。
+    pub release_dir: PathBuf,
+    pub release_id: String,
+    pub dataset_id: String,
+    pub origin: LatLon,
+    pub dest: LatLon,
+    pub mode: Mode,
+}
+
+impl RoutingTestRelease {
+    /// このreleaseで確実に経路が見つかる検索。
+    pub fn query(&self) -> RoutingTestQuery {
+        RoutingTestQuery {
+            origin: self.origin,
+            dest: self.dest,
+            mode: self.mode,
+        }
+    }
+}
+
+/// すべての辺を吸着可能にするビット列。
+fn all_edge_bits(edges: usize) -> Vec<u64> {
+    (0..edges.div_ceil(64))
+        .map(|w| {
+            let in_word = (edges - w * 64).min(64);
+            if in_word == 64 {
+                u64::MAX
+            } else {
+                (1_u64 << in_word) - 1
+            }
+        })
+        .collect()
+}
+
+/// 人工releaseの合成グラフ。主鎖（0→39）と、途中のノードから出る行き止まりの枝。
+fn routing_test_graph() -> (Graph, EdgeId, NodeId, NodeId) {
+    let mut builder = GraphBuilder::new();
+    let count = 40_usize;
+    let mut main = Vec::with_capacity(count);
+    for i in 0..count {
+        main.push(builder.add_node_deg(35.6, 139.7 + i as f64 * 0.0005));
+    }
+    let mut main_edges = Vec::with_capacity(count - 1);
+    for pair in main.windows(2) {
+        main_edges.push(builder.add_edge(EdgeSpec::new(pair[0], pair[1]).length_dm(500)));
+    }
+    // 枝は行き止まりなので、主鎖の経路は1本に決まる。ノード数を数十にする。
+    for &i in &[10_usize, 20, 30] {
+        let base = builder.node_coord(main[i]).to_latlon();
+        for sign in [-1.0_f64, 1.0] {
+            let branch = builder.add_node_deg(base.lat + sign * 0.0005, base.lon);
+            builder.add_edge(EdgeSpec::new(main[i], branch).length_dm(500));
+            let tip = builder.add_node_deg(base.lat + sign * 0.001, base.lon);
+            builder.add_edge(EdgeSpec::new(branch, tip).length_dm(500));
+        }
+    }
+    let graph = builder.build();
+    let last_edge = *main_edges.last().expect("主鎖の辺がある");
+    (graph, last_edge, main[0], main[count - 1])
+}
+
+/// 主鎖の途中のノード（クラスタ）にだけ交差点クラスタを作る。
+fn routing_test_topology(graph: &Graph, cluster_node: NodeId) -> Topology {
+    let mut node_cluster = vec![NONE; graph.node_count()];
+    node_cluster[cluster_node as usize] = 0;
+    let coord = graph.node_coord(cluster_node);
+    let bits = all_edge_bits(graph.edge_count());
+    Topology {
+        params: json!({ "rules_version": "jp-topology-2" }),
+        snap_car: bits.clone(),
+        snap_bike: bits.clone(),
+        snap_walk: bits,
+        node_cluster,
+        clusters: vec![ClusterRecord {
+            lat_e7: coord.lat_e7,
+            lon_e7: coord.lon_e7,
+            node_start: 0,
+            node_count: 1,
+            top_class: 11,
+            branches: 5,
+            flags: 0,
+            pad: [0; 3],
+        }],
+        cluster_nodes: vec![cluster_node],
+        twins: Vec::new(),
+        sidewalk_parents: Vec::new(),
+    }
+}
+
+fn routing_test_risk_params() -> RiskParams {
+    RiskParams {
+        train_source_years: vec![2025],
+        years: 1,
+        c: 1.0,
+        c_groups: vec![5, 6, 7, 8],
+        car_exposure: None,
+        beta: crate::domain::routing::graph::time::PerMode {
+            walk: 0.2,
+            bike: 0.3,
+            car: 0.4,
+        },
+        beta_cluster: crate::domain::routing::graph::time::PerMode {
+            walk: 0.2,
+            bike: 0.3,
+            car: 0.4,
+        },
+        weather_multiplier: WeatherMultiplier {
+            rain: 2.0,
+            fog: 4.0,
+            snow: 4.0,
+        },
+        urban: json!({}),
+        pooling: json!({}),
+        fit: json!({}),
+    }
+}
+
+/// schema 2の人工release（`twoSelected`）をbaseにして、schema 3のreleaseを `dir` に書き出す。
+///
+/// `dir` は出力の根で、releaseは `<dir>/releases/<release_id>` にできる（読み取り専用）。
+/// 8つの `.bin` は小さな合成グラフ（主鎖40ノード+枝12ノード）から作り、事故3件を
+/// 辺・交差点クラスタ・帰属不明に1件ずつ割り当てる。経路は主鎖をたどるので、
+/// どの候補でも `accident_count > 0` になる。
+pub fn write_routing_test_release(dir: &Path) -> Result<RoutingTestRelease, String> {
+    use std::fs;
+
+    let base_release = dir.join("base");
+    fs::create_dir_all(&base_release)
+        .map_err(|e| format!("{} を作れません: {e}", base_release.display()))?;
+    let example = route_example("twoSelected");
+    write_example_release(&example, &base_release)
+        .map_err(|e| format!("schema 2の人工releaseを作れません: {e}"))?;
+    let rows = example.accident_ids.len() as u64;
+    let accidents_bytes = fs::read(base_release.join(ACCIDENTS_FILE))
+        .map_err(|e| format!("accidents.csv.gzを読めません: {e}"))?;
+    let accidents_hash = sha256_hex(&accidents_bytes);
+
+    let (graph, last_edge, origin_node, dest_node) = routing_test_graph();
+    let graph_bytes = encode_graph(&graph);
+    let graph_hash = sha256_hex(&graph_bytes);
+    let graph_deps = Deps::from([("graph.bin".to_owned(), graph_hash.clone())]);
+
+    let restrictions = crate::domain::routing::Restrictions::empty();
+    let restrictions_bytes = encode_restrictions(&restrictions, &graph_deps);
+
+    let cluster_node = 20;
+    let topology = routing_test_topology(&graph, cluster_node);
+    topology
+        .validate(&graph)
+        .map_err(|e| format!("合成のtopologyが不正です: {e}"))?;
+    let topology_bytes = encode_topology(&topology, &graph_deps);
+    let topology_hash = sha256_hex(&topology_bytes);
+    let cluster_count = topology.cluster_count() as u64;
+
+    let odindex = build_odindex(graph.parts());
+    let odindex_bytes = encode_odindex(&odindex, &graph_deps);
+
+    let accident_attrs = AccidentAttrTable {
+        params: json!({ "rows": rows }),
+        attrs: vec![AccidentAttr::MISSING; rows as usize],
+    };
+    let accident_attrs_deps = Deps::from([(ACCIDENTS_FILE.to_owned(), accidents_hash.clone())]);
+    let accident_attrs_bytes = encode_accident_attrs(&accident_attrs, &accident_attrs_deps);
+    let accident_attrs_hash = sha256_hex(&accident_attrs_bytes);
+
+    // 事故0：目的地へ入る辺、事故1：主鎖の交差点クラスタ、事故2：帰属不明。
+    let assignment = Assignment {
+        params: json!({
+            "accidents": rows,
+            "targets": 2,
+            "unassigned": 1,
+            "edges": graph.edge_count(),
+            "clusters": cluster_count,
+        }),
+        offsets: vec![0, 1, 2, 2],
+        targets: vec![
+            AssignTarget {
+                target: last_edge,
+                pos_dm: 250,
+                weight: 1.0,
+                kind: 0,
+                flags: 0,
+                reserved: 0,
+            },
+            AssignTarget {
+                target: 0,
+                pos_dm: u32::MAX,
+                weight: 1.0,
+                kind: 1,
+                flags: 0,
+                reserved: 0,
+            },
+        ],
+        unassigned: vec![UnassignedRecord {
+            accident: 2,
+            reason: UnassignedReason::NoCandidate,
+        }],
+    };
+    assignment
+        .validate(graph.edge_count(), cluster_count as usize)
+        .map_err(|e| format!("合成の割り当てが不正です: {e}"))?;
+    let assignment_deps = Deps::from([
+        ("graph.bin".to_owned(), graph_hash.clone()),
+        ("topology.bin".to_owned(), topology_hash.clone()),
+        ("accident_attrs.bin".to_owned(), accident_attrs_hash.clone()),
+        (ACCIDENTS_FILE.to_owned(), accidents_hash.clone()),
+    ]);
+    let assignment_bytes = encode_assignment(&assignment, &assignment_deps);
+    let assignment_hash = sha256_hex(&assignment_bytes);
+
+    let risk = RiskModel {
+        params: routing_test_risk_params(),
+        raw_params: json!({}),
+        edge_k: vec![0; graph.edge_count()],
+        cluster_j: vec![0; cluster_count as usize],
+        k_table: vec![CoefRecord::default(); TABLE_LEN],
+        j_table: vec![CoefRecord::default(); TABLE_LEN],
+    };
+    let risk_deps = Deps::from([
+        ("graph.bin".to_owned(), graph_hash.clone()),
+        ("topology.bin".to_owned(), topology_hash.clone()),
+        ("accident_attrs.bin".to_owned(), accident_attrs_hash),
+        ("assignment.bin".to_owned(), assignment_hash),
+        (ACCIDENTS_FILE.to_owned(), accidents_hash),
+    ]);
+    let risk_bytes = encode_risk(&risk, &risk_deps);
+    let alt_bytes = encode_alt(&Landmarks::empty(), &graph_deps);
+
+    let bins = dir.join("bins");
+    fs::create_dir_all(&bins).map_err(|e| format!("{} を作れません: {e}", bins.display()))?;
+    let contents: [&[u8]; 8] = [
+        &graph_bytes,
+        &restrictions_bytes,
+        &topology_bytes,
+        &odindex_bytes,
+        &accident_attrs_bytes,
+        &assignment_bytes,
+        &risk_bytes,
+        &alt_bytes,
+    ];
+    let mut paths: [PathBuf; 8] = std::array::from_fn(|_| PathBuf::new());
+    for (i, (&file, bytes)) in ROUTING_FILES.iter().zip(contents).enumerate() {
+        let path = bins.join(file);
+        fs::write(&path, bytes).map_err(|e| format!("{} に書けません: {e}", path.display()))?;
+        paths[i] = path;
+    }
+
+    let summary = package_routing_release(
+        &PackageInputs {
+            base_release,
+            routing_files: paths,
+            generated_at: "2025-01-01T00:00:00+09:00".to_owned(),
+        },
+        dir,
+    )?;
+    let origin = graph.node_coord(origin_node).to_latlon();
+    let dest = graph.node_coord(dest_node).to_latlon();
+    Ok(RoutingTestRelease {
+        release_dir: summary.release_dir,
+        release_id: summary.release_id,
+        dataset_id: summary.dataset_id,
+        origin,
+        dest,
+        mode: Mode::Car,
+    })
 }

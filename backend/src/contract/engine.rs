@@ -22,9 +22,11 @@ pub const MAX_DETOUR_RANGE_MIN: RangeInclusive<f64> = 0.0..=30.0;
 pub const DEFAULT_MAX_DETOUR_MIN: f64 = 10.0;
 /// 返す候補の上限。
 pub const MAX_CANDIDATES: usize = 6;
-/// 集合Bの経路周辺半径（m）。応答の `radius_m`。
+/// 集合Bの経路周辺半径（m）。応答の `radius_m`。新方式（schema 3）では、
+/// 帰属不明の事故を集合Bに数える範囲（behavior.md 6章）。
 pub const RADIUS_M: f64 = 72.0;
-/// 距離重みのガウスσ（m）。応答の `distance_weight_sigma_m`。
+/// 距離重みのガウスσ（m）。応答の `distance_weight_sigma_m`。旧方式（schema 2）だけが使い、
+/// 新方式では互換のための固定値として返す。
 pub const DISTANCE_WEIGHT_SIGMA_M: f64 = 24.0;
 /// 候補ごとの表示事故点の上限。
 pub const MAX_ACCIDENT_POINTS: usize = 250;
@@ -126,22 +128,35 @@ impl RouteQuery {
 }
 
 /// 候補取得の結果。[`RouteEngine::collect_candidates`] から [`RouteEngine::evaluate`] へ渡す。
+///
+/// 中身の意味はエンジンが決める。候補を外部から取得するエンジン（旧方式の `AccidentEngine`）は
+/// 下記の1〜6本を入れる。候補を `evaluate` の中で自前に探索するエンジン（新方式の
+/// `RoutingEngine`）は、`routes` も `warnings` も空のまま返し、`evaluate` はこれを使わない。
+/// ③は中身を検査せず、そのまま `evaluate` へ渡す。
 #[derive(Debug, Clone, PartialEq)]
 pub struct CandidateSet {
-    /// 検証・重複排除・duration安定ソート済みの1〜6本。添字iが `route-(i+1)`。
+    /// 旧方式：検証・重複排除・duration安定ソート済みの1〜6本。添字iが `route-(i+1)`。
+    /// 新方式：空。
     pub routes: Vec<RoutedPath>,
-    /// 追加取得エラー（呼出し順）、1候補比較不能の警告。評価時の警告はこの後に続く。
+    /// 旧方式：追加取得エラー（呼出し順）、1候補比較不能の警告。評価時の警告はこの後に続く。
+    /// 新方式：空（1候補比較不能の警告は `evaluate` が入れる）。
     pub warnings: Vec<String>,
 }
 
 /// 計算の失敗。HTTP応答への変換は③が行う（README.mdの対応表）。
+///
+/// 各値の意味は、旧方式（schema 2の `AccidentEngine`）と新方式（schema 3の `RoutingEngine`）で
+/// 次のとおり（behavior.md 5章・付録A.1）。HTTPへの対応は両方式で同じ。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EngineError {
-    /// 初回の経路なし、または全呼出し後に候補0。502 no_route。
+    /// 502 no_route。旧方式：初回の経路なし、または全呼出し後に候補0。
+    /// 新方式：出発地か目的地を道路へ吸着できない、2点が同じ位置に吸着された、経路がない。
     NoRoute,
-    /// 初回候補のdistanceまたはgeometry長が80km超。422 route_too_long。
+    /// 422 route_too_long。旧方式：初回候補のdistanceまたはgeometry長が80km超。
+    /// 新方式：最短時間経路の距離が80km超（それ以外の80km超の候補は、エラーにせず外す）。
     RouteTooLong,
-    /// 初回呼出しの外部失敗、または初回候補の値・形状の不正。502 external_api_error。
+    /// 502 external_api_error。旧方式：初回呼出しの外部失敗、または初回候補の値・形状の不正。
+    /// 新方式：返さない（経路提供元を呼ばない）。
     ExternalApi,
     /// 待ち行列満杯・共有上流ゲートの失敗。503 service_busy。
     Busy,
@@ -241,7 +256,8 @@ pub struct EvaluatedRoute {
     pub accident_points: Vec<AccidentPoint>,
     /// 表示順（重み降順・同値はsid昇順）の最大100件。
     pub high_risk_sections: Vec<HighRiskSegment>,
-    /// 100件で切る前の重み3以上の小線分数。
+    /// 100件で切る前の高リスクの小線分数（behavior.md 7章）。旧方式は深刻度の和が3以上、
+    /// 新方式は事故の件数がしきい値以上の小線分。どちらも `severity_weight` は3以上。
     pub high_risk_total: u64,
     /// fastestまたはsafestの候補だけ `Some`。
     pub navigation: Option<NavigationData>,
@@ -291,11 +307,19 @@ pub struct RouteOutcome {
 ///
 /// 呼出し順は `collect_candidates` → `evaluate`。`evaluate` はCPU処理なので、
 /// ③が `tokio::task::spawn_blocking` とCPU同時数の上限の中で呼ぶ。
+///
+/// 実装は、releaseの `metadata.json` の `schema_version` で `data::load_engine` が選ぶ。
+/// 2なら旧方式の `AccidentEngine`（OSRMの候補を `collect_candidates` で取得する）、
+/// 3なら新方式の `RoutingEngine`（`collect_candidates` はルーターを呼ばずに空の
+/// [`CandidateSet`] を返し、`evaluate` が経路探索から集計・選定までを行う）。
+/// どちらの結果も、③の `api::route_response` の検査（頂点数2〜15,000、距離0超80km以下、
+/// `check_detour`、`check_outcome` のその他の検査）を満たさなければならない。
 pub trait RouteEngine: Send + Sync {
     /// ロード済みデータの識別情報。
     fn dataset(&self) -> &DatasetInfo;
 
-    /// 経路候補を取得する（初回→必要なら左→右、最大3呼出し、並列化しない）。
+    /// 経路候補を取得する。旧方式は初回→必要なら左→右、最大3呼出しで、並列化しない。
+    /// 新方式は `router` を呼ばずに空の [`CandidateSet`] をすぐに返す。
     fn collect_candidates<'a>(
         &'a self,
         router: &'a dyn Router,
@@ -303,7 +327,8 @@ pub trait RouteEngine: Send + Sync {
         cancel: &'a CancelToken,
     ) -> BoxFuture<'a, Result<CandidateSet, EngineError>>;
 
-    /// 事故集計・選定・ナビ区間・説明を作る。`cancel` を定期的に確認して中断する。
+    /// 事故集計・選定・ナビ区間・説明を作る。新方式では、経路探索もここで行う。
+    /// `cancel` を定期的に確認して中断する。
     fn evaluate(
         &self,
         query: &RouteQuery,

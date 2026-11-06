@@ -49,6 +49,20 @@ describe("API 2.0 contract and cross-field validation", () => {
     ).toBe(true);
   });
 
+  it("accepts a positive model risk on routes without observed accidents", () => {
+    const result = createDemoRouteResponse(request, "zero");
+    for (const route of result.candidates) {
+      route.weighted_risk = 1.25;
+      route.risk_per_km = Number(
+        (1.25 / Math.max(route.distance / 1000, 0.001)).toFixed(3),
+      );
+    }
+    expect(validateRouteResponse(result, request)).toBe(result);
+    const injured = structuredClone(result);
+    injured.candidates[0].injuries = 1;
+    expect(() => validateRouteResponse(injured, request)).toThrow();
+  });
+
   it("obeys the detour limit instead of relaxing conditions", () => {
     const zeroDetour = { ...request, max_detour_min: 0 };
     const result = validateRouteResponse(
