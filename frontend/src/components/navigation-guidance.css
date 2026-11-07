@@ -26,6 +26,7 @@
 }
 .nav-guidance-icon {
   flex-shrink: 0;
+  color: var(--blue);
 }
 .nav-guidance-content {
   min-width: 0;
