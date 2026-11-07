@@ -1,10 +1,6 @@
 import { Send } from "lucide-react";
 import type { RouteCandidate, RouteResponse } from "../lib/types";
-import {
-  formatExtraMinutes,
-  formatKilometres,
-  formatMinutes,
-} from "../lib/format";
+import { formatMinutes } from "../lib/format";
 
 export const SAFE_LABEL = "安全ルート";
 export const FASTEST_LABEL = "最短ルート";
@@ -87,9 +83,9 @@ export function RouteCallouts({
     size.width < 480 && routes.length > 1
       ? Math.max(136, (size.width - 36) / 2)
       : Math.min(208, size.width - 24);
-  // A narrow map drops the distance/extra-time row (.is-compact), so the card is shorter.
+  // Narrow maps use smaller text and padding (.is-compact).
   const compact = size.width < 480;
-  const cardHeight = compact ? 112 : size.height < 480 ? 140 : 160;
+  const cardHeight = compact ? 112 : size.height < 480 ? 116 : 128;
   const topInset = size.height < 480 ? 56 : 72;
   const cards = routes.map((route) => {
     const tone = routeTone(route.id, result);
@@ -193,11 +189,6 @@ export function RouteCallouts({
               <strong className="map-card-duration">
                 {formatMinutes(route.duration)}
               </strong>
-              <span className="map-card-metrics">
-                <span>{formatKilometres(route.distance)}</span>
-                {/* frontend-spec 5 units: km with two decimals, minutes with one. */}
-                <span>{formatExtraMinutes(route.extra_minutes)}</span>
-              </span>
               <span className="map-card-accidents">
                 過去事故 <b>{route.accident_count}</b> 件
                 {same && <span className="map-card-same">同一経路</span>}

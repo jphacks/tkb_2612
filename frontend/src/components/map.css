@@ -437,12 +437,6 @@
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
-.map-card-metrics {
-  display: flex;
-  gap: 12px;
-  color: #475569;
-  font-size: 12px;
-}
 .map-card-accidents {
   display: flex;
   align-items: center;
@@ -476,14 +470,9 @@
   justify-content: flex-start;
   padding-top: 80px;
 }
-/* Compact cards follow the map width (also when the sidebar narrows the map),
-   so height, padding and hidden rows always change together. */
+/* Compact cards follow the map width, including when the sidebar narrows it. */
 .map-route-callouts.is-compact .map-card-select {
   padding: 12px;
-}
-/* Narrow maps show only the duration and accident count. */
-.map-route-callouts.is-compact .map-card-metrics {
-  display: none;
 }
 .map-route-callouts.is-compact .map-card-navigate {
   width: 36px;
