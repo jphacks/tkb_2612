@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import { Crosshair, Eye, EyeOff, LocateFixed, MapPin, Minus, Plus, X } from "lucide-react";
 import type { Map as MapLibreMap, MapEventType } from "maplibre-gl";
@@ -26,7 +27,9 @@ import {
   setRouteLayers,
   type NavigationLayers,
 } from "../map/layers";
-import { NavigationAlertPopup, type NavigationAlert } from "./NavigationAlertPopup";
+import type { NavigationAlert } from "./NavigationAlertPopup";
+import { NavigationGuidanceBar } from "./NavigationGuidanceBar";
+import type { NavigationGuidance } from "../navigation/guidance";
 import { isFatalMapError } from "../map/errors";
 import {
   FASTEST_LABEL,
@@ -44,6 +47,9 @@ export type NavigationMapProps = {
   layers: NavigationLayers;
   alert?: NavigationAlert;
   announcement?: string;
+  guidance?: NavigationGuidance | null;
+  banner?: ReactNode;
+  headerHidden?: boolean;
   follow: boolean;
   onFollowChange: (follow: boolean) => void;
 };
@@ -727,9 +733,12 @@ export function RouteMap(props: RouteMapProps) {
           </svg>
         </div>
       )}
-      <NavigationAlertPopup
+      <NavigationGuidanceBar
         alert={!disabled ? navigation?.alert : undefined}
         announcement={!disabled && navigation ? navigation.announcement : ""}
+        guidance={navigation?.guidance}
+        banner={navigation?.banner}
+        hidden={navigation?.headerHidden}
       />
       {result && !navigating && (
         <RouteCallouts

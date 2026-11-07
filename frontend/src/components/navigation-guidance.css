@@ -1,0 +1,84 @@
+.nav-guidance-overlay {
+  position: absolute;
+  top: 16px;
+  left: 84px;
+  right: 72px;
+  z-index: 6;
+  max-width: 360px;
+  margin-inline: auto;
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+.nav-guidance-overlay[hidden] {
+  display: none;
+}
+.nav-guidance-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.nav-guidance-icon {
+  flex-shrink: 0;
+}
+.nav-guidance-content {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+.nav-guidance-instruction {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  row-gap: 4px;
+}
+.nav-guidance-distance {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.nav-guidance-action {
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.nav-guidance-inline {
+  pointer-events: none;
+}
+.nav-guidance-overlay .nav-sim-banner {
+  text-align: center;
+}
+.route-map-shell:has(.nav-guidance-bar) .map-preview-label {
+  top: auto;
+  right: auto;
+  bottom: 116px;
+  left: 16px;
+}
+@media (max-width: 699px) {
+  .route-map-shell:has(.nav-guidance-bar) .map-preview-label {
+    bottom: 96px;
+  }
+}
+@media (max-width: 380px) {
+  .nav-guidance-bar {
+    padding: 12px 10px;
+    gap: 8px;
+  }
+  .nav-guidance-icon {
+    width: 28px;
+    height: 28px;
+  }
+  .nav-guidance-distance {
+    font-size: 20px;
+  }
+}

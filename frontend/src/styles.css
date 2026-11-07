@@ -28,6 +28,7 @@
   --danger-border: #fecaca;
   --ink: #0f172a;
   --surface: #fff;
+  --nav-warning: #dc2626;
 }
 * {
   box-sizing: border-box;
@@ -993,21 +994,15 @@ svg {
 }
 .nav-alert {
   display: flex;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--danger-border);
-  border-radius: 6px;
-  background: var(--danger-bg);
-  color: var(--danger);
-  font-size: 12px;
-  line-height: 1.7;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--nav-warning);
+  font-size: 13px;
+  line-height: 1.6;
 }
 .nav-alert > svg {
-  margin-top: 4px;
-  color: var(--danger);
-}
-.nav-alert-count {
-  font-weight: 600;
+  margin-top: 2px;
+  color: var(--nav-warning);
 }
 .nav-panel > .notice {
   margin-top: 0;
@@ -1167,17 +1162,9 @@ svg {
   z-index: 6;
 }
 
-/* 地図上の受動通知。下端の凡例・帰属の上に固定する。追従中の現在地は中央にあるので覆わず、
-   現在地の位置で上下を切り替えると追従の移動中に表示が往復する。 */
+/* 上部案内バー内の受動通知。距離の更新とは別のlive領域に保つ。 */
 .nav-approach-region {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 100px;
-  z-index: 6;
-  max-width: 360px;
-  margin-inline: auto;
-  pointer-events: none;
+  min-width: 0;
 }
 .nav-alert > svg {
   flex-shrink: 0;

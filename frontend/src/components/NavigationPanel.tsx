@@ -1,4 +1,5 @@
 import { Flag } from "lucide-react";
+import type { ReactNode } from "react";
 import {
   formatPositionTime,
   formatRemainingDistance,
@@ -16,6 +17,7 @@ import { SimulationBanner } from "./SimulationBanner";
 import { SimulationControls } from "./SimulationControls";
 
 export interface NavigationPanelProps {
+  guidance?: ReactNode;
   snapshot: NavigationSnapshot;
   onStop: () => void;
   onPause: () => void;
@@ -86,6 +88,7 @@ const TONE: Partial<Record<NavPhase, string>> = {
 
 /** ナビ中にサイドバーの結果・条件エディタを置き換える。 */
 export function NavigationPanel({
+  guidance,
   snapshot,
   onStop,
   onPause,
@@ -106,6 +109,7 @@ export function NavigationPanel({
   return (
     <div className="nav-panel">
       {import.meta.env.VITE_ENABLE_SIMULATION === "true" && <SimulationBanner snapshot={snapshot} />}
+      {guidance}
       <section className={`nav-status ${TONE[phase] ?? ""}`} aria-label="ナビの状態">
         <p className="nav-phase" role="status">
           {phase === "arrived" && <Flag size={18} aria-hidden="true" />}

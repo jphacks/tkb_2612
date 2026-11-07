@@ -39,6 +39,7 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(toggle).toHaveFocus();
     expect(document.getElementById("search-conditions")).not.toBeVisible();
+    expect(screen.getByRole("region", { name: "ナビ案内" })).toBeVisible();
     expect(screen.queryByRole("complementary", { name: "ナビ" })).not.toBeInTheDocument();
     expect(document.querySelector(".nav-approach-region")).toBe(live);
     expect(live).toHaveTextContent("模擬走行を開始します。実際の現在地ではありません");
@@ -116,11 +117,13 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
     expect(screen.getByLabelText("地図の凡例")).toHaveTextContent("ナビ経路");
     advance(3000);
     expect(document.querySelector(".map-nav-location")).not.toBeNull();
+    expect(screen.getByRole("region", { name: "ナビ案内" })).toBeVisible();
     // 比較入力の抑止：ヘッダーのロゴ（地点入力へ戻る）と状態切替も使えない。
     expect(screen.getByRole("button", { name: "AcciLessNavi 地点入力へ" })).toBeDisabled();
     fireEvent.click(within(panel).getByRole("button", { name: "ナビを停止" }));
     expect(screen.getByRole("complementary", { name: "検索条件" })).toBeVisible();
     expect(screen.getByRole("group", { name: "表示する経路" })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "ナビ案内" })).not.toBeInTheDocument();
   });
 
   it("模擬だけの移動では health・conditions・route・geocode・fetch を一切呼ばない", async () => {

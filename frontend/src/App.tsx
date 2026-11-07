@@ -41,6 +41,9 @@ import { UpdateNotice } from "./components/UpdateNotice";
 import { setUpdateBlocked } from "./pwa/register";
 import { useRouteSearch } from "./state/useRouteSearch";
 import type { RouteResponse } from "./lib/types";
+import { NavigationGuidanceBar } from "./components/NavigationGuidanceBar";
+import { createDemoGuidance } from "./navigation/demoGuidance";
+import { nextGuidance } from "./navigation/guidance";
 
 type Page = "places" | "conditions" | "results";
 const noop = () => {};
@@ -90,6 +93,14 @@ export default function App() {
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const navigation = useNavigation({ result, mapAvailable: !mapUnavailable });
   const navigating = navigation.snapshot !== null;
+  const guidanceSteps = useMemo(
+    () => isDemo && navigation.route && navigation.snapshot?.kind === "simulation"
+      ? createDemoGuidance(navigation.route) : [],
+    [navigation.route, navigation.snapshot?.kind],
+  );
+  // 現APIには右左折の案内地点がない。デモの模擬走行だけにサンプルを渡し、実APIでは推測しない。
+  const navigationGuidance = navigation.snapshot?.phase === "tracking" && !navigation.snapshot.remainingStale
+    ? nextGuidance(guidanceSteps, navigation.snapshot.match.p) : null;
   const [follow, setFollow] = useState(true);
   // 注意の確認を待っている開始操作。確認の操作の中でだけ開始する。
   const [startRouteId, setStartRouteId] = useState<string | null>(null);
@@ -423,14 +434,16 @@ export default function App() {
                 onUnavailableChange={setMapUnavailable}
                 navigation={
                   navigating
-                    ? { layers: navigationLayers, follow, onFollowChange: setFollow, alert: navigation.snapshot!, announcement: START_MESSAGE[navigation.snapshot!.kind] }
+                    ? {
+                        layers: navigationLayers, follow, onFollowChange: setFollow,
+                        alert: navigation.snapshot!, announcement: START_MESSAGE[navigation.snapshot!.kind],
+                        guidance: navigationGuidance, headerHidden: sidebarOpen,
+                        banner: import.meta.env.VITE_ENABLE_SIMULATION === "true" && navigation.snapshot?.simulation
+                          ? <SimulationBanner snapshot={navigation.snapshot} /> : undefined,
+                      }
                     : undefined
                 }
               />
-              {/* サイドバーを閉じても、模擬走行であることは地図の上に常時出す。 */}
-              {import.meta.env.VITE_ENABLE_SIMULATION === "true" && navigation.snapshot?.simulation && !sidebarOpen && (
-                <SimulationBanner snapshot={navigation.snapshot} />
-              )}
               {import.meta.env.VITE_ENABLE_SIMULATION !== "true" && navigation.startError && (
                 <p className="nav-start-error notice warning" role="alert">{navigation.startError}</p>
               )}
@@ -484,6 +497,7 @@ export default function App() {
               {navigation.snapshot ? (
                 <NavigationPanel
                   snapshot={navigation.snapshot}
+                  guidance={sidebarOpen ? <NavigationGuidanceBar inline alert={navigation.snapshot} guidance={navigationGuidance} /> : null}
                   onStop={navigation.stop}
                   onPause={navigation.pause}
                   onResume={navigation.resume}
