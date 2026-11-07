@@ -410,6 +410,13 @@ export default function App() {
             >
               <Menu size={22} aria-hidden="true" />
             </button>
+            <NavigationGuidanceBar
+              alert={!mapUnavailable ? navigation.snapshot ?? undefined : undefined}
+              announcement={!mapUnavailable && navigation.snapshot ? START_MESSAGE[navigation.snapshot.kind] : ""}
+              guidance={navigationGuidance}
+              banner={import.meta.env.VITE_ENABLE_SIMULATION === "true" && navigation.snapshot?.simulation
+                ? <SimulationBanner snapshot={navigation.snapshot} /> : undefined}
+            />
             <div className="map-stage">
               <RouteMap
                 result={navigationResult ?? result}
@@ -436,10 +443,6 @@ export default function App() {
                   navigating
                     ? {
                         layers: navigationLayers, follow, onFollowChange: setFollow,
-                        alert: navigation.snapshot!, announcement: START_MESSAGE[navigation.snapshot!.kind],
-                        guidance: navigationGuidance, headerHidden: sidebarOpen,
-                        banner: import.meta.env.VITE_ENABLE_SIMULATION === "true" && navigation.snapshot?.simulation
-                          ? <SimulationBanner snapshot={navigation.snapshot} /> : undefined,
                       }
                     : undefined
                 }
@@ -497,7 +500,6 @@ export default function App() {
               {navigation.snapshot ? (
                 <NavigationPanel
                   snapshot={navigation.snapshot}
-                  guidance={sidebarOpen ? <NavigationGuidanceBar inline alert={navigation.snapshot} guidance={navigationGuidance} /> : null}
                   onStop={navigation.stop}
                   onPause={navigation.pause}
                   onResume={navigation.resume}

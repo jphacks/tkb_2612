@@ -9,8 +9,6 @@ interface Props {
   guidance?: NavigationGuidance | null;
   announcement?: string;
   banner?: ReactNode;
-  inline?: boolean;
-  hidden?: boolean;
 }
 
 const maneuvers = {
@@ -27,8 +25,8 @@ function distanceLabel(distanceM: number): string {
 }
 
 /** 地図中央を空ける受動表示。位置確認中・一時停止中は古い右左折の案内を出さない。 */
-export function NavigationGuidanceBar({ alert, guidance, announcement = "", banner, inline = false, hidden = false }: Props) {
-  const active = !hidden && !!alert;
+export function NavigationGuidanceBar({ alert, guidance, announcement = "", banner }: Props) {
+  const active = !!alert;
   const direction = active && alert.phase === "tracking" && guidance ? maneuvers[guidance.maneuver] : null;
   let label = "経路に沿って進む";
   let Icon = Navigation;
@@ -48,7 +46,7 @@ export function NavigationGuidanceBar({ alert, guidance, announcement = "", bann
     Icon = LocateFixed;
   }
   return (
-    <div className={inline ? "nav-guidance-inline" : "nav-guidance-overlay"} hidden={hidden}>
+    <div className="nav-guidance-overlay">
       {active && banner}
       <div className={active ? "nav-guidance-bar" : undefined} role={active ? "region" : undefined} aria-label={active ? "ナビ案内" : undefined}>
         {active && <Icon className="nav-guidance-icon" size={32} aria-hidden="true" />}

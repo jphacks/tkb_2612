@@ -39,15 +39,27 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(toggle).toHaveFocus();
     expect(document.getElementById("search-conditions")).not.toBeVisible();
-    expect(screen.getByRole("region", { name: "ナビ案内" })).toBeVisible();
+    const guidanceBar = screen.getByRole("region", { name: "ナビ案内" });
+    expect(guidanceBar).toBeVisible();
+    expect(guidanceBar.closest(".nav-guidance-overlay")?.parentElement).toHaveClass("result-page");
     expect(screen.queryByRole("complementary", { name: "ナビ" })).not.toBeInTheDocument();
     expect(document.querySelector(".nav-approach-region")).toBe(live);
     expect(live).toHaveTextContent("模擬走行を開始します。実際の現在地ではありません");
     expect(live.querySelector(".sr-only")).not.toBeNull();
-    expect(within(document.querySelector(".map-stage") as HTMLElement).getByText("模擬走行中（実際の現在地ではありません）")).toBeVisible();
+    expect(within(document.querySelector(".nav-guidance-overlay") as HTMLElement).getByText("模擬走行中（実際の現在地ではありません）")).toBeVisible();
+    advance(1000);
     fireEvent.click(toggle);
-    expect(screen.getByRole("complementary", { name: "ナビ" })).toBeVisible();
+    const panel = screen.getByRole("complementary", { name: "ナビ" });
+    expect(panel).toBeVisible();
+    expect(within(panel).queryByRole("region", { name: "ナビ案内" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "ナビ案内" })).toBe(guidanceBar);
+    expect(guidanceBar).toBeVisible();
+    expect(live).not.toHaveTextContent("模擬走行を開始します");
     expect(screen.getByRole("button", { name: "ナビを停止" })).toBeVisible();
+    fireEvent.click(toggle);
+    expect(screen.getByRole("region", { name: "ナビ案内" })).toBe(guidanceBar);
+    expect(guidanceBar).toBeVisible();
+    expect(live).not.toHaveTextContent("模擬走行を開始します");
   });
 
   it("開始操作は選定2経路の既存カードから開く", async () => {

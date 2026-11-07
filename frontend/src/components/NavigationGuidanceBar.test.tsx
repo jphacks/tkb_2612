@@ -36,7 +36,7 @@ describe("ナビ上部バー", () => {
     expect(screen.queryByText(/m先/)).not.toBeInTheDocument();
   });
 
-  it("サイドバー開閉で表示場所を変えても開始文を繰り返し通知しない", () => {
+  it("案内が更新されても開始文を繰り返し通知しない", () => {
     vi.useFakeTimers();
     try {
       const props = { alert, guidance, announcement: "ナビを開始します" };
@@ -44,8 +44,8 @@ describe("ナビ上部バー", () => {
       const live = view.container.querySelector(".nav-approach-region")!;
       expect(live).toHaveTextContent("ナビを開始します");
       act(() => vi.advanceTimersByTime(1000));
-      view.rerender(<NavigationGuidanceBar {...props} hidden />);
-      view.rerender(<NavigationGuidanceBar {...props} />);
+      view.rerender(<NavigationGuidanceBar {...props} guidance={{ ...guidance, distanceM: 29 }} />);
+      expect(view.container.querySelector(".nav-approach-region")).toBe(live);
       expect(live).not.toHaveTextContent("ナビを開始します");
       expect(screen.getByLabelText("接近通知")).toBeVisible();
     } finally {

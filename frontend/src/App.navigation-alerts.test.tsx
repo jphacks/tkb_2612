@@ -85,13 +85,16 @@ describe("接近通知の画面表示（手順10・7.5・7.9）", () => {
     const alert = screen.getByLabelText("接近通知");
     expect(alert).toHaveTextContent(AHEAD);
     expect(alert.closest(".nav-guidance-bar")).not.toBeNull();
-    expect(within(screen.getByRole("complementary", { name: "ナビ" })).getByLabelText("接近通知")).toBeVisible();
+    expect(alert).toBeVisible();
+    expect(alert.closest(".nav-guidance-overlay")?.parentElement).toHaveClass("result-page");
+    expect(within(screen.getByRole("complementary", { name: "ナビ" })).queryByLabelText("接近通知")).not.toBeInTheDocument();
     expect(alert.parentElement).toHaveAttribute("aria-live", "polite");
     expect(within(alert).queryByRole("button")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "条件サイドバーを閉じる" }));
     const mapAlert = screen.getByLabelText("接近通知");
+    expect(mapAlert).toBe(alert);
     expect(mapAlert).toBeVisible();
-    expect(mapAlert.closest(".route-map-shell")).not.toBeNull();
+    expect(mapAlert.closest(".nav-guidance-overlay")).not.toBeNull();
     // 受動表示：フォーカスを奪わず、ダイアログにもしない。
     expect(alert).not.toHaveAttribute("role", "dialog");
     expect(alert.contains(document.activeElement)).toBe(false);

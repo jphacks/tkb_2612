@@ -10,8 +10,8 @@
   gap: 8px;
   pointer-events: none;
 }
-.nav-guidance-overlay[hidden] {
-  display: none;
+.sidebar-open > .nav-guidance-overlay {
+  left: calc(var(--sidebar-space) + 84px);
 }
 .nav-guidance-bar {
   display: flex;
@@ -52,20 +52,38 @@
   font-weight: 600;
   overflow-wrap: anywhere;
 }
-.nav-guidance-inline {
-  pointer-events: none;
-}
 .nav-guidance-overlay .nav-sim-banner {
   text-align: center;
 }
-.route-map-shell:has(.nav-guidance-bar) .map-preview-label {
+.result-page:has(.nav-guidance-bar) .map-preview-label {
   top: auto;
   right: auto;
   bottom: 116px;
   left: 16px;
 }
 @media (max-width: 699px) {
-  .route-map-shell:has(.nav-guidance-bar) .map-preview-label {
+  /* バーの高さに合わせてサイドバーを下げ、案内・注意文を覆わない。 */
+  .result-page:has(.nav-guidance-bar) {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .result-page > .nav-guidance-overlay:has(.nav-guidance-bar) {
+    position: relative;
+    top: auto;
+    left: auto;
+    right: auto;
+    grid-row: 1;
+    margin: 16px 72px 0 84px;
+  }
+  .result-page:has(.nav-guidance-bar) > .route-panel {
+    position: relative;
+    top: auto;
+    bottom: auto;
+    grid-row: 2;
+    min-height: 0;
+    margin-block: 16px;
+  }
+  .result-page:has(.nav-guidance-bar) .map-preview-label {
     bottom: 96px;
   }
 }
