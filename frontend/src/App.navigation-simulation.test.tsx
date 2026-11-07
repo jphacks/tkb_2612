@@ -35,16 +35,20 @@ async function startSimulation() {
 }
 
 describe("模擬走行の区別とSimulationControls（手順10・7.7）", () => {
-  it("模擬走行中の旨・倍率・状態を常設し、現在地マーカーも実機と区別する。サイドバーを閉じても地図の上に残る", async () => {
+  it("模擬走行中の旨・倍率・状態を常設し、現在地マーカーも実機と区別する。サイドバーの開閉にかかわらず上部に残る", async () => {
     await startSimulation();
     expect(screen.getByText(NOTICE)).toBeVisible();
     expect(screen.getByText("倍率 1倍・進行中")).toBeVisible();
     advance(2000);
     expect(marker()).toHaveClass("is-simulation");
+    const banner = document.querySelector(".nav-guidance-overlay .nav-sim-banner");
+    expect(banner).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "条件サイドバーを閉じる" }));
-    expect(document.querySelector(".map-stage .nav-sim-banner")).not.toBeNull();
+    expect(document.querySelector(".nav-guidance-overlay .nav-sim-banner")).toBe(banner);
+    expect(banner).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "条件サイドバーを開く" }));
-    expect(document.querySelector(".map-stage .nav-sim-banner")).toBeNull();
+    expect(document.querySelector(".nav-guidance-overlay .nav-sim-banner")).toBe(banner);
+    expect(banner).toBeVisible();
   });
 
   it("倍率1/2/4/8を選べ、seedと揺らぎを開始前に設定でき、走行中のseedは表示のみ", async () => {
