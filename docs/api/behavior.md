@@ -463,7 +463,7 @@ WMO天気コードから天候への変換は次の表に固定する（**要確
 
 `q` を前後trimしUnicode文字数2〜200。現行parse_qsは複数qのうち最初の非空値を使うが、移行契約では**qは1個必須**、重複は400とする。検索はユーザーの明示操作だけで行う。
 
-住所提供元は **Geoapify Forward Geocoding** とする（[backend-spec.md](../backend-spec.md) 6章）。サーバから `{GEOAPIFY_BASE_URL}/v1/geocode/search` へ `text=q, lang=ja, filter=countrycode:jp, limit=5, format=json` とapiKey（サーバ専用secret）を送る。外部JSONのlat/lon/formattedをlat/lon/labelへ変換し、日本矩形外・欠落・型不正は502。提供元順の先頭5件までに限定する。空配列は200でありエラーではない。Geoapify/OpenStreetMapの帰属を `attribution` に `{text, url}` の配列で返す。公開Nominatimへは接続しない。
+住所提供元は **Geoapify Forward Geocoding** とする（[backend-spec.md](../backend-spec.md) 6章）。サーバから `{GEOAPIFY_BASE_URL}/v1/geocode/search` へ `text=q, lang=ja, filter=countrycode:jp, limit=5, format=json` とapiKey（サーバ専用secret）を送る。外部JSONからlat/lon/label/detailを作る。labelはname（other_names.nameがnameで始まるならそちらを使い、";"は半角空白に置き換える）とし、nameが無ければaddress_line1、それも無ければformatted。detailはcounty（末尾が都・道・府・県のときだけ）、city、district（無ければsuburb）のうち、labelと異なるものを連結した文字列で、空ならnull。lat、lon、formattedの欠落・型不正・日本矩形外は502。その他のフィールドの欠落・型不正は502にしない。提供元順の先頭5件までに限定する。空配列は200でありエラーではない。Geoapify/OpenStreetMapの帰属を `attribution` に `{text, url}` の配列で返す。公開Nominatimへは接続しない。
 
 外部通信の共通制限はOSRM同様。全インスタンス共通の上流ゲートで通信開始間隔1.05秒以上・同時1通信・1日2,000要求を初期の上限とし、配備前に同じアカウントの残枠を確認する。有料プランへ自動変更しない。
 
@@ -525,7 +525,7 @@ JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-
 | test_additional_api_failure_keeps_original   | 追加2通信の個別上流失敗（HTTP/通信/422等）でも初回を保持し200+warnings、初回失敗は全体失敗。追加候補取得中の共有ゲート読取失敗・競合未解消・待ち行列満杯は要求全体が503 service_busy |
 | test_osrm_profiles_parameters_and_user_agent | 3modeのURL/profile、7桁座標、alternatives/geojson、UA。移行では設定済み識別UAとsteps/overviewも検証                                         |
 | test_external_errors                         | URLError/timeout/上流429→APIError。Rustでは通信抽象の各失敗と502形式に対応                                                                  |
-| test_geocode_cache_and_japanese_query        | 前後空白のtrim、query日本語のURLエンコード、Geoapify固定応答のlat/lon/label正規化と帰属。キャッシュoffで同一qも毎回通信すること          |
+| test_geocode_cache_and_japanese_query        | 前後空白のtrim、query日本語のURLエンコード、Geoapify固定応答のlat/lon/label/detail正規化と帰属。キャッシュoffで同一qも毎回通信すること          |
 | test_invalid_requests_never_call_router      | object以外、null座標、不正mode/hour/period/weather/detour、NaN/Inf、同一点/30km超を拒否しrouter0回。非JSONのNaN等はドメイン関数試験にも残す |
 | test_bad_provider_geometry                   | NaN頂点を拒否。外部エラーへの変換も照合                                                                                                     |
 

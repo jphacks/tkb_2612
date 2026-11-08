@@ -16,7 +16,7 @@
 | API | 契約 |
 |---|---|
 | POST `/api/route` | 条件を検証し、別検証で確定する経路処理へ渡す。候補geometry、集計値、比較対象ID、追加時間、説明、warningsと、選定候補だけのnavigationを返す。 |
-| GET `/api/geocode?q=...` | 明示操作による住所/地点検索。trim後Unicode2〜200文字、qは1個。提供元順で最大5件の`{lat,lon,label}`と、`{text,url}`の配列のattributionを返す。0件は200/空配列。 |
+| GET `/api/geocode?q=...` | 明示操作による住所/地点検索。trim後Unicode2〜200文字、qは1個。提供元順で最大5件の`{lat,lon,label,detail}`と、`{text,url}`の配列のattributionを返す。0件は200/空配列。 |
 | GET `/api/conditions` | 出発日時と任意の地域座標から時間帯・曜日区分・天候候補を返す。事故データを参照せず、気象失敗でも時間帯・曜日区分を200で返す。 |
 | GET `/api/health` | ロード済みデータの準備状態、`api_version / release_id / dataset_id / accidents / data_years / load_seconds`を返す。grid_cellsはグリッド索引を採用した場合だけ追加し、このフィールドから索引方式を強制しない。上流へ疎通しない。`/api/status`は同じ応答の非推奨エイリアス。 |
 
@@ -79,7 +79,7 @@ WMO変換はPR #1の対応表を自動初期値用の近似として採用する
 
 ## 6. 外部提供元・通信制御【委任判断】
 
-**住所検索はGeoapify Forward Geocodingを採用する。** 明示検索をサーバから`https://api.geoapify.com/v1/geocode/search`へ送り、`text=q / lang=ja / filter=countrycode:jp / limit=5 / format=json`を指定する。apiKeyはサーバのsecretに置き、外部JSONのlat/lon/formattedを既存のlat/lon/labelへ変換する。Geoapify/OpenStreetMapの帰属とリンクを返し、画面で表示できるようにする。[住所API](https://apidocs.geoapify.com/docs/geocoding/forward-geocoding/)
+**住所検索はGeoapify Forward Geocodingを採用する。** 明示検索をサーバから`https://api.geoapify.com/v1/geocode/search`へ送り、`text=q / lang=ja / filter=countrycode:jp / limit=5 / format=json`を指定する。apiKeyはサーバのsecretに置き、外部JSONからlat/lon/label/detailへの変換は[behavior.md](api/behavior.md) 10章の規則に従う。Geoapify/OpenStreetMapの帰属とリンクを返し、画面で表示できるようにする。[住所API](https://apidocs.geoapify.com/docs/geocoding/forward-geocoding/)
 
 初期はGeoapify Freeの枠内での限定利用を設計上の前提にする。公式枠は3,000 credits/日・最大5要求/秒で、単純な住所検索は通常1 credit/要求。アプリの初期制御は1.05秒以上の間隔・1同時通信・2,000要求/日とし、同じアカウントの他利用も含めて配備前に残枠を確認する。上限は自動停止や無料の保証ではなく、規約上超過料金等があり得るため、実使用量を確認し、有料プランへ自動変更しない。[料金](https://www.geoapify.com/pricing/)、[利用条件](https://www.geoapify.com/terms-and-conditions/)
 
