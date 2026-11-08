@@ -18,11 +18,11 @@ vi.mock("./components/LogoIntro", () => ({
     <button onClick={onComplete}>動画をスキップして開始</button>
   ),
 }));
-vi.mock("./navigation/demoGuidance", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./navigation/demoGuidance")>();
+vi.mock("./navigation/guidance", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./navigation/guidance")>();
   return {
     ...actual,
-    createDemoGuidance: (route: RouteCandidate) => harness.guidance?.(route) ?? actual.createDemoGuidance(route),
+    guidanceStepsFromRoute: (route: RouteCandidate) => harness.guidance?.(route) ?? actual.guidanceStepsFromRoute(route),
   };
 });
 vi.mock("./components/RouteMap", async (importOriginal) => {

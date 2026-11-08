@@ -415,11 +415,17 @@ export interface components {
             /** @description 結合した対象小線分の深刻度の和。距離減衰・天候倍率なし。通知頻度や安全度の順位に使わない。 */
             severity_weight: number;
         };
+        GuidanceStep: {
+            /** @enum {string} */
+            maneuver: "left" | "right" | "slight_left" | "slight_right" | "uturn" | "arrive";
+            /** @description 経路始点から案内地点までの距離、m。vertex_distances_mと同じ軸で、丸めない。 */
+            at_m: number;
+        };
         /**
          * @description 移行追加。選定1〜2経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。
          *     距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。
          *     110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。
-         *     選定経路分のnavigation合計は空白なしUTF-8 JSONで5000000バイト以下を検証する。
+         *     選定経路分のnavigation合計は空白なしUTF-8 JSONで6800000バイト以下を検証する。
          */
         NavigationData: {
             /** @description 元geometry全頂点の緯度の算術平均φ、度。behavior.md 6章の局所平面投影に使用。 */
@@ -434,6 +440,11 @@ export interface components {
              *     sum(end_segment_index-start_segment_index+1)=候補のhigh_risk_total。
              */
             sections: components["schemas"]["NavigationSection"][];
+            /**
+             * @description 経路始点からの案内地点をat_m昇順で返す。最後の要素だけがarriveで、そのat_mはlength_mと完全に一致する。
+             *     at_mは有限で0以上length_m以下、非減少。旧方式はarrive 1件だけを返す。
+             */
+            guidance: components["schemas"]["GuidanceStep"][];
         };
         /** @description 集合Bのうち事故の天候が指定天候と一致する事故の集計。該当なしは全項目0。 */
         WeatherMatch: {

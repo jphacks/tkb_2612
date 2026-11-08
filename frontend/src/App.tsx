@@ -42,9 +42,9 @@ import { setUpdateBlocked } from "./pwa/register";
 import { useRouteSearch } from "./state/useRouteSearch";
 import type { RouteResponse } from "./lib/types";
 import { NavigationGuidanceBar } from "./components/NavigationGuidanceBar";
-import { createDemoGuidance } from "./navigation/demoGuidance";
 import {
   createGuidanceHistory,
+  guidanceStepsFromRoute,
   nextGuidance,
   updateGuidanceHistory,
   type GuidanceHistory,
@@ -155,7 +155,7 @@ function NavigationApp({
   const navigating = navigation.snapshot !== null;
   const guidanceSteps = useMemo(
     () => isDemo && navigation.route && navigation.snapshot?.kind === "simulation"
-      ? createDemoGuidance(navigation.route) : [],
+      ? guidanceStepsFromRoute(navigation.route) : [],
     [navigation.route, navigation.snapshot?.kind],
   );
   // 現APIには右左折の案内地点がない。デモの模擬走行だけにサンプルを渡し、実APIでは推測しない。

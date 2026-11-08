@@ -27,7 +27,7 @@ function distanceLabel(distanceM: number): string {
 /** 地図中央を空ける受動表示。位置確認中・一時停止中は古い右左折の案内を出さない。 */
 export function NavigationGuidanceBar({ alert, guidance, announcement = "", banner }: Props) {
   const active = !!alert;
-  const direction = active && alert.phase === "tracking" && guidance ? maneuvers[guidance.maneuver] : null;
+  const direction = active && alert.phase === "tracking" && guidance ? maneuvers[guidance.maneuver as keyof typeof maneuvers] : null;
   let label = "経路に沿って進む";
   let Icon = Navigation;
   if (direction) {
