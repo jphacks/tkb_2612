@@ -5,6 +5,7 @@
 
 mod accidents;
 pub mod geometry;
+pub mod guidance;
 
 use std::time::Instant;
 
