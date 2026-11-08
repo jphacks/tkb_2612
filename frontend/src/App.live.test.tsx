@@ -114,8 +114,8 @@ const routeExample = openapi.paths["/api/route"].post.responses["200"].content[
 const c2 = JSON.parse(
   read("../../backend/tests/fixtures/api-responses.json"),
 ).responses;
-const origin = { label: "出発地点", lat: 35.01, lon: 139 };
-const dest = { label: "到着地点", lat: 35.01, lon: 139.01 };
+const origin = { label: "出発地点", detail: null, lat: 35.01, lon: 139 };
+const dest = { label: "到着地点", detail: null, lat: 35.01, lon: 139.01 };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
