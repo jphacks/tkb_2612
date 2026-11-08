@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { ArrowUp, CornerUpLeft, CornerUpRight, Flag, LocateFixed, Navigation, Pause } from "lucide-react";
-import type { NavigationGuidance } from "../navigation/guidance";
+import { ArrowUpLeft, ArrowUpRight, CornerUpLeft, CornerUpRight, Flag, LocateFixed, Navigation, Pause, Undo2 } from "lucide-react";
+import type { Maneuver, NavigationGuidance } from "../navigation/guidance";
 import { NavigationAlertPopup, type NavigationAlert } from "./NavigationAlertPopup";
 import "./navigation-guidance.css";
 
@@ -11,10 +11,12 @@ interface Props {
   banner?: ReactNode;
 }
 
-const maneuvers = {
+const maneuvers: Record<Maneuver, { label: string; Icon: typeof Navigation }> = {
   left: { label: "左折", Icon: CornerUpLeft },
   right: { label: "右折", Icon: CornerUpRight },
-  straight: { label: "直進", Icon: ArrowUp },
+  slight_left: { label: "斜め左", Icon: ArrowUpLeft },
+  slight_right: { label: "斜め右", Icon: ArrowUpRight },
+  uturn: { label: "Uターン", Icon: Undo2 },
   arrive: { label: "目的地", Icon: Flag },
 };
 
@@ -27,7 +29,7 @@ function distanceLabel(distanceM: number): string {
 /** 地図中央を空ける受動表示。位置確認中・一時停止中は古い右左折の案内を出さない。 */
 export function NavigationGuidanceBar({ alert, guidance, announcement = "", banner }: Props) {
   const active = !!alert;
-  const direction = active && alert.phase === "tracking" && guidance ? maneuvers[guidance.maneuver as keyof typeof maneuvers] : null;
+  const direction = active && alert.phase === "tracking" && guidance ? maneuvers[guidance.maneuver] : null;
   let label = "経路に沿って進む";
   let Icon = Navigation;
   if (direction) {

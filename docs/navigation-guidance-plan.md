@@ -27,7 +27,7 @@ PR #29 で、案内バーの画面と進捗に応じた更新はできている�
 |---|---|---|
 | 進行方向と案内地点までの距離が表示される | デモだけ表示される | 実APIの案内地点を追加する（T1〜T5） |
 | ナビ案内と危険区間の警告が適切に表示される | PR #29 の上部バーで実装済み | 実データでの確認（T7） |
-| 移動に応じて案内内容が更新される | `nextGuidance` で実装済み。デモだけで動く | 実データへの接続と、再検索時の不具合の修正（T3） |
+| 移動に応じて案内内容が更新される | `nextGuidance` で実装済み。デモだけで動く | 実データへの接続（T3） |
 
 ---
 
@@ -239,7 +239,7 @@ npm run build
 ### T3：フロントの表示（Flash）
 
 - `frontend/src/App.tsx:156-160`：`isDemo` と `simulation` の条件を外し、すべてのナビで `guidanceStepsFromRoute(navigation.route)` を使う。`:161` の「推測しない」のコメントを現状に合わせる。
-- `frontend/src/App.tsx:166-168`：**通過履歴のリセットを `navigation.route?.id` から `navigation.route` の参照の変化に変える。** 再検索で同じ `route-1` が選ばれると、前の経路の履歴が残り、新しい経路の案内が隠れる（`docs/frontend-spec.md:303` は同一IDでも新世代として扱うと定めている）。これまではデモだけの問題だったが、実APIで起きるようになる。
+- 通過履歴のリセット（`frontend/src/App.tsx:166-168`）は変えない。計画時は「再検索で同じ `route-1` が選ばれると履歴が残る」と考えたが誤りだった。再検索は `takeForReSearch` から `end()` を通り、`route` がいったん `null` になるので、履歴は今のコードで消える（T3 で Flash が指摘し、Claude がコードで確認した）。実際の再検索の流れを通るテストだけを回帰防止として追加する。
 - `frontend/src/components/NavigationGuidanceBar.tsx:15-20`：`slight_left`「斜め左」、`slight_right`「斜め右」、`uturn`「Uターン」を追加し、`straight` を削除する。アイコンは `lucide-react@0.468` にあるものから選ぶ。
 - `frontend/src/App.navigation-guidance.test.tsx:21-27`：モックの対象を `guidanceStepsFromRoute` に変える。
 - `frontend/README.md`：「実APIでは右左折を表示しない」という記述を更新する。
@@ -251,7 +251,7 @@ npm run build
 - `slight_left`、`slight_right`、`uturn` の表示。
 - 案内が `arrive` だけの経路では「経路に沿って進む」と表示され、右左折は出ない。
 
-合格条件：T2 と同じ。再検索のテストは、修正を戻すと失敗することを Claude が確認する。
+合格条件：T2 と同じ。
 
 ### T4：案内地点の判定（Flash）
 
@@ -410,7 +410,6 @@ npm run build
 
 ```text
 計画書の6章のT3を実装してください。frontend/ の作業です。
-App.tsx の通過履歴のリセットの変更では、ナビの開始と終了で今と同じようにリセットされることを保ってください。
 PR #29 の案内バーの配置、CSS、注意文の表示は変えないでください。
 追加するテストは frontend/src/App.navigation-guidance.test.tsx の既存の書き方に合わせてください。
 
