@@ -9,6 +9,7 @@ import { LocateFixed, Minus, Plus } from "lucide-react";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { isDemo } from "../api/client";
+import { isFatalMapError } from "../map/errors";
 import type { LatLon } from "../lib/types";
 import type { SafetyReport } from "../community/reports";
 import {
@@ -97,8 +98,13 @@ export function CommunityMap(props: Props) {
             lon: event.lngLat.lng,
           }),
         );
-        instance.on("error", () => {
-          if (!disposed) setFailed(true);
+        instance.on("error", (event) => {
+          if (
+            !disposed &&
+            instance &&
+            isFatalMapError(event, instance.getStyle() != null)
+          )
+            setFailed(true);
         });
       })
       .catch(() => {
