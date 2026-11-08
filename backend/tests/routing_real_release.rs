@@ -26,10 +26,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use accident_route_backend::api::route_response::{check_detour, render_route_response};
+use accident_route_backend::api::route_response::{
+    NAV_MAX_GUIDANCE_STEPS, check_detour, render_route_response,
+};
 use accident_route_backend::contract::{
-    CancelToken, ConditionFilter, DayType, EngineError, LatLon, Mode, Period, RouteEngine,
-    RouteQuery, Router, Weather,
+    CancelToken, ConditionFilter, DayType, EngineError, LatLon, Maneuver, Mode, Period,
+    RouteEngine, RouteOutcome, RouteQuery, Router, Weather,
 };
 use accident_route_backend::data;
 use accident_route_backend::testing::fixtures::check_outcome_invariants;
@@ -112,6 +114,8 @@ struct OutcomeStats {
     candidates: usize,
     safest_is_none: bool,
     high_risk_total: u64,
+    guidance_steps: usize,
+    guidance_bytes: usize,
     render_bytes: usize,
 }
 
@@ -161,6 +165,61 @@ fn is_allowed_error(error: &EngineError) -> bool {
     matches!(error, EngineError::NoRoute | EngineError::RouteTooLong)
 }
 
+#[derive(serde::Serialize)]
+struct GuidanceStepBytes<'a> {
+    maneuver: &'a str,
+    at_m: f64,
+}
+
+/// 応答の `guidance` と同じ形にしたときのバイト数。
+fn guidance_bytes(nav: &accident_route_backend::contract::NavigationData) -> usize {
+    let steps: Vec<GuidanceStepBytes<'_>> = nav
+        .guidance
+        .iter()
+        .map(|step| GuidanceStepBytes {
+            maneuver: step.maneuver.as_str(),
+            at_m: step.at_m,
+        })
+        .collect();
+    serde_json::to_vec(&steps)
+        .expect("案内はJSONにできる")
+        .len()
+}
+
+/// 選定経路の `guidance` の不変条件（計画書3章・behavior.md 7章）。
+fn check_guidance(outcome: &RouteOutcome) -> Result<(), String> {
+    for (i, candidate) in outcome.candidates.iter().enumerate() {
+        let Some(nav) = &candidate.navigation else {
+            continue;
+        };
+        let id = format!("route-{}", i + 1);
+        if nav.guidance.is_empty() {
+            return Err(format!("{id}: guidanceが空"));
+        }
+        if nav.guidance.len() > NAV_MAX_GUIDANCE_STEPS {
+            return Err(format!("{id}: 案内地点数が範囲外"));
+        }
+        let mut previous_at_m = 0.0;
+        for (j, step) in nav.guidance.iter().enumerate() {
+            if !step.at_m.is_finite() || step.at_m < 0.0 || step.at_m > nav.length_m {
+                return Err(format!("{id}: 案内地点の距離が不正"));
+            }
+            if step.at_m < previous_at_m {
+                return Err(format!("{id}: 案内地点が逆行している"));
+            }
+            if step.maneuver == Maneuver::Arrive && j + 1 != nav.guidance.len() {
+                return Err(format!("{id}: arriveが末尾以外にある"));
+            }
+            previous_at_m = step.at_m;
+        }
+        let last = nav.guidance.last().expect("空でない");
+        if last.maneuver != Maneuver::Arrive || last.at_m != nav.length_m {
+            return Err(format!("{id}: 末尾のarriveがlength_mと一致しない"));
+        }
+    }
+    Ok(())
+}
+
 /// 1件を期限付きで実行し、契約の検査まで行う。
 fn run_query(
     engine: &dyn RouteEngine,
@@ -185,6 +244,9 @@ fn run_query(
             if let Err(reason) = check_outcome_invariants(&outcome) {
                 reasons.push(format!("check_outcome_invariants: {reason}"));
             }
+            if let Err(reason) = check_guidance(&outcome) {
+                reasons.push(format!("check_guidance: {reason}"));
+            }
             if let Err(reason) = check_detour(&outcome, query.query.max_detour_min()) {
                 reasons.push(format!("check_detour: {}", reason.0));
             }
@@ -195,6 +257,13 @@ fn run_query(
                     None
                 }
             };
+            let (guidance_steps, guidance_bytes) = outcome
+                .candidates
+                .iter()
+                .filter_map(|candidate| candidate.navigation.as_ref())
+                .fold((0usize, 0usize), |(steps, bytes), nav| {
+                    (steps + nav.guidance.len(), bytes + guidance_bytes(nav))
+                });
             if reasons.is_empty() {
                 RunResult::Ok(OutcomeStats {
                     candidates: outcome.candidates.len(),
@@ -204,6 +273,8 @@ fn run_query(
                         .iter()
                         .map(|candidate| candidate.high_risk_total)
                         .sum(),
+                    guidance_steps,
+                    guidance_bytes,
                     render_bytes: render_bytes.expect("renderに成功した本文の長さ"),
                 })
             } else {
@@ -244,6 +315,8 @@ fn print_mode_summary(mode: Mode, runs: &[&QueryRun]) {
     let mut candidates: BTreeMap<usize, usize> = BTreeMap::new();
     let mut safest_is_none = 0usize;
     let mut high_risk_total = 0u64;
+    let mut guidance_steps = 0usize;
+    let mut guidance_bytes = 0usize;
     let mut max_render_bytes = 0usize;
     for run in runs {
         times.push(run.elapsed.as_secs_f64());
@@ -255,6 +328,8 @@ fn print_mode_summary(mode: Mode, runs: &[&QueryRun]) {
                     safest_is_none += 1;
                 }
                 high_risk_total += stats.high_risk_total;
+                guidance_steps += stats.guidance_steps;
+                guidance_bytes += stats.guidance_bytes;
                 max_render_bytes = max_render_bytes.max(stats.render_bytes);
             }
             RunResult::Allowed(EngineError::NoRoute) => no_route += 1,
@@ -277,7 +352,8 @@ fn print_mode_summary(mode: Mode, runs: &[&QueryRun]) {
     eprintln!(
         "ROUTING REAL: mode={} time_median={time_median:.3}s time_max={time_max:.3}s \
          candidates={candidates:?} safest_null={safest_is_none} \
-         high_risk_total={high_risk_total} max_render_bytes={max_render_bytes}",
+         high_risk_total={high_risk_total} guidance_steps={guidance_steps} \
+         guidance_bytes={guidance_bytes} max_render_bytes={max_render_bytes}",
         mode.as_str()
     );
 }

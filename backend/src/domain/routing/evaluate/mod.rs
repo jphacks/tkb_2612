@@ -11,9 +11,9 @@ use std::time::Instant;
 
 use crate::contract::engine::{MAX_ACCIDENT_POINTS, MAX_HIGH_RISK_SECTIONS};
 use crate::contract::{
-    AccidentPoint, AccidentTotals, CancelToken, EngineError, EvaluatedRoute, HighRiskSegment,
-    Interrupt, Maneuver, Mode, NavigationData, RouteEngine, RouteOutcome, RouteQuery, RoutedPath,
-    Weather,
+    AccidentPoint, AccidentTotals, CancelToken, EngineError, EvaluatedRoute, GuidanceStep,
+    HighRiskSegment, Interrupt, Maneuver, Mode, NavigationData, RouteEngine, RouteOutcome,
+    RouteQuery, RoutedPath, Weather,
 };
 use crate::domain::candidates::SINGLE_CANDIDATE_WARNING;
 use crate::domain::corridor::Subdivision;
@@ -22,7 +22,7 @@ use crate::domain::engine::{
     format_minutes,
 };
 use crate::domain::navigation::{
-    HIGH_RISK_MIN_WEIGHT, display_sections_checked, navigation_data_checked,
+    HIGH_RISK_MIN_WEIGHT, display_sections_checked, navigation_data_checked, vertex_distances,
 };
 use crate::domain::rounding::py_round;
 use crate::domain::routing::risk::RiskView;
@@ -70,6 +70,7 @@ struct Candidate {
     high_risk_total: u64,
     distance_m: f64,
     duration_s: f64,
+    guidance: Vec<GuidanceStep>,
 }
 
 /// 評価の中間値のうち、応答に出さない計測用の値（`routing_eval engine-batch`）。
@@ -187,6 +188,16 @@ pub fn evaluate_with_report(
         let distance_m = distance_dm as f64 / 10.0;
         let shape = geometry::build_shape(graph, path, cancel)?;
         let subdivision = Subdivision::build(&shape.display, cancel)?;
+        let vertex_distances_m = vertex_distances(&subdivision);
+        let guidance = guidance::build_guidance(
+            graph,
+            &data.topology,
+            path,
+            &shape,
+            mode,
+            &vertex_distances_m,
+            cancel,
+        )?;
         cancel.check()?;
         let accident_set = accidents::build_accident_set(
             graph,
@@ -257,6 +268,7 @@ pub fn evaluate_with_report(
             high_risk_total,
             distance_m,
             duration_s: path.time_ds as f64 / 10.0,
+            guidance,
         });
     }
     cancel.check()?;
@@ -347,11 +359,10 @@ pub fn evaluate_with_report(
         cancel.check()?;
         let selected = i == fastest || safest == Some(i);
         let navigation: Option<NavigationData> = if selected {
-            Some(navigation_data_checked(
-                &candidate.subdivision,
-                &candidate.weights,
-                cancel,
-            )?)
+            let mut navigation =
+                navigation_data_checked(&candidate.subdivision, &candidate.weights, cancel)?;
+            navigation.guidance = candidate.guidance;
+            Some(navigation)
         } else {
             None
         };
