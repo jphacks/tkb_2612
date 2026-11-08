@@ -166,7 +166,7 @@ GuidanceStep:
 | 実行 | `cd /home/hayato/tkb_2612-i22 && dsh-flash - <<'TASK' ... TASK`。Bash の timeout は 600000 |
 | 仕様の渡し方 | Flash は会話を見ないので、本書を worktree に置き、節番号で参照させる。指示文は8章のものを使う |
 | コミット | Flash は `git commit`・`git push` をしない。Claude が検証後にタスクごとにコミットする |
-| Flash の検証範囲 | 対象のテストだけを実行させる。全件の `cargo test` は Claude が実行する |
+| Flash の検証範囲 | 全件の `cargo test --no-fail-fast` まで実行させる（全件で約23秒。T1 で対象を絞って見落としがあったため変更した）。Claude も同じコマンドを実行する |
 | 検証 | Flash の報告は下書きとして扱う。Claude が差分を読み、合格条件のコマンドを自分で実行する |
 | やり直し | 不合格なら、失敗の出力と具体的な指摘を添えて再指示する。2回続けて不合格なら Claude が直接直す |
 
@@ -305,7 +305,8 @@ ROUTING_REAL_RELEASE_DIR=/home/hayato/tkb_2612/data/work/wt/m5/backend/data/rele
 - `docs/spec-decisions.md`：段階Cの一部変更の決定を追加する（D1〜D6）。
 - `docs/frontend-spec.md`：ナビの章に案内バーの仕様を追加する。
 - `docs/api/behavior.md` の T1 の記述を読み直し、4章の規則の要点を追加する。
-- `docs/navigation-delegated-decisions.md`：Flash に実装させた経緯を残す。
+- `docs/navigation-delegated-decisions.md`：Flash に実装させた経緯を残す。過去の決定の記録（24行・70行の5,000,000バイト）は書き換えない。
+- サイズの上限の更新：`docs/architecture.md:200`、`docs/backend-spec.md:54`、`backend/README.md:52` の周辺。
 - `docs/architecture.md:178`、`docs/backend-spec.md:56`：`steps=false` の維持は変えない。案内は新方式のグラフから作ることを追記する。
 
 ### T7：実データでの調整（Claude）
@@ -366,7 +367,7 @@ Flash には任せない。実装者とは別に Claude が検査を書いて判
 - 生成物を手で編集しない。backend/tests/fixtures/route-responses.json は
   python3 -B backend/scripts/extract_route_examples.py で、frontend/src/api/generated/ は
   npm run generate:api で作る。
-- `cargo test` を引数なしで実行しない。指定されたテストだけを実行する。
+- バックエンドを変更したら cargo test --manifest-path backend/Cargo.toml --locked --no-fail-fast を全件実行する。
 - 仕様が足りない、または矛盾している場合は、推測で埋めずに報告する。
 
 最後に、次を報告する：変更したファイル、実行したコマンドとその結果、未解決の点。

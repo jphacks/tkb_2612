@@ -12,8 +12,8 @@ use accident_route_backend::api::route_response::{
     NAV_MAX_VERTICES, ROUTE_MAX_DISTANCE_M, check_detour, render_route_response,
 };
 use accident_route_backend::contract::{
-    AccidentPoint, AccidentTotals, EvaluatedRoute, HighRiskSegment, LonLat, NavigationData,
-    NavigationSection, RouteOutcome,
+    AccidentPoint, AccidentTotals, EvaluatedRoute, GuidanceStep, HighRiskSegment, LonLat, Maneuver,
+    NavigationData, NavigationSection, RouteOutcome,
 };
 use accident_route_backend::testing::fixtures::{
     check_outcome_invariants, expected_route_outcome, fixture_dataset_info, route_example,
@@ -75,17 +75,21 @@ fn unsafe_integer_outcome() -> RouteOutcome {
     outcome
 }
 
-/// navigationが5,000,000バイトを超える結果（頂点数を増やす）。
+/// navigationが6,800,000バイトを超える結果（頂点数を増やす）。
 fn oversized_navigation_outcome() -> RouteOutcome {
     let mut outcome = expected_route_outcome("noAccidents");
     let candidate = &mut outcome.candidates[outcome.fastest];
-    let n = 400_000;
+    let n = 500_000;
     candidate.path.coordinates = (0..n)
         .map(|i| LonLat::new(139.0 + i as f64 * 1e-6, 35.0))
         .collect();
     let nav = candidate.navigation.as_mut().unwrap();
     nav.vertex_distances_m = (0..n).map(|i| i as f64 * 12.345_678_9).collect();
     nav.length_m = *nav.vertex_distances_m.last().unwrap();
+    nav.guidance = vec![GuidanceStep {
+        maneuver: Maneuver::Arrive,
+        at_m: nav.length_m,
+    }];
     outcome
 }
 
@@ -97,10 +101,10 @@ fn json_safe_integer_overflow_is_rejected() {
     assert!(render_route_response(&unsafe_integer_outcome()).is_err());
 }
 
-/// 5,000,000バイトを超えるnavigationは拒否する。OpenAPIの範囲（頂点15,000・区間8,233）内では
-/// 選定2本の合計は約3.7MBに収まるので、超える結果は頂点数の範囲外でもある。
+/// 6,800,000バイトを超えるnavigationは拒否する。OpenAPIの範囲（頂点15,000・区間8,233・
+/// 案内14,999）内では選定2本の合計は約6.77MBに収まるので、超える結果は頂点数の範囲外でもある。
 #[test]
-fn navigation_over_five_megabytes_is_rejected() {
+fn navigation_over_six_point_eight_megabytes_is_rejected() {
     let outcome = oversized_navigation_outcome();
     let nav = outcome.candidates[outcome.fastest]
         .navigation
@@ -203,6 +207,10 @@ fn navigation_sections_must_advance_in_distance() {
     let section = nav.sections[0];
     nav.vertex_distances_m = vec![0.0, 10.0, 20.0, 30.0, 40.0];
     nav.length_m = 40.0;
+    nav.guidance = vec![GuidanceStep {
+        maneuver: Maneuver::Arrive,
+        at_m: 40.0,
+    }];
     nav.sections = [(0u32, 0.0, 10.0), (2, 20.0, 30.0)]
         .map(|(sid, start_m, end_m)| NavigationSection {
             start_segment_index: sid,
@@ -230,6 +238,72 @@ fn navigation_sections_must_advance_in_distance() {
     // 前区間の終わりちょうどからの開始と、0長の区間は認める
     assert!(with(10.0, 30.0).is_ok());
     assert!(with(25.0, 25.0).is_ok());
+}
+
+fn with_guidance(edit: &dyn Fn(&mut NavigationData)) -> RouteOutcome {
+    let mut outcome = expected_route_outcome("singleRoute");
+    let selected = outcome.fastest;
+    edit(outcome.candidates[selected].navigation.as_mut().unwrap());
+    outcome
+}
+
+#[test]
+fn guidance_must_end_with_arrive() {
+    let outcome = with_guidance(&|n| {
+        n.guidance = vec![
+            GuidanceStep {
+                maneuver: Maneuver::Arrive,
+                at_m: 0.0,
+            },
+            GuidanceStep {
+                maneuver: Maneuver::Left,
+                at_m: n.length_m,
+            },
+        ];
+    });
+    let message = rejection(&outcome);
+    assert!(message.contains("arrive"), "{message}");
+}
+
+#[test]
+fn guidance_distances_must_not_go_backwards() {
+    let outcome = with_guidance(&|n| {
+        n.guidance = vec![
+            GuidanceStep {
+                maneuver: Maneuver::Left,
+                at_m: n.length_m * 0.75,
+            },
+            GuidanceStep {
+                maneuver: Maneuver::Right,
+                at_m: n.length_m * 0.25,
+            },
+            GuidanceStep {
+                maneuver: Maneuver::Arrive,
+                at_m: n.length_m,
+            },
+        ];
+    });
+    let message = rejection(&outcome);
+    assert!(message.contains("逆行"), "{message}");
+}
+
+#[test]
+fn guidance_distance_must_not_exceed_length() {
+    let outcome = with_guidance(&|n| {
+        n.guidance = vec![GuidanceStep {
+            maneuver: Maneuver::Arrive,
+            at_m: n.length_m + 1.0,
+        }];
+    });
+    let message = rejection(&outcome);
+    assert!(message.contains("length_m"), "{message}");
+}
+
+#[test]
+fn guidance_must_not_be_empty() {
+    let outcome = with_guidance(&|n| n.guidance.clear());
+    let message = rejection(&outcome);
+    assert!(message.contains("guidance"), "{message}");
 }
 
 /// 選定状態に関係なく、全候補のgeometry・duration・distance・座標をOpenAPIの範囲で検査する。

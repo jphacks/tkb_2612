@@ -90,6 +90,9 @@ fn normalize(
                 snap(&mut s.start_m, t.start_m, DISTANCE_TOLERANCE_M);
                 snap(&mut s.end_m, t.end_m, DISTANCE_TOLERANCE_M);
             }
+            for (g, h) in n.guidance.iter_mut().zip(&m.guidance) {
+                snap(&mut g.at_m, h.at_m, DISTANCE_TOLERANCE_M);
+            }
         }
     }
     actual

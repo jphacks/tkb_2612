@@ -11,7 +11,8 @@ use std::time::Instant;
 use crate::contract::engine::{MAX_ACCIDENT_POINTS, MAX_HIGH_RISK_SECTIONS};
 use crate::contract::{
     AccidentPoint, AccidentTotals, CancelToken, EngineError, EvaluatedRoute, HighRiskSegment,
-    Interrupt, Mode, NavigationData, RouteEngine, RouteOutcome, RouteQuery, RoutedPath, Weather,
+    Interrupt, Maneuver, Mode, NavigationData, RouteEngine, RouteOutcome, RouteQuery, RoutedPath,
+    Weather,
 };
 use crate::domain::candidates::SINGLE_CANDIDATE_WARNING;
 use crate::domain::corridor::Subdivision;
@@ -480,6 +481,29 @@ fn check_navigation(id: &str, c: &EvaluatedRoute, nav: &NavigationData) -> Resul
     }
     if d.windows(2).any(|w| w[0] > w[1]) {
         return Err(format!("{id}: vertex_distances_mが非減少でない"));
+    }
+    if nav.guidance.is_empty() {
+        return Err(format!("{id}: guidanceが空"));
+    }
+    let mut previous_at_m = 0.0;
+    for (i, g) in nav.guidance.iter().enumerate() {
+        if !g.at_m.is_finite() || g.at_m < 0.0 {
+            return Err(format!("{id}: 案内地点の距離が不正"));
+        }
+        if g.at_m > nav.length_m {
+            return Err(format!("{id}: 案内地点がlength_mを超えた"));
+        }
+        if g.at_m < previous_at_m {
+            return Err(format!("{id}: 案内地点が逆行している"));
+        }
+        if g.maneuver == Maneuver::Arrive && i + 1 != nav.guidance.len() {
+            return Err(format!("{id}: arriveが末尾以外にある"));
+        }
+        previous_at_m = g.at_m;
+    }
+    let last = nav.guidance.last().expect("空でない");
+    if last.maneuver != Maneuver::Arrive || last.at_m != nav.length_m {
+        return Err(format!("{id}: 末尾のarriveがlength_mと一致しない"));
     }
     let mut covered = 0u64;
     let mut previous_end: Option<u32> = None;
