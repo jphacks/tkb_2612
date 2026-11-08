@@ -545,8 +545,10 @@ export interface components {
         GeocodeResult: {
             lat: components["schemas"]["Latitude"];
             lon: components["schemas"]["Longitude"];
-            /** @description 提供元の表示名。HTMLとして解釈しない。 */
+            /** @description 施設名・地点名。名前が無い候補は提供元の住所全体。HTMLとして解釈しない。 */
             label: string;
+            /** @description 都道府県・市区町村・地区からなる短い所在地。無ければnull。HTMLとして解釈しない。 */
+            detail: string | null;
         };
         GeocodeResponse: {
             /** @description 提供元順の先頭5件。並べ替えない。 */

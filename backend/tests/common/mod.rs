@@ -807,6 +807,16 @@ pub fn place(lat: f64, lon: f64, label: &str) -> Place {
     Place {
         position: accident_route_backend::contract::LatLon { lat, lon },
         label: label.to_owned(),
+        detail: None,
+    }
+}
+
+/// detail付きの日本矩形内の住所候補。
+pub fn place_with_detail(lat: f64, lon: f64, label: &str, detail: &str) -> Place {
+    Place {
+        position: accident_route_backend::contract::LatLon { lat, lon },
+        label: label.to_owned(),
+        detail: Some(detail.to_owned()),
     }
 }
 
