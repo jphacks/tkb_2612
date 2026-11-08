@@ -100,9 +100,16 @@
   stroke: var(--caution);
   stroke-width: 3;
 }
+.map-accident-dot.is-unattributed {
+  stroke-width: 2;
+  stroke-opacity: 0.55;
+}
 .map-accident-button:focus-visible .map-accident-dot {
   stroke: #0f172a;
   stroke-width: 5;
+}
+.map-accident-button:focus-visible .map-accident-dot.is-unattributed {
+  stroke-opacity: 1;
 }
 .map-preview-label {
   position: absolute;
@@ -202,6 +209,14 @@
   border: 2px solid var(--caution);
   border-radius: 50%;
   background: #fff;
+}
+.map-legend .legend-accident-unattributed {
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--caution);
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0.55;
 }
 .map-empty,
 .map-unavailable {

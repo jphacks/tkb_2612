@@ -146,6 +146,110 @@ describe("RouteMap", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the three attribution values in the accident popup", () => {
+    const result = createDemoRouteResponse(request);
+    const props = { ...mapProps(result), selectedRouteId: result.fastest_id };
+    render(<RouteMap {...props} />);
+    const route = result.candidates.find(
+      (candidate) => candidate.id === result.fastest_id,
+    )!;
+    const expected = {
+      edge: "道路の区間",
+      intersection: "交差点",
+      unattributed: `道路を特定できず（経路から${result.unattributed_radius_m}m以内）`,
+    };
+    expect(
+      route.accident_points.features.map(
+        (point) => point.properties.attribution,
+      ),
+    ).toEqual(["edge", "intersection", "unattributed"]);
+    for (const accident of route.accident_points.features) {
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: `事故記録 ${accident.id + 1} を表示`,
+        }),
+      );
+      const popup = screen.getByRole("region", { name: "過去の事故記録" });
+      const term = within(popup).getByText("結び付け");
+      expect(term.nextElementSibling).toHaveTextContent(
+        expected[accident.properties.attribution],
+      );
+    }
+  });
+
+  it("uses the response's unattributed radius in the accident popup", () => {
+    const result: RouteResponse = {
+      ...createDemoRouteResponse(request),
+      unattributed_radius_m:
+        118 as unknown as RouteResponse["unattributed_radius_m"],
+    };
+    const props = { ...mapProps(result), selectedRouteId: result.fastest_id };
+    render(<RouteMap {...props} />);
+    const route = result.candidates.find(
+      (candidate) => candidate.id === result.fastest_id,
+    )!;
+    const accident = route.accident_points.features.find(
+      (point) => point.properties.attribution === "unattributed",
+    )!;
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `事故記録 ${accident.id + 1} を表示`,
+      }),
+    );
+    const popup = screen.getByRole("region", { name: "過去の事故記録" });
+    const term = within(popup).getByText("結び付け");
+    expect(term.nextElementSibling).toHaveTextContent(
+      "道路を特定できず（経路から118m以内）",
+    );
+  });
+
+  it("shows both accident legend entries and hides them with accident points", () => {
+    const props = mapProps(createDemoRouteResponse(request));
+    const { rerender } = render(<RouteMap {...props} />);
+    const legend = () => screen.getByLabelText("地図の凡例");
+    expect(within(legend()).getByText("経路上の事故")).toBeVisible();
+    expect(within(legend()).getByText("経路の近くの事故")).toBeVisible();
+    expect(within(legend()).queryByText("事故記録")).not.toBeInTheDocument();
+    rerender(<RouteMap {...props} showAccidents={false} />);
+    expect(
+      within(legend()).queryByText("経路上の事故"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(legend()).queryByText("経路の近くの事故"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("draws only unattributed accident points smaller in the preview", () => {
+    const result = createDemoRouteResponse(request);
+    const props = { ...mapProps(result), selectedRouteId: result.fastest_id };
+    const { container } = render(<RouteMap {...props} />);
+    const route = result.candidates.find(
+      (candidate) => candidate.id === result.fastest_id,
+    )!;
+    const dots = [
+      ...container.querySelectorAll<SVGCircleElement>(".map-accident-dot"),
+    ];
+    expect(dots).toHaveLength(route.accident_points.features.length);
+    route.accident_points.features.forEach((accident, index) => {
+      const dot = dots[index];
+      if (accident.properties.attribution === "unattributed") {
+        expect(dot).toHaveAttribute("r", "5");
+        expect(dot).toHaveClass("is-unattributed");
+      } else {
+        expect(dot).toHaveAttribute("r", "7");
+        expect(dot).not.toHaveClass("is-unattributed");
+      }
+    });
+    expect(
+      route.accident_points.features.some(
+        (accident) => accident.properties.attribution === "unattributed",
+      ),
+    ).toBe(true);
+    expect(
+      dots.filter((dot) => dot.classList.contains("is-unattributed")),
+    ).toHaveLength(1);
+  });
+
   it("模式図でもナビ中は、ナビ経路・現在地（模擬は輪）・通知中区間を重ね、比較カードを隠す", () => {
     const props = mapProps(createDemoRouteResponse(request));
     const route = props.result!.candidates[0];
@@ -314,7 +418,13 @@ describe("RouteMapの実地図内部契約", () => {
       paint: { "line-color": "#d97706", "line-width": ["case", ["get", "selected"], 12, 7] },
     });
     expect(map.getLayer("route-accidents-point")).toMatchObject({
-      paint: { "circle-radius": 7, "circle-color": "#fff", "circle-stroke-color": "#d97706", "circle-stroke-width": 3 },
+      paint: {
+        "circle-radius": ["case", ["==", ["get", "attribution"], "unattributed"], 5, 7],
+        "circle-color": "#fff",
+        "circle-stroke-color": "#d97706",
+        "circle-stroke-width": ["case", ["==", ["get", "attribution"], "unattributed"], 2, 3],
+        "circle-stroke-opacity": ["case", ["==", ["get", "attribution"], "unattributed"], 0.55, 1],
+      },
     });
   });
 

@@ -1,5 +1,6 @@
 import type { FeatureCollection, LineString, Point, Polygon } from "geojson";
 import type {
+  CircleLayerSpecification,
   GeoJSONSource,
   LayerSpecification,
   LineLayerSpecification,
@@ -35,6 +36,11 @@ const linePaint: LineLayerSpecification["paint"] = {
   "line-opacity": 1,
 };
 
+type CircleExpression = Extract<
+  NonNullable<NonNullable<CircleLayerSpecification["paint"]>["circle-radius"]>,
+  unknown[]
+>;
+
 // 見た目維持の暫定として全候補をroute-fastestに入れ、route-safestは空にする（6章と異なる）。
 // 選定2経路化は利用者判断待ち。合意後はfastest_id/safest_idのgeometryを各sourceへ分割する。
 // 色はstyles.cssの:rootのトークンを読む（層を（再）作成するたびに取得する）。
@@ -42,6 +48,11 @@ export function buildMapLayers(): LayerSpecification[] {
   const blue = mapColor("--blue");
   const caution = mapColor("--caution");
   const surface = mapColor("--surface");
+  const unattributed: CircleExpression = [
+    "==",
+    ["get", "attribution"],
+    "unattributed",
+  ];
   return [
     {
       id: "route-fastest-line",
@@ -101,10 +112,11 @@ export function buildMapLayers(): LayerSpecification[] {
       type: "circle",
       source: "route-accidents",
       paint: {
-        "circle-radius": 7,
+        "circle-radius": ["case", unattributed, 5, 7],
         "circle-color": surface,
         "circle-stroke-color": caution,
-        "circle-stroke-width": 3,
+        "circle-stroke-width": ["case", unattributed, 2, 3],
+        "circle-stroke-opacity": ["case", unattributed, 0.55, 1],
       },
     },
     {
