@@ -12,7 +12,6 @@ import {
   type ReSearchStage,
 } from "../state/useReSearch";
 import { SIM_STOP_CAUSE } from "./SimulationBanner";
-import { SimulationBanner } from "./SimulationBanner";
 import { SimulationControls } from "./SimulationControls";
 
 export interface NavigationPanelProps {
@@ -105,7 +104,6 @@ export function NavigationPanel({
   );
   return (
     <div className="nav-panel">
-      {import.meta.env.VITE_ENABLE_SIMULATION === "true" && <SimulationBanner snapshot={snapshot} />}
       <section className={`nav-status ${TONE[phase] ?? ""}`} aria-label="ナビの状態">
         <p className="nav-phase" role="status">
           {phase === "arrived" && <Flag size={18} aria-hidden="true" />}

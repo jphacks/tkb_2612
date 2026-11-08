@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Info } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import type { NavigationSnapshot } from "../navigation/session";
 
 export type NavigationAlert = Pick<NavigationSnapshot, "phase" | "alertMessage" | "alertIds">;
@@ -19,13 +19,10 @@ export function NavigationAlertPopup({ alert, announcement = "" }: { alert?: Nav
       {startNotice && <span className="sr-only">{startNotice}</span>}
       {alert?.phase === "tracking" && alert.alertMessage && (
         <section className="nav-alert" aria-label="接近通知">
-          <Info size={16} aria-hidden="true" />
-          <div>
-            <p>{alert.alertMessage}</p>
-            {alert.alertIds.length > 1 && (
-              <p className="nav-alert-count">参考区間 {alert.alertIds.length}件</p>
-            )}
-          </div>
+          <TriangleAlert size={16} aria-hidden="true" />
+          <p>{alert.alertMessage === "過去事故の参考区間にいます"
+            ? "事故多発区間を通過中です"
+            : "この先に事故多発区間があります"}</p>
         </section>
       )}
     </div>

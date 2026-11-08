@@ -32,7 +32,7 @@ afterEach(() => {
   Reflect.deleteProperty(navigator, "geolocation");
 });
 
-const AHEAD = "この先に、過去事故の参考区間があります。周囲に注意してください";
+const AHEAD = "この先に事故多発区間があります";
 const DISCLAIMER = "過去事故の参考情報です。現在の危険や安全を保証するものではありません";
 
 async function startDevice(multiple = false) {
@@ -84,17 +84,22 @@ describe("接近通知の画面表示（手順10・7.5・7.9）", () => {
     feed(section.start_m - 71);
     const alert = screen.getByLabelText("接近通知");
     expect(alert).toHaveTextContent(AHEAD);
-    expect(alert.closest(".route-map-shell")).not.toBeNull();
+    expect(alert.closest(".nav-guidance-bar")).not.toBeNull();
+    expect(alert).toBeVisible();
+    expect(alert.closest(".nav-guidance-overlay")?.parentElement).toHaveClass("result-page");
     expect(within(screen.getByRole("complementary", { name: "ナビ" })).queryByLabelText("接近通知")).not.toBeInTheDocument();
     expect(alert.parentElement).toHaveAttribute("aria-live", "polite");
     expect(within(alert).queryByRole("button")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "条件サイドバーを閉じる" }));
-    expect(alert).toBeVisible();
+    const mapAlert = screen.getByLabelText("接近通知");
+    expect(mapAlert).toBe(alert);
+    expect(mapAlert).toBeVisible();
+    expect(mapAlert.closest(".nav-guidance-overlay")).not.toBeNull();
     // 受動表示：フォーカスを奪わず、ダイアログにもしない。
     expect(alert).not.toHaveAttribute("role", "dialog");
     expect(alert.contains(document.activeElement)).toBe(false);
     feed(section.start_m + 10);
-    expect(screen.getByLabelText("接近通知")).toHaveTextContent("過去事故の参考区間にいます");
+    expect(screen.getByLabelText("接近通知")).toHaveTextContent("事故多発区間を通過中です");
     for (let i = 0; i < 4; i++) feed(section.end_m + 20 + i * 15);
     expect(screen.queryByLabelText("接近通知")).not.toBeInTheDocument();
     // 通過済み区間は戻っても通知しない。
@@ -114,16 +119,16 @@ describe("接近通知の画面表示（手順10・7.5・7.9）", () => {
     for (let i = 0; i < 8; i++) feed(section.start_m - 70 + i);
     expect(screen.getByLabelText("接近通知")).toHaveTextContent(AHEAD);
   });
-  it("ナビ区間が複数同時に接近条件を満たすと地図に1つの通知と件数を表示する", async () => {
+  it("ナビ区間が複数同時に接近条件を満たしても案内バーに一文だけ表示する", async () => {
     const { section, feed } = await startDevice(true);
     for (let progress = 0; progress + 40 < section.start_m - 90; progress += 40) feed(progress + 40);
     feed(section.start_m - 75);
     feed(section.start_m - 71);
     const alerts = screen.getAllByLabelText("接近通知");
     expect(alerts).toHaveLength(1);
-    expect(alerts[0]).toHaveTextContent("この先に、過去事故の参考区間が続きます");
-    expect(alerts[0]).toHaveTextContent("参考区間 2件");
-    expect(alerts[0].closest(".route-map-shell")).not.toBeNull();
+    expect(alerts[0]).toHaveTextContent(AHEAD);
+    expect(alerts[0]).not.toHaveTextContent("参考区間 2件");
+    expect(alerts[0].closest(".nav-guidance-bar")).not.toBeNull();
   });
 
 });

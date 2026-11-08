@@ -26,7 +26,6 @@ import {
   setRouteLayers,
   type NavigationLayers,
 } from "../map/layers";
-import { NavigationAlertPopup, type NavigationAlert } from "./NavigationAlertPopup";
 import { isFatalMapError } from "../map/errors";
 import {
   FASTEST_LABEL,
@@ -42,8 +41,6 @@ import {
 /** ナビ中だけ渡す。比較用の経路カードを隠し、ナビ用レイヤーを重ねる。 */
 export type NavigationMapProps = {
   layers: NavigationLayers;
-  alert?: NavigationAlert;
-  announcement?: string;
   follow: boolean;
   onFollowChange: (follow: boolean) => void;
 };
@@ -727,10 +724,6 @@ export function RouteMap(props: RouteMapProps) {
           </svg>
         </div>
       )}
-      <NavigationAlertPopup
-        alert={!disabled ? navigation?.alert : undefined}
-        announcement={!disabled && navigation ? navigation.announcement : ""}
-      />
       {result && !navigating && (
         <RouteCallouts
           result={result}

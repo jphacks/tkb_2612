@@ -2,15 +2,15 @@ import { act, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { NavigationAlertPopup } from "./NavigationAlertPopup";
 
-it("複数区間の既存文言と件数をまとめ、進捗停止・解除で消す", () => {
+it("複数区間でも一文にまとめ、進捗停止・解除で消す", () => {
   const alert = {
     phase: "tracking" as const,
     alertMessage: "この先に、過去事故の参考区間が続きます" as const,
     alertIds: ["route-1:nav-2-2", "route-1:nav-4-4"],
   };
   const view = render(<NavigationAlertPopup alert={alert} />);
-  expect(screen.getByLabelText("接近通知")).toHaveTextContent("参考区間 2件");
-  expect(screen.getByLabelText("接近通知")).toHaveTextContent(alert.alertMessage);
+  expect(screen.getByLabelText("接近通知")).toHaveTextContent("この先に事故多発区間があります");
+  expect(screen.getByLabelText("接近通知")).not.toHaveTextContent("参考区間 2件");
   view.rerender(<NavigationAlertPopup alert={{ ...alert, phase: "paused" }} />);
   expect(screen.queryByLabelText("接近通知")).not.toBeInTheDocument();
   view.rerender(<NavigationAlertPopup alert={{ ...alert, alertMessage: null, alertIds: [] }} />);
@@ -32,7 +32,7 @@ it("既存のlive領域で開始を通知し、接近通知では開始文を繰
       phase: "tracking", alertMessage: "過去事故の参考区間にいます", alertIds: ["route-1:nav-0-0"],
     }} />);
     expect(live).not.toHaveTextContent("ナビを開始します");
-    expect(screen.getByLabelText("接近通知")).toHaveTextContent("過去事故の参考区間にいます");
+    expect(screen.getByLabelText("接近通知")).toHaveTextContent("事故多発区間を通過中です");
   } finally {
     vi.useRealTimers();
   }

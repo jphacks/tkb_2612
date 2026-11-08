@@ -41,6 +41,14 @@ import { UpdateNotice } from "./components/UpdateNotice";
 import { setUpdateBlocked } from "./pwa/register";
 import { useRouteSearch } from "./state/useRouteSearch";
 import type { RouteResponse } from "./lib/types";
+import { NavigationGuidanceBar } from "./components/NavigationGuidanceBar";
+import { createDemoGuidance } from "./navigation/demoGuidance";
+import {
+  createGuidanceHistory,
+  nextGuidance,
+  updateGuidanceHistory,
+  type GuidanceHistory,
+} from "./navigation/guidance";
 import { AppHeader } from "./components/AppHeader";
 import { ModeSelection, type AppMode } from "./components/ModeSelection";
 import { CommunitySafety } from "./components/CommunitySafety";
@@ -145,6 +153,25 @@ function NavigationApp({
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const navigation = useNavigation({ result, mapAvailable: !mapUnavailable });
   const navigating = navigation.snapshot !== null;
+  const guidanceSteps = useMemo(
+    () => isDemo && navigation.route && navigation.snapshot?.kind === "simulation"
+      ? createDemoGuidance(navigation.route) : [],
+    [navigation.route, navigation.snapshot?.kind],
+  );
+  // 現APIには右左折の案内地点がない。デモの模擬走行だけにサンプルを渡し、実APIでは推測しない。
+  const guidanceProgress = navigation.snapshot?.phase === "tracking" && !navigation.snapshot.remainingStale
+    ? navigation.snapshot.match.p : null;
+  // 通過状態はセッションごとに保持する。終了するとrouteがnullになるので、開始し直したら持ち越さない。
+  const [guidanceHistory, setGuidanceHistory] = useState<GuidanceHistory>(createGuidanceHistory);
+  useEffect(() => {
+    setGuidanceHistory(createGuidanceHistory());
+  }, [navigation.route?.id]);
+  const navigationGuidance = guidanceProgress === null
+    ? null : nextGuidance(guidanceSteps, guidanceProgress, guidanceHistory);
+  useEffect(() => {
+    if (guidanceProgress === null) return;
+    setGuidanceHistory((history) => updateGuidanceHistory(guidanceSteps, guidanceProgress, history));
+  }, [guidanceProgress, guidanceSteps]);
   const [follow, setFollow] = useState(true);
   // 注意の確認を待っている開始操作。確認の操作の中でだけ開始する。
   const [startRouteId, setStartRouteId] = useState<string | null>(null);
@@ -441,6 +468,13 @@ function NavigationApp({
             >
               <Menu size={22} aria-hidden="true" />
             </button>
+            <NavigationGuidanceBar
+              alert={!mapUnavailable ? navigation.snapshot ?? undefined : undefined}
+              announcement={!mapUnavailable && navigation.snapshot ? START_MESSAGE[navigation.snapshot.kind] : ""}
+              guidance={navigationGuidance}
+              banner={import.meta.env.VITE_ENABLE_SIMULATION === "true" && navigation.snapshot?.simulation
+                ? <SimulationBanner snapshot={navigation.snapshot} /> : undefined}
+            />
             <div className="map-stage">
               <RouteMap
                 result={navigationResult ?? result}
@@ -465,14 +499,12 @@ function NavigationApp({
                 onUnavailableChange={setMapUnavailable}
                 navigation={
                   navigating
-                    ? { layers: navigationLayers, follow, onFollowChange: setFollow, alert: navigation.snapshot!, announcement: START_MESSAGE[navigation.snapshot!.kind] }
+                    ? {
+                        layers: navigationLayers, follow, onFollowChange: setFollow,
+                      }
                     : undefined
                 }
               />
-              {/* サイドバーを閉じても、模擬走行であることは地図の上に常時出す。 */}
-              {import.meta.env.VITE_ENABLE_SIMULATION === "true" && navigation.snapshot?.simulation && !sidebarOpen && (
-                <SimulationBanner snapshot={navigation.snapshot} />
-              )}
               {import.meta.env.VITE_ENABLE_SIMULATION !== "true" && navigation.startError && (
                 <p className="nav-start-error notice warning" role="alert">{navigation.startError}</p>
               )}
