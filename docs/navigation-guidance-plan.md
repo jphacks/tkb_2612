@@ -95,7 +95,7 @@ GuidanceStep:
 
 新規モジュール `backend/src/domain/routing/evaluate/guidance.rs` に実装する。入力は `graph`、`topology`、`path`、`shape`、`mode`、`vertex_distances_m`、`cancel` とする。
 
-角度は時計回りを正（右折が正）とし、`graph::time::turn_angle_deg` と符号を揃える。定数はファイル先頭に名前付きで置く。値は T7 で実データを見て調整する。
+角度は時計回りを正（右折が正）とし、`graph::time::turn_angle_deg` と符号を揃える。定数はファイル先頭に名前付きで置く。本章は T7 の実データでの調整を反映した最終の規則である（経緯は `docs/routing-reports/guidance.md`）。
 
 | 定数 | 初期値 | 意味 |
 |---|---|---|
@@ -103,11 +103,14 @@ GuidanceStep:
 | `RUN_GAP_M` | 15 | 同じ連にまとめる、分岐ノード間の距離 |
 | `RUN_MAX_M` | 60 | 連の長さの上限（環状交差点を除く） |
 | `FORK_MAX_DEG` | 45 | 分岐の相手とみなす出口の角度 |
+| `STRAIGHT_MAX_DEG` | 10 | これより小さい連の角度はほぼ直進とみなす（T7 で追加） |
+| `STRAIGHT_FORK_MAX_DEG` | 20 | ほぼ直進のときに分岐の相手とみなす出口の角度（T7 で追加） |
 | `TURN_MIN_DEG` | 45 | 右折・左折にする下限 |
 | `SLIGHT_MIN_DEG` | 30 | 斜めにする下限 |
 | `OBVIOUS_MAX_DEG` | 60 | 道なりとして省略できる上限 |
 | `UTURN_MIN_DEG` | 150 | Uターンにする下限 |
 | `END_SUPPRESS_M` | 10 | 到着の直前の案内を省く距離 |
+| `START_SUPPRESS_M` | 10 | 連の先頭がこれより始点に近ければ案内しない距離（T7 で追加） |
 
 ### 手順
 
@@ -117,7 +120,7 @@ GuidanceStep:
 - `dedges[i+1]` でも `dedges[i].reversed()` でもない。
 - 行き先のノードが `node_blocked(.., mode)` でない。
 
-右左折禁止の規制は考慮しない。曲がれなくても、道路は目に見えて分岐しているためである。
+右左折禁止の規制は考慮しない。曲がれなくても、道路は目に見えて分岐しているためである。同じ理由で、逆向きにしか通れない道路（`passable(d.reversed(), mode)` だけが真。行き先のノードの条件は同じ）を `one_ways(i)` として別に求める。手順2・手順4の「`others` が空」は `others` と `one_ways` の両方が空という意味で、道なりの判定も両方を見る。分岐の判定だけは、進めない道路を選択肢にしないように `others` だけを見る。
 
 **手順2：連にまとめる。** 中間ノードを順に見て、次のどれかに当たれば直前の連に加える。
 
@@ -142,12 +145,13 @@ GuidanceStep:
 | `|a| < SLIGHT_MIN_DEG` で「分岐」に当たる | 下記の向きの `slight_*` |
 | それ以外 | 案内なし（直進） |
 
-- **道なり：** 連の入る辺と出る辺の道路区分が同じで、`others` のすべてが出る辺より下位の道路である。区分は `risk::road_group(class)` で比べ、`None` は最下位とする。
-- **分岐：** `others` のうち、`turn_angle_deg(入る辺, other)` の絶対値が `FORK_MAX_DEG` 未満で、道路区分が出る辺と同じか上位のものがある。その出口の角度が経路の局所角より大きければ、経路は左側の枝なので `slight_left`、小さければ `slight_right` とする。
+- **道なり：** 連の入る辺と出る辺の道路区分が同じで、`others` と `one_ways` のすべてが出る辺より下位の道路である。区分は `risk::road_group(class)` で比べ、`None` は最下位とする。
+- **分岐：** `others` のうち、`turn_angle_deg(入る辺, other)` の絶対値が上限未満で、道路区分が出る辺と同じか上位のものがある。上限は、`|a| < STRAIGHT_MAX_DEG` なら `STRAIGHT_FORK_MAX_DEG`、それ以外は `FORK_MAX_DEG` とする。出る辺が `_link` でないときは、`_link` の出口を数えない（本線を走る間はランプの出口を案内しない）。
+- **分岐の向き：** `|a| ≥ STRAIGHT_MAX_DEG` なら `a` の符号で決める。ほぼ直進なら、その出口の角度が経路の局所角より大きければ、経路は左側の枝なので `slight_left`、小さければ `slight_right` とする。
 
 **手順5：距離を決める。** 案内地点は、連の中で局所角 `|turn_angle_deg(dedges[i], dedges[i+1])|` が最大のノードとする（同値なら先のもの）。環状交差点の連は末尾のノードとする。`shape.internal_node_vertex(i)` で `full` の頂点番号を取り、下記の方法で `at_m` に変換する。
 
-**手順6：仕上げる。** `at_m ≥ length_m - END_SUPPRESS_M` の案内を除き、最後に `arrive`（`at_m = length_m`）を加える。
+**手順6：仕上げる。** `at_m ≥ length_m - END_SUPPRESS_M` の案内と、連の先頭が始点から `START_SUPPRESS_M` 未満の案内を除き、最後に `arrive`（`at_m = length_m`）を加える。始点の近くは手前の方位を測れず、向きを誤るためである。
 
 ### 距離軸への変換
 

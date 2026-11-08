@@ -20,6 +20,10 @@ pub const RUN_GAP_M: f64 = 15.0;
 pub const RUN_MAX_M: f64 = 60.0;
 /// 分岐の相手とみなす出口の角度（度）。
 pub const FORK_MAX_DEG: f64 = 45.0;
+/// 連の角度がこれより小さければ、ほぼ直進とみなす（度）。
+pub const STRAIGHT_MAX_DEG: f64 = 10.0;
+/// ほぼ直進のときに分岐の相手とみなす出口の角度（度）。
+pub const STRAIGHT_FORK_MAX_DEG: f64 = 20.0;
 /// 右折・左折にする下限（度）。
 pub const TURN_MIN_DEG: f64 = 45.0;
 /// 斜めにする下限（度）。
@@ -30,6 +34,8 @@ pub const OBVIOUS_MAX_DEG: f64 = 60.0;
 pub const UTURN_MIN_DEG: f64 = 150.0;
 /// 到着の直前の案内を省く距離（m）。
 pub const END_SUPPRESS_M: f64 = 10.0;
+/// 連の先頭がこの距離より始点に近ければ案内しない（m）。手前の方位を測れないため。
+pub const START_SUPPRESS_M: f64 = 10.0;
 
 /// 距離の比較の許容（m）。
 const DISTANCE_EPS_M: f64 = 1e-9;
@@ -46,6 +52,14 @@ struct NodeInfo {
     distance_m: f64,
     /// 経路の次でも引き返しでもない、通れる出口。
     others: Vec<DirEdge>,
+    /// 逆向きにしか通れない道路。進めないが、分岐として目に見える。
+    one_ways: Vec<DirEdge>,
+}
+
+impl NodeInfo {
+    fn has_branch(&self) -> bool {
+        !self.others.is_empty() || !self.one_ways.is_empty()
+    }
 }
 
 /// 同じ案内にまとめるノードの連。
@@ -84,6 +98,9 @@ pub fn build_guidance(
         for (i, run) in runs.iter().enumerate() {
             if i % CANCEL_CHECK_INTERVAL == 0 {
                 cancel.check()?;
+            }
+            if infos[run.nodes[0]].distance_m < START_SUPPRESS_M {
+                continue;
             }
             let Some(maneuver) =
                 classify(graph, &path.dedges, &infos, run, &full_distance_m, &full_xy)
@@ -155,20 +172,21 @@ fn node_infos(
         let node = graph.dedge_to(d);
         let next = path.dedges[i + 1];
         let back = d.reversed();
-        let others: Vec<DirEdge> = graph
+        let (others, one_ways): (Vec<DirEdge>, Vec<DirEdge>) = graph
             .out_dedges(node)
             .iter()
             .copied()
             .filter(|&out| out != next && out != back)
-            .filter(|&out| graph.passable(out, mode))
+            .filter(|&out| graph.passable(out, mode) || graph.passable(out.reversed(), mode))
             .filter(|&out| !graph.node_blocked(graph.dedge_to(out), mode))
-            .collect();
+            .partition(|&out| graph.passable(out, mode));
         infos.push(NodeInfo {
             index: i,
             node,
             vertex,
             distance_m,
             others,
+            one_ways,
         });
     }
     Ok(infos)
@@ -191,7 +209,7 @@ fn group_runs(
         let is_entrance =
             !is_roundabout && graph.edge(next.edge()).flags & edge_flags::ROUNDABOUT != 0;
         // 引き返すノードは、他に出口がなくても案内するので連を始める。
-        let starts_run = !info.others.is_empty() || next == d.reversed();
+        let starts_run = info.has_branch() || next == d.reversed();
 
         if is_entrance {
             if let Some(run) = current.take() {
@@ -211,7 +229,7 @@ fn group_runs(
                     ),
                     (Some(a), Some(b)) if a == b
                 );
-            let within_gap = !info.others.is_empty()
+            let within_gap = info.has_branch()
                 && last_branch_distance_m.is_some_and(|distance| {
                     info.distance_m - distance <= RUN_GAP_M + DISTANCE_EPS_M
                 });
@@ -245,7 +263,7 @@ fn group_runs(
             });
         }
 
-        if !info.others.is_empty() {
+        if info.has_branch() {
             last_branch_distance_m = Some(info.distance_m);
         }
     }
@@ -330,7 +348,7 @@ fn classify(
     {
         return Some(Maneuver::Uturn);
     }
-    if run.nodes.iter().all(|&i| infos[i].others.is_empty()) {
+    if !run.nodes.iter().any(|&i| infos[i].has_branch()) {
         return None;
     }
     let start_distance_m = infos[run.nodes[0]].distance_m;
@@ -359,7 +377,7 @@ fn classify(
             Maneuver::SlightLeft
         });
     }
-    fork_maneuver(graph, dedges, infos, run)
+    fork_maneuver(graph, dedges, infos, run, angle)
 }
 
 /// 道路の区分。`None` は最下位。
@@ -379,18 +397,30 @@ fn is_obvious(graph: &Graph, dedges: &[DirEdge], infos: &[NodeInfo], run: &Run) 
     let out_rank = class_rank(out_class);
     run.nodes
         .iter()
-        .flat_map(|&i| infos[i].others.iter())
+        .flat_map(|&i| infos[i].others.iter().chain(&infos[i].one_ways))
         .all(|&other| class_rank(graph.edge(other.edge()).class) > out_rank)
 }
 
-/// 斜めの分岐か（手順4の「分岐」）。出口が経路より右なら `slight_left`、
-/// 左なら `slight_right`（経路はその反対側の枝）。
+/// `_link` の道路区分か（`road_group` の奇数側）。
+const fn is_link(class: u8) -> bool {
+    matches!(class, 1 | 3 | 5 | 7 | 9)
+}
+
+/// 斜めの分岐か（手順4の「分岐」）。向きは連の角度で決める。ほぼ直進なら角度が
+/// あてにならないので、出口が経路より右なら `slight_left`、左なら `slight_right` とする。
 fn fork_maneuver(
     graph: &Graph,
     dedges: &[DirEdge],
     infos: &[NodeInfo],
     run: &Run,
+    angle: f64,
 ) -> Option<Maneuver> {
+    let straight = angle.abs() < STRAIGHT_MAX_DEG;
+    let limit = if straight {
+        STRAIGHT_FORK_MAX_DEG
+    } else {
+        FORK_MAX_DEG
+    };
     let last = &infos[*run.nodes.last().expect("連は空でない")];
     let out_class = graph.edge(dedges[last.index + 1].edge()).class;
     let out_rank = class_rank(out_class);
@@ -402,11 +432,20 @@ fn fork_maneuver(
             let Some(other_angle) = turn_angle_deg(graph, dedges[info.index], other) else {
                 continue;
             };
-            if other_angle.abs() >= FORK_MAX_DEG {
+            let other_class = graph.edge(other.edge()).class;
+            if other_angle.abs() >= limit
+                || class_rank(other_class) > out_rank
+                // 本線を走っている間、ランプの出口は分岐として案内しない。
+                || (is_link(other_class) && !is_link(out_class))
+            {
                 continue;
             }
-            if class_rank(graph.edge(other.edge()).class) > out_rank {
-                continue;
+            if !straight {
+                return Some(if angle > 0.0 {
+                    Maneuver::SlightRight
+                } else {
+                    Maneuver::SlightLeft
+                });
             }
             if other_angle > local {
                 return Some(Maneuver::SlightLeft);

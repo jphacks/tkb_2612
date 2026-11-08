@@ -525,6 +525,113 @@ fn t4_16_right_turn_eight_metres_before_arrival_is_suppressed() {
 }
 
 #[test]
+fn t7_t_junction_onto_a_one_way_road_is_right() {
+    let mut b = GraphBuilder::new();
+    let w = add(&mut b, -100.0, 0.0);
+    let c = add(&mut b, 0.0, 0.0);
+    let s = add(&mut b, 0.0, -100.0);
+    let n = add(&mut b, 0.0, 100.0);
+    edge(&mut b, w, c);
+    b.add_edge(EdgeSpec::new(n, c).oneway());
+    b.add_edge(EdgeSpec::new(c, s).oneway());
+    let (_, steps) = guidance(&b, &[w, c, s], Mode::Car, &[]);
+    assert_eq!(steps.len(), 2, "{steps:?}");
+    assert_eq!(steps[0].maneuver, Maneuver::Right);
+}
+
+#[test]
+fn t7_one_way_road_merging_at_a_small_angle_is_not_a_fork() {
+    let mut b = GraphBuilder::new();
+    let w = add(&mut b, -100.0, 0.0);
+    let c = add(&mut b, 0.0, 0.0);
+    let e = add(&mut b, 100.0, 0.0);
+    let ramp = add_polar(&mut b, 20.0, 100.0);
+    edge(&mut b, w, c);
+    edge(&mut b, c, e);
+    b.add_edge(EdgeSpec::new(ramp, c).oneway());
+    let (prepared, steps) = guidance(&b, &[w, c, e], Mode::Car, &[]);
+    assert_only_arrive(&prepared, &steps);
+}
+
+#[test]
+fn t7_turn_right_after_the_start_is_arrive_only() {
+    let mut b = GraphBuilder::new();
+    let w = add(&mut b, -8.0, 0.0);
+    let c = add(&mut b, 0.0, 0.0);
+    let s = add(&mut b, 0.0, -100.0);
+    let e = add(&mut b, 100.0, 0.0);
+    edge(&mut b, w, c);
+    edge(&mut b, c, s);
+    edge(&mut b, c, e);
+    let (prepared, steps) = guidance(&b, &[w, c, s], Mode::Car, &[]);
+    assert_only_arrive(&prepared, &steps);
+}
+
+#[test]
+fn t7_passing_a_ramp_on_the_main_road_is_arrive_only() {
+    use accident_route_backend::domain::routing::graph::HighwayClass;
+    let mut b = GraphBuilder::new();
+    let w = add(&mut b, -100.0, 0.0);
+    let c = add(&mut b, 0.0, 0.0);
+    let e = add(&mut b, 100.0, 0.0);
+    let ramp = add_polar(&mut b, 8.0, 100.0);
+    b.add_edge(EdgeSpec::new(w, c).class(HighwayClass::Motorway));
+    b.add_edge(EdgeSpec::new(c, e).class(HighwayClass::Motorway));
+    b.add_edge(EdgeSpec::new(c, ramp).class(HighwayClass::MotorwayLink));
+    let (prepared, steps) = guidance(&b, &[w, c, e], Mode::Car, &[]);
+    assert_only_arrive(&prepared, &steps);
+}
+
+#[test]
+fn t7_leaving_on_a_ramp_keeps_the_side_of_the_ramp() {
+    use accident_route_backend::domain::routing::graph::HighwayClass;
+    let mut b = GraphBuilder::new();
+    let w = add(&mut b, -100.0, 0.0);
+    let c = add(&mut b, 0.0, 0.0);
+    let e = add(&mut b, 100.0, 0.0);
+    let ramp = add_polar(&mut b, 8.0, 100.0);
+    b.add_edge(EdgeSpec::new(w, c).class(HighwayClass::Motorway));
+    b.add_edge(EdgeSpec::new(c, e).class(HighwayClass::Motorway));
+    b.add_edge(EdgeSpec::new(c, ramp).class(HighwayClass::MotorwayLink));
+    let (_, steps) = guidance(&b, &[w, c, ramp], Mode::Car, &[]);
+    assert_eq!(steps.len(), 2, "{steps:?}");
+    assert_eq!(steps[0].maneuver, Maneuver::SlightRight);
+}
+
+#[test]
+fn t7_straight_past_a_side_road_at_thirty_five_degrees_is_arrive_only() {
+    let mut b = GraphBuilder::new();
+    let w = add(&mut b, -100.0, 0.0);
+    let c = add(&mut b, 0.0, 0.0);
+    let e = add(&mut b, 100.0, 0.0);
+    let side = add_polar(&mut b, 35.0, 100.0);
+    edge(&mut b, w, c);
+    edge(&mut b, c, e);
+    edge(&mut b, c, side);
+    let (prepared, steps) = guidance(&b, &[w, c, e], Mode::Car, &[]);
+    assert_only_arrive(&prepared, &steps);
+}
+
+#[test]
+fn t7_fork_direction_follows_the_whole_run_at_a_jog() {
+    let mut b = GraphBuilder::new();
+    let w = add(&mut b, -100.0, 0.0);
+    let first = add(&mut b, 0.0, 0.0);
+    let second = add(&mut b, 10.0, -10.0);
+    let out = add_from(&mut b, second, 20.0, 100.0);
+    let first_branch = add(&mut b, 0.0, 100.0);
+    let straight = add_from(&mut b, second, 0.0, 100.0);
+    edge(&mut b, w, first);
+    edge(&mut b, first, second);
+    edge(&mut b, second, out);
+    edge(&mut b, first, first_branch);
+    edge(&mut b, second, straight);
+    let (_, steps) = guidance(&b, &[w, first, second, out], Mode::Car, &[]);
+    assert_eq!(steps.len(), 2, "{steps:?}");
+    assert_eq!(steps[0].maneuver, Maneuver::SlightRight);
+}
+
+#[test]
 fn t4_17_cancelled_token_is_interrupted() {
     let mut b = GraphBuilder::new();
     let w = add(&mut b, -100.0, 0.0);
