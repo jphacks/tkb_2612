@@ -31,6 +31,7 @@ import { NavigationStart } from "./components/NavigationStart";
 import { SELECTION_LABEL } from "./components/navigationLabels";
 import { SimulationBanner } from "./components/SimulationBanner";
 import { RouteMap } from "./components/RouteMap";
+import { RouteResultNotes } from "./components/RouteResultNotes";
 import { buildNavigationLayers } from "./map/navigationData";
 import { useConditions } from "./state/useConditions";
 import { useCurrentLocation } from "./state/useCurrentLocation";
@@ -505,6 +506,12 @@ function NavigationApp({
                     : undefined
                 }
               />
+              {result &&
+                !navigating &&
+                !searching &&
+                reSearch.state.status === "idle" && (
+                  <RouteResultNotes result={result} />
+                )}
               {import.meta.env.VITE_ENABLE_SIMULATION !== "true" && navigation.startError && (
                 <p className="nav-start-error notice warning" role="alert">{navigation.startError}</p>
               )}

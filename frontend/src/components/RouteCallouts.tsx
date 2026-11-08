@@ -85,7 +85,7 @@ export function RouteCallouts({
       : Math.min(208, size.width - 24);
   // Narrow maps use smaller text and padding (.is-compact).
   const compact = size.width < 480;
-  const cardHeight = compact ? 112 : size.height < 480 ? 116 : 128;
+  const cardHeight = compact ? 130 : size.height < 480 ? 134 : 146;
   const topInset = size.height < 480 ? 56 : 72;
   const cards = routes.map((route) => {
     const tone = routeTone(route.id, result);
@@ -193,6 +193,13 @@ export function RouteCallouts({
                 過去事故 <b>{route.accident_count}</b> 件
                 {same && <span className="map-card-same">同一経路</span>}
               </span>
+              {route.id === result.safest_id &&
+                result.safest_id !== result.fastest_id &&
+                result.risk_reduction_percent !== null && (
+                  <span className="map-card-risk">
+                    推定リスク {result.risk_reduction_percent.toFixed(1)}%減
+                  </span>
+                )}
             </button>
             <button
               type="button"

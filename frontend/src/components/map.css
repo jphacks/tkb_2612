@@ -452,6 +452,13 @@
   margin-left: auto;
   font-size: 10px;
 }
+.map-card-risk {
+  display: block;
+  /* Room for the navigation button in the bottom-right corner. */
+  padding-right: 44px;
+  color: #15803d;
+  font-size: 11px;
+}
 .map-controls,
 .map-preview-label,
 .map-legend {
@@ -549,4 +556,28 @@
 }
 .map-follow-button:hover {
   background: var(--soft);
+}
+
+.route-result-notes {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 3;
+  width: min(340px, calc(100% - 32px));
+  max-height: 45%;
+  overflow-y: auto;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
+}
+.route-result-notes summary:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: -3px;
+}
+@media (max-width: 480px) {
+  .route-result-notes {
+    bottom: 60px;
+  }
 }

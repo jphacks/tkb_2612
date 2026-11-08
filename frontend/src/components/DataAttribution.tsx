@@ -25,7 +25,7 @@ export function DataAttribution({ dataYears, geocode, demo }: Props) {
   return (
     <footer className="data-attribution" aria-label="データの出典">
       <p>
-        表示する事故件数と重みは、過去の事故記録に基づく参考指標です。交通量で補正した事故の起こりやすさではなく、安全を保証するものではありません。
+        表示する事故件数と推定リスクは、過去の事故記録に基づく参考指標です。交通量で補正した事故の起こりやすさではなく、安全を保証するものではありません。
       </p>
       {demo ? (
         <p>デモの経路・事故・天気・住所候補は架空のデータです。</p>

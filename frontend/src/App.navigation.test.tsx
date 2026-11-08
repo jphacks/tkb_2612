@@ -62,6 +62,18 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
     expect(live).not.toHaveTextContent("模擬走行を開始します");
   });
 
+  it("ナビ中は検索結果の説明を出さない", async () => {
+    await openResults();
+    expect(
+      screen.getByRole("region", { name: "検索結果の説明" }),
+    ).toBeVisible();
+    vi.useFakeTimers();
+    beginNavigation("最短ルート", "模擬走行で開始");
+    expect(
+      screen.queryByRole("region", { name: "検索結果の説明" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("開始操作は選定2経路の既存カードから開く", async () => {
     await openResults();
     expect(screen.getAllByRole("button", { name: /でナビを開始/ })).toHaveLength(2);
