@@ -587,12 +587,64 @@
   background: #fff;
   font-size: 12px;
 }
+.route-result-notes p {
+  margin: 0 0 6px;
+  line-height: 1.5;
+}
+.route-result-notes ul {
+  margin: 0 0 6px;
+  padding-left: 16px;
+  line-height: 1.5;
+}
+.route-result-notes summary {
+  padding: 2px 0;
+  font-weight: 600;
+  cursor: pointer;
+}
 .route-result-notes summary:focus-visible {
   outline: 3px solid var(--blue);
   outline-offset: -3px;
 }
-@media (max-width: 480px) {
+.route-result-notes details[open] > summary {
+  margin-bottom: 6px;
+}
+.route-result-notes dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  margin: 0;
+}
+.route-result-notes dt {
+  color: #475569;
+}
+.route-result-notes dd {
+  margin: 0;
+}
+/* 地図の幅が約860pxより狭いと凡例と横に並ばないので、凡例の上に積む。
+   高さは RouteCallouts の cardBottomInset と揃える。 */
+@media (max-width: 860px) {
   .route-result-notes {
-    bottom: 60px;
+    bottom: 124px;
+    max-height: 40%;
+  }
+}
+@media (max-width: 1260px) {
+  .sidebar-open .route-result-notes {
+    bottom: 124px;
+    max-height: 40%;
+  }
+}
+@media (max-height: 480px) {
+  .route-result-notes {
+    max-height: 30%;
+  }
+}
+/* 横向きのスマホ：凡例の上に積む高さがないので、凡例の左に細く置く。 */
+@media (max-height: 480px) and (max-width: 860px) {
+  .route-result-notes,
+  .sidebar-open .route-result-notes {
+    bottom: 16px;
+    width: 200px;
+    max-height: 45%;
   }
 }
