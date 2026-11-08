@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::contract::{
-    AccidentPoint, AccidentTotals, CancelToken, ConditionFilter, EngineError, Interrupt, LonLat,
-    Mode,
+    AccidentPoint, AccidentTotals, Attribution, CancelToken, ConditionFilter, EngineError,
+    Interrupt, LonLat, Mode,
 };
 use crate::domain::corridor::{
     CANCEL_CHECK_INTERVAL, CORRIDOR_RADIUS_M, CORRIDOR_RADIUS_SQ_M2, Subdivision,
@@ -35,8 +35,21 @@ pub enum Location {
     },
     /// 経路の内部ノードが属するクラスタへの割り当て。
     Cluster { cluster: ClusterId },
-    /// 歩道の親の車道・帰属不明の事故。72m判定で求めた最寄りsid。
-    Sid { sid: u32 },
+    /// 歩道の親の車道への割り当て。72m判定で求めた最寄りsid。
+    SidewalkParent { sid: u32 },
+    /// 帰属不明の事故。72m判定で求めた最寄りsid。
+    Unassigned { sid: u32 },
+}
+
+impl Location {
+    /// 応答の `attribution` への対応。ここだけに書く。
+    fn attribution(self) -> Attribution {
+        match self {
+            Location::Edge { .. } | Location::SidewalkParent { .. } => Attribution::Edge,
+            Location::Cluster { .. } => Attribution::Intersection,
+            Location::Unassigned { .. } => Attribution::Unattributed,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -290,7 +303,7 @@ pub fn build_accident_set(
     }
 
     let grid = PathGrid::build(subdivision, cancel)?;
-    let mut nearest: BTreeMap<u32, u32> = BTreeMap::new();
+    let mut nearest: BTreeMap<u32, Location> = BTreeMap::new();
 
     // 6章(1)の3つ目：経路が通る歩道の、親の車道への割り当て（72m以内）。
     let mut parents: BTreeSet<EdgeId> = BTreeSet::new();
@@ -317,7 +330,7 @@ pub fn build_accident_set(
             if let Some((sid, d2)) = grid.nearest(subdivision, point, cancel)?
                 && d2 <= CORRIDOR_RADIUS_SQ_M2
             {
-                nearest.insert(id, sid);
+                nearest.insert(id, Location::SidewalkParent { sid });
             }
         }
     }
@@ -345,7 +358,7 @@ pub fn build_accident_set(
         if let Some((sid, d2)) = grid.nearest(subdivision, point, cancel)?
             && d2 <= CORRIDOR_RADIUS_SQ_M2
         {
-            nearest.insert(id, sid);
+            nearest.insert(id, Location::Unassigned { sid });
         }
     }
 
@@ -358,10 +371,10 @@ pub fn build_accident_set(
             locations.insert(id, chosen.location);
         }
     }
-    for (&id, &sid) in &nearest {
+    for (&id, &location) in &nearest {
         if matches_conditions(snapshot, id, mode, conditions) {
             ids.push(id);
-            locations.insert(id, Location::Sid { sid });
+            locations.insert(id, location);
         }
     }
     ids.sort_unstable();
@@ -372,7 +385,7 @@ pub fn build_accident_set(
 pub fn summarize(
     snapshot: &AccidentSnapshot,
     conditions: ConditionFilter,
-    ids: &[u32],
+    accidents: &AccidentSet,
     cancel: &CancelToken,
 ) -> Result<AccidentSummary, Interrupt> {
     let columns = snapshot.columns();
@@ -380,7 +393,7 @@ pub fn summarize(
     let mut weather_match = conditions.weather.map(|_| AccidentTotals::default());
     let mut fatal = Vec::new();
     let mut other = Vec::new();
-    for (i, &id) in ids.iter().enumerate() {
+    for (i, &id) in accidents.ids.iter().enumerate() {
         if i % CANCEL_CHECK_INTERVAL == 0 {
             cancel.check()?;
         }
@@ -405,7 +418,16 @@ pub fn summarize(
     ));
     let accident_points = sampled
         .into_iter()
-        .map(|id| scoring::accident_point(snapshot, id))
+        .map(|id| {
+            let mut point = scoring::accident_point(snapshot, id);
+            point.attribution = accidents
+                .locations
+                .get(&id)
+                .map_or(Attribution::Unattributed, |&location| {
+                    location.attribution()
+                });
+            point
+        })
         .collect();
     Ok(AccidentSummary {
         totals,
@@ -636,7 +658,7 @@ pub fn sid_counts(
                     sid
                 }
             },
-            Location::Sid { sid } => sid,
+            Location::SidewalkParent { sid } | Location::Unassigned { sid } => sid,
         };
         let index = id as usize;
         counts[sid as usize] += 1;

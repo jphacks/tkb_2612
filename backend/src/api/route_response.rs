@@ -1,7 +1,7 @@
 //! `RouteOutcome` → `RouteResponse` のJSON（openapi.yaml）。
 //!
 //! ID文字列・`api_version`・`exact_condition_count`・`points_shown`・`effective_conditions` の
-//! 表記・固定値（`relaxed_conditions`・`radius_m`・`distance_weight_sigma_m`）だけを組み立て、
+//! 表記・固定値（`relaxed_conditions`・`unattributed_radius_m`）だけを組み立て、
 //! 数値・件数・順序・選定・文言は②の値をそのまま使う（再計算しない）。
 //!
 //! 変換の前に相関制約・OpenAPIの値の範囲・JSONの安全整数範囲・有限値・navigationのサイズ
@@ -13,7 +13,7 @@ use std::io;
 use serde::ser::{Serialize, SerializeSeq, SerializeTuple, Serializer};
 
 use crate::contract::engine::{
-    DISTANCE_WEIGHT_SIGMA_M, MAX_ACCIDENT_POINTS, MAX_CANDIDATES, MAX_HIGH_RISK_SECTIONS, RADIUS_M,
+    MAX_ACCIDENT_POINTS, MAX_CANDIDATES, MAX_HIGH_RISK_SECTIONS, RADIUS_M,
 };
 use crate::contract::geo::{LAT_RANGE, LON_RANGE};
 use crate::contract::{
@@ -489,6 +489,7 @@ struct AccidentPropertiesDto {
     weather: &'static str,
     period: &'static str,
     day_type: &'static str,
+    attribution: &'static str,
 }
 
 #[derive(serde::Serialize)]
@@ -516,6 +517,7 @@ impl From<&AccidentPoint> for AccidentFeatureDto {
                 weather: p.weather.label(),
                 period: p.period.label(),
                 day_type: p.day_type.label(),
+                attribution: p.attribution.label(),
             },
         }
     }
@@ -721,8 +723,7 @@ struct RouteResponseDto<'a> {
     warnings: &'a [String],
     relaxed_conditions: [&'static str; 0],
     effective_conditions: EffectiveConditionsDto,
-    radius_m: f64,
-    distance_weight_sigma_m: f64,
+    unattributed_radius_m: f64,
     aggregation_ms: f64,
     data_years: &'a [u16],
     risk_note: &'a str,
@@ -753,8 +754,7 @@ impl<'a> RouteResponseDto<'a> {
                 day_type: conditions.day_type.map_or("全曜日", |d| d.label()),
                 weather: conditions.weather.map_or("全天候", |w| w.label()),
             },
-            radius_m: RADIUS_M,
-            distance_weight_sigma_m: DISTANCE_WEIGHT_SIGMA_M,
+            unattributed_radius_m: RADIUS_M,
             aggregation_ms: outcome.aggregation_ms,
             data_years: &outcome.data_years,
             risk_note: &outcome.risk_note,

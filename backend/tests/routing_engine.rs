@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 
 use accident_route_backend::contract::geo::METERS_PER_DEGREE;
 use accident_route_backend::contract::{
-    BoxFuture, CancelToken, CandidateSet, ConditionFilter, DatasetInfo, DayType, EngineError,
-    Interrupt, LatLon, Mode, Period, ProviderRoute, RouteEngine, RouteQuery, Router, RoutingError,
-    RoutingRequest, Weather,
+    Attribution, BoxFuture, CancelToken, CandidateSet, ConditionFilter, DatasetInfo, DayType,
+    EngineError, Interrupt, LatLon, Mode, Period, ProviderRoute, RouteEngine, RouteQuery, Router,
+    RoutingError, RoutingRequest, Weather,
 };
 use accident_route_backend::domain::routing::accident::{
     AssignTarget, Assignment, UnassignedReason, UnassignedRecord,
@@ -556,6 +556,110 @@ fn unassigned_accidents_stop_at_the_72m_boundary() {
         .collect();
     assert_eq!(ids, vec![0]);
     let _ = e0;
+}
+
+#[test]
+fn attribution_reflects_how_each_accident_was_linked() {
+    let mut builder = GraphBuilder::new();
+    let a = builder.add_node_deg(35.6, 139.7);
+    let b = builder.add_node_deg(35.6, 139.701);
+    let c = builder.add_node_deg(35.6, 139.702);
+    let walk0 = builder.add_edge(
+        EdgeSpec::new(a, b)
+            .length_dm(1000)
+            .access(access::WALK_FWD | access::WALK_BWD),
+    );
+    let walk1 = builder.add_edge(
+        EdgeSpec::new(b, c)
+            .length_dm(1000)
+            .access(access::WALK_FWD | access::WALK_BWD),
+    );
+    let parent0 = builder.add_edge(
+        EdgeSpec::new(a, b)
+            .length_dm(1000)
+            .access(access::CAR_FWD | access::CAR_BWD),
+    );
+    let parent1 = builder.add_edge(
+        EdgeSpec::new(b, c)
+            .length_dm(1000)
+            .access(access::CAR_FWD | access::CAR_BWD),
+    );
+    let graph = builder.build();
+    let topology = topology(&graph, &[vec![b]], &[(walk0, parent0), (walk1, parent1)]);
+    let mid_lon = (graph.node_coord(a).to_latlon().lon + graph.node_coord(b).to_latlon().lon) / 2.0;
+    let specs = vec![
+        Spec::edge(walk0, 500, 1.0),
+        Spec::cluster(0, 1.0),
+        Spec::edge(parent0, 500, 1.0),
+        Spec::default(),
+    ];
+    let mut accidents = vec![
+        Accident::at(35.6, 139.7),
+        Accident::at(35.6, 139.7),
+        Accident::at(35.6, mid_lon),
+        Accident::at(north(35.6, 10.0), mid_lon),
+    ];
+    for accident in &mut accidents {
+        accident.modes = Mode::Walk.mask();
+    }
+    let engine = engine(&builder, topology, &specs, snapshot(&accidents));
+    let q = query(
+        graph.node_coord(a).to_latlon(),
+        graph.node_coord(c).to_latlon(),
+        Mode::Walk,
+        10.0,
+        ConditionFilter::default(),
+    );
+    let outcome = evaluate(&engine, &q).expect("評価できる");
+    let points = &outcome.candidates[0].accident_points;
+    assert_eq!(
+        points.iter().map(|p| p.id).collect::<Vec<_>>(),
+        vec![0, 1, 2, 3]
+    );
+    assert_eq!(
+        points.iter().map(|p| p.attribution).collect::<Vec<_>>(),
+        vec![
+            Attribution::Edge,
+            Attribution::Intersection,
+            Attribution::Edge,
+            Attribution::Unattributed,
+        ]
+    );
+}
+
+#[test]
+fn sidewalk_parent_accident_is_not_reported_as_unattributed() {
+    let mut builder = GraphBuilder::new();
+    let a = builder.add_node_deg(35.6, 139.7);
+    let b = builder.add_node_deg(35.6, 139.701);
+    let walk = builder.add_edge(
+        EdgeSpec::new(a, b)
+            .length_dm(1000)
+            .access(access::WALK_FWD | access::WALK_BWD),
+    );
+    let parent = builder.add_edge(
+        EdgeSpec::new(a, b)
+            .length_dm(1000)
+            .access(access::CAR_FWD | access::CAR_BWD),
+    );
+    let graph = builder.build();
+    let topology = topology(&graph, &[], &[(walk, parent)]);
+    let mid_lon = (graph.node_coord(a).to_latlon().lon + graph.node_coord(b).to_latlon().lon) / 2.0;
+    let mut accident = Accident::at(north(35.6, 10.0), mid_lon);
+    accident.modes = Mode::Walk.mask();
+    let specs = vec![Spec::edge(parent, 500, 1.0)];
+    let engine = engine(&builder, topology, &specs, snapshot(&[accident]));
+    let q = query(
+        graph.node_coord(a).to_latlon(),
+        graph.node_coord(b).to_latlon(),
+        Mode::Walk,
+        10.0,
+        ConditionFilter::default(),
+    );
+    let outcome = evaluate(&engine, &q).expect("評価できる");
+    let point = &outcome.candidates[0].accident_points[0];
+    assert_eq!(point.attribution, Attribution::Edge);
+    assert_ne!(point.attribution, Attribution::Unattributed);
 }
 
 #[test]

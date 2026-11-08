@@ -2,8 +2,8 @@
 
 use crate::contract::engine::{DISTANCE_WEIGHT_SIGMA_M, MAX_ACCIDENT_POINTS};
 use crate::contract::{
-    AccidentPoint, AccidentTotals, CancelToken, ConditionFilter, DayType, Interrupt, LonLat,
-    Period, Weather,
+    AccidentPoint, AccidentTotals, Attribution, CancelToken, ConditionFilter, DayType, Interrupt,
+    LonLat, Period, Weather,
 };
 
 use super::corridor::{CANCEL_CHECK_INTERVAL, CorridorHit};
@@ -142,5 +142,6 @@ pub fn accident_point(snapshot: &AccidentSnapshot, id: u32) -> AccidentPoint {
         weather: Weather::from_code(c.weather[i]).expect("ロード時に検証済み"),
         period: Period::from_code(c.period[i]).expect("ロード時に検証済み"),
         day_type: DayType::from_code(c.day_type[i]).expect("ロード時に検証済み"),
+        attribution: Attribution::Unattributed,
     }
 }

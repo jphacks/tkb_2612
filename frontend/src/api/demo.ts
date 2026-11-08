@@ -277,6 +277,9 @@ export function createDemoRouteResponse(
           weather: weather === "all" ? "晴" : weather,
           period: period === "all" ? "昼" : period,
           day_type: dayType === "all" ? "平日" : dayType,
+          attribution: (["edge", "intersection", "unattributed"] as const)[
+            number % 3
+          ],
         },
       }),
     );
@@ -384,8 +387,7 @@ export function createDemoRouteResponse(
       day_type: dayType === "all" ? "全曜日" : dayType,
       weather: weather === "all" ? "全天候" : weather,
     },
-    radius_m: 72,
-    distance_weight_sigma_m: 24,
+    unattributed_radius_m: 72,
     aggregation_ms: 12.4,
     data_years: [2025],
     risk_note:

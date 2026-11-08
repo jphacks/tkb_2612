@@ -320,7 +320,8 @@
             "date",
             "weather",
             "period",
-            "day_type"
+            "day_type",
+            "attribution"
           ],
           "additionalProperties": false,
           "properties": {
@@ -357,6 +358,15 @@
             "day_type": {
               "$ref": "#/$defs/DayType",
               "description": "発生年月日から前処理で判定した曜日区分。フロントで再判定しない。"
+            },
+            "attribution": {
+              "type": "string",
+              "enum": [
+                "edge",
+                "intersection",
+                "unattributed"
+              ],
+              "description": "事故を経路に結び付けた方法。edgeは道路の区間（歩道の親の車道を含む）、intersectionは交差点、unattributedはどの道路の事故か判断できず、経路からunattributed_radius_m以内にあるもの。旧方式は常にunattributed。"
             }
           }
         }
@@ -790,8 +800,7 @@
         "warnings",
         "relaxed_conditions",
         "effective_conditions",
-        "radius_m",
-        "distance_weight_sigma_m",
+        "unattributed_radius_m",
         "aggregation_ms",
         "data_years",
         "risk_note"
@@ -870,15 +879,10 @@
         "effective_conditions": {
           "$ref": "#/$defs/EffectiveConditions"
         },
-        "radius_m": {
+        "unattributed_radius_m": {
           "type": "number",
           "const": 72,
-          "description": "事故集計（集合B）の経路周辺半径、メートル。新方式では帰属不明の事故を数える範囲"
-        },
-        "distance_weight_sigma_m": {
-          "type": "number",
-          "const": 24,
-          "description": "距離重みのガウスσ、メートル。旧方式だけが使い、新方式では互換のための固定値"
+          "description": "帰属不明の事故を数える経路からの範囲、メートル。旧方式では事故を数える半径"
         },
         "aggregation_ms": {
           "type": "number",

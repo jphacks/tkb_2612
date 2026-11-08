@@ -12,8 +12,8 @@ use accident_route_backend::api::route_response::{
     NAV_MAX_VERTICES, ROUTE_MAX_DISTANCE_M, check_detour, render_route_response,
 };
 use accident_route_backend::contract::{
-    AccidentPoint, AccidentTotals, EvaluatedRoute, HighRiskSegment, LonLat, NavigationData,
-    NavigationSection, RouteOutcome,
+    AccidentPoint, AccidentTotals, Attribution, EvaluatedRoute, HighRiskSegment, LonLat,
+    NavigationData, NavigationSection, RouteOutcome,
 };
 use accident_route_backend::testing::fixtures::{
     check_outcome_invariants, expected_route_outcome, fixture_dataset_info, route_example,
@@ -41,6 +41,24 @@ fn every_fixture_outcome_renders_to_the_fixture_json() {
         let mut expected = route_response_json(&name);
         expected.as_object_mut().unwrap().remove("aggregation_ms");
         assert_json_matches(&actual, &expected);
+    }
+}
+
+#[test]
+fn accident_attribution_and_unattributed_radius_are_rendered() {
+    for (attribution, label) in [
+        (Attribution::Edge, "edge"),
+        (Attribution::Intersection, "intersection"),
+        (Attribution::Unattributed, "unattributed"),
+    ] {
+        let mut outcome = expected_route_outcome("singleRoute");
+        outcome.candidates[0].accident_points[0].attribution = attribution;
+        let actual = render(&outcome);
+        let properties = &actual["candidates"][0]["accident_points"]["features"][0]["properties"];
+        assert_eq!(properties["attribution"], label);
+        assert_eq!(actual["unattributed_radius_m"].as_f64(), Some(72.0));
+        assert!(actual.get("radius_m").is_none());
+        assert!(actual.get("distance_weight_sigma_m").is_none());
     }
 }
 

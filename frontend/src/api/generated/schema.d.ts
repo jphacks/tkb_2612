@@ -349,6 +349,11 @@ export interface components {
                 period: components["schemas"]["Period"];
                 /** @description 発生年月日から前処理で判定した曜日区分。フロントで再判定しない。 */
                 day_type: components["schemas"]["DayType"];
+                /**
+                 * @description 事故を経路に結び付けた方法。edgeは道路の区間（歩道の親の車道を含む）、intersectionは交差点、unattributedはどの道路の事故か判断できず、経路からunattributed_radius_m以内にあるもの。旧方式は常にunattributed。
+                 * @enum {string}
+                 */
+                attribution: "edge" | "intersection" | "unattributed";
             };
         };
         /**
@@ -527,15 +532,10 @@ export interface components {
             relaxed_conditions: string[];
             effective_conditions: components["schemas"]["EffectiveConditions"];
             /**
-             * @description 事故集計（集合B）の経路周辺半径、メートル。新方式では帰属不明の事故を数える範囲
+             * @description 帰属不明の事故を数える経路からの範囲、メートル。旧方式では事故を数える半径
              * @constant
              */
-            radius_m: 72;
-            /**
-             * @description 距離重みのガウスσ、メートル。旧方式だけが使い、新方式では互換のための固定値
-             * @constant
-             */
-            distance_weight_sigma_m: 24;
+            unattributed_radius_m: 72;
             /** @description 集計・選定・ナビデータ構築時間（新方式は経路探索を含む。旧方式は候補取得後から）、ミリ秒、小数2桁。外部通信と転送を除く。 */
             aggregation_ms: number;
             data_years: components["schemas"]["Years"];

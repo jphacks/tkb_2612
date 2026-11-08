@@ -199,8 +199,7 @@ pub fn evaluate_with_report(
             cancel,
         )?;
         cancel.check()?;
-        let summary =
-            accidents::summarize(engine.snapshot(), conditions, &accident_set.ids, cancel)?;
+        let summary = accidents::summarize(engine.snapshot(), conditions, &accident_set, cancel)?;
         let (counts, severities) = accidents::sid_counts(
             graph,
             &data.topology,
