@@ -323,7 +323,7 @@ pub struct RouteOutcome {
     pub candidates: Vec<EvaluatedRoute>,
     /// `candidates` の添字。
     pub fastest: usize,
-    /// `candidates` の添字。全候補で集合Bが空なら `None`。
+    /// `candidates` の添字。新方式は常に `Some`。旧方式は全候補で集合Bが空なら `None`。
     pub safest: Option<usize>,
     pub extra_minutes: Option<f64>,
     pub risk_reduction_percent: Option<f64>,

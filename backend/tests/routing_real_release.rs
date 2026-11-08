@@ -21,6 +21,9 @@
 //! `CandidateSet`）→ `evaluate` を呼び、`check_outcome_invariants`・`check_detour`・
 //! `render_route_response` がすべて通ることを確かめる。`NoRoute` と `RouteTooLong` は
 //! 契約どおりの応答として数える。処理は4スレッドで並行に行う。
+//!
+//! 新方式では、`safest` が必ず選ばれることと、帰属不明の事故点が経路から72m以内に
+//! あること（距離の計算の差を見込んで1mの余裕を持たせる）も確かめる。
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -28,8 +31,8 @@ use std::time::{Duration, Instant};
 
 use accident_route_backend::api::route_response::{check_detour, render_route_response};
 use accident_route_backend::contract::{
-    CancelToken, ConditionFilter, DayType, EngineError, LatLon, Mode, Period, RouteEngine,
-    RouteQuery, Router, Weather,
+    Attribution, CancelToken, ConditionFilter, DayType, EngineError, LatLon, LonLat, Mode, Period,
+    RouteEngine, RouteOutcome, RouteQuery, Router, Weather,
 };
 use accident_route_backend::data;
 use accident_route_backend::testing::fixtures::check_outcome_invariants;
@@ -40,6 +43,8 @@ const QUERIES_JSON: &str = include_str!("fixtures/routing-kanto4-queries.json");
 const EXPECTED_QUERIES: usize = 300;
 const WORKERS: usize = 4;
 const QUERY_DEADLINE: Duration = Duration::from_secs(35);
+/// 帰属不明の事故を数える範囲（72m）に、距離の計算の差を見込んだ余裕を足した値。
+const UNATTRIBUTED_LIMIT_M: f64 = 73.0;
 
 #[derive(Deserialize)]
 struct Fixture {
@@ -113,6 +118,97 @@ struct OutcomeStats {
     safest_is_none: bool,
     high_risk_total: u64,
     render_bytes: usize,
+    /// 全候補の事故が0件で、安全ルートを選んだ。
+    selected_without_accidents: bool,
+    /// 全候補の事故が0件で、最短ルートと異なる安全ルートを選んだ。
+    selected_without_accidents_differs: bool,
+    /// 安全ルートの事故件数が最短ルートより多い。
+    count_inverted: bool,
+    /// 事故点の結び付けの内訳（edge・intersection・unattributed）。
+    attributions: [u64; 3],
+    max_unattributed_distance_m: f64,
+}
+
+/// 点から折れ線までの距離（m）。経路の付近で平面に近似する。
+fn distance_to_path_m(point: LonLat, path: &[LonLat]) -> f64 {
+    const METERS_PER_DEGREE: f64 = 111_320.0;
+    let cos_lat = point.lat.to_radians().cos();
+    let xy = |p: &LonLat| {
+        (
+            (p.lon - point.lon) * METERS_PER_DEGREE * cos_lat,
+            (p.lat - point.lat) * METERS_PER_DEGREE,
+        )
+    };
+    path.windows(2)
+        .map(|pair| {
+            let (ax, ay) = xy(&pair[0]);
+            let (bx, by) = xy(&pair[1]);
+            let (dx, dy) = (bx - ax, by - ay);
+            let squared = dx * dx + dy * dy;
+            let t = if squared > 0.0 {
+                (-(ax * dx + ay * dy) / squared).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            (ax + t * dx).hypot(ay + t * dy)
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// 新方式だけの検査と、選定・結び付けの集計。
+fn check_new_engine(
+    outcome: &RouteOutcome,
+    render_bytes: usize,
+    reasons: &mut Vec<String>,
+) -> OutcomeStats {
+    let mut attributions = [0u64; 3];
+    let mut max_unattributed_distance_m = 0f64;
+    for candidate in &outcome.candidates {
+        for point in &candidate.accident_points {
+            match point.attribution {
+                Attribution::Edge => attributions[0] += 1,
+                Attribution::Intersection => attributions[1] += 1,
+                Attribution::Unattributed => {
+                    attributions[2] += 1;
+                    let distance = distance_to_path_m(point.position, &candidate.path.coordinates);
+                    max_unattributed_distance_m = max_unattributed_distance_m.max(distance);
+                    if distance > UNATTRIBUTED_LIMIT_M {
+                        reasons.push(format!(
+                            "帰属不明の事故{}が経路から{distance:.1}m離れている",
+                            point.id
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    let no_accidents = outcome
+        .candidates
+        .iter()
+        .all(|candidate| candidate.totals.accident_count == 0);
+    let fastest = &outcome.candidates[outcome.fastest];
+    let safest = outcome.safest;
+    if safest.is_none() {
+        reasons.push("新方式でsafestがnull".to_owned());
+    }
+    OutcomeStats {
+        candidates: outcome.candidates.len(),
+        safest_is_none: safest.is_none(),
+        high_risk_total: outcome
+            .candidates
+            .iter()
+            .map(|candidate| candidate.high_risk_total)
+            .sum(),
+        render_bytes,
+        selected_without_accidents: no_accidents && safest.is_some(),
+        selected_without_accidents_differs: no_accidents
+            && safest.is_some_and(|index| index != outcome.fastest),
+        count_inverted: safest.is_some_and(|index| {
+            outcome.candidates[index].totals.accident_count > fastest.totals.accident_count
+        }),
+        attributions,
+        max_unattributed_distance_m,
+    }
 }
 
 enum RunResult {
@@ -195,17 +291,9 @@ fn run_query(
                     None
                 }
             };
+            let stats = check_new_engine(&outcome, render_bytes.unwrap_or(0), &mut reasons);
             if reasons.is_empty() {
-                RunResult::Ok(OutcomeStats {
-                    candidates: outcome.candidates.len(),
-                    safest_is_none: outcome.safest.is_none(),
-                    high_risk_total: outcome
-                        .candidates
-                        .iter()
-                        .map(|candidate| candidate.high_risk_total)
-                        .sum(),
-                    render_bytes: render_bytes.expect("renderに成功した本文の長さ"),
-                })
+                RunResult::Ok(stats)
             } else {
                 RunResult::Failed(reasons.join(" / "))
             }
@@ -245,6 +333,11 @@ fn print_mode_summary(mode: Mode, runs: &[&QueryRun]) {
     let mut safest_is_none = 0usize;
     let mut high_risk_total = 0u64;
     let mut max_render_bytes = 0usize;
+    let mut selected_without_accidents = 0usize;
+    let mut selected_without_accidents_differs = 0usize;
+    let mut count_inverted = 0usize;
+    let mut attributions = [0u64; 3];
+    let mut max_unattributed_distance_m = 0f64;
     for run in runs {
         times.push(run.elapsed.as_secs_f64());
         match &run.result {
@@ -256,6 +349,15 @@ fn print_mode_summary(mode: Mode, runs: &[&QueryRun]) {
                 }
                 high_risk_total += stats.high_risk_total;
                 max_render_bytes = max_render_bytes.max(stats.render_bytes);
+                selected_without_accidents += usize::from(stats.selected_without_accidents);
+                selected_without_accidents_differs +=
+                    usize::from(stats.selected_without_accidents_differs);
+                count_inverted += usize::from(stats.count_inverted);
+                for (total, count) in attributions.iter_mut().zip(stats.attributions) {
+                    *total += count;
+                }
+                max_unattributed_distance_m =
+                    max_unattributed_distance_m.max(stats.max_unattributed_distance_m);
             }
             RunResult::Allowed(EngineError::NoRoute) => no_route += 1,
             RunResult::Allowed(EngineError::RouteTooLong) => route_too_long += 1,
@@ -278,6 +380,13 @@ fn print_mode_summary(mode: Mode, runs: &[&QueryRun]) {
         "ROUTING REAL: mode={} time_median={time_median:.3}s time_max={time_max:.3}s \
          candidates={candidates:?} safest_null={safest_is_none} \
          high_risk_total={high_risk_total} max_render_bytes={max_render_bytes}",
+        mode.as_str()
+    );
+    eprintln!(
+        "ROUTING REAL: mode={} all_zero_selected={selected_without_accidents} \
+         all_zero_differs={selected_without_accidents_differs} count_inverted={count_inverted} \
+         attribution(edge,intersection,unattributed)={attributions:?} \
+         max_unattributed_m={max_unattributed_distance_m:.1}",
         mode.as_str()
     );
 }
