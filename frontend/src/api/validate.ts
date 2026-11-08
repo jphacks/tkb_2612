@@ -93,7 +93,7 @@ export function validateRouteResponse(
   // Check only references and invariants that hold for any selection rule.
   if (safest && !safest.within_detour) invalid();
   const allEmpty = candidates.every((route) => route.accident_count === 0);
-  if (allEmpty !== (response.safest_id === null)) invalid();
+  if (response.safest_id === null && !allEmpty) invalid();
   if (
     !safest &&
     (response.extra_minutes !== null ||

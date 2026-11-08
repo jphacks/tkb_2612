@@ -188,8 +188,8 @@ pub fn check_outcome(outcome: &RouteOutcome) -> Result<(), InvalidOutcome> {
         .candidates
         .iter()
         .any(|c| c.totals.accident_count > 0);
-    if outcome.safest.is_some() != any_accident {
-        return violation("safestの有無が集合Bの有無と一致しない");
+    if outcome.safest.is_none() && any_accident {
+        return violation("事故があるのにsafestがnull");
     }
     if outcome.extra_minutes.is_some() != outcome.safest.is_some()
         || (outcome.safest.is_none() && outcome.risk_reduction_percent.is_some())

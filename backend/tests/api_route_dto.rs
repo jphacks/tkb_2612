@@ -45,6 +45,24 @@ fn every_fixture_outcome_renders_to_the_fixture_json() {
 }
 
 #[test]
+fn safest_may_exist_without_any_accident_but_not_with_accidents() {
+    // 全候補0件でもsafestを選んでよい。
+    let mut no_accidents = expected_route_outcome("noAccidents");
+    no_accidents.safest = Some(no_accidents.fastest);
+    no_accidents.extra_minutes = Some(no_accidents.candidates[no_accidents.fastest].extra_minutes);
+    assert!(render_route_response(&no_accidents).is_ok());
+
+    // 事故があるのにsafestがnullなのは拒否する。
+    let mut with_accidents = expected_route_outcome("twoSelected");
+    with_accidents.safest = None;
+    with_accidents.extra_minutes = None;
+    with_accidents.risk_reduction_percent = None;
+    with_accidents.candidates[1].navigation = None;
+    let message = rejection(&with_accidents);
+    assert!(message.contains("事故があるのにsafestがnull"), "{message}");
+}
+
+#[test]
 fn accident_attribution_and_unattributed_radius_are_rendered() {
     for (attribution, label) in [
         (Attribution::Edge, "edge"),

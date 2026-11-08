@@ -16,8 +16,7 @@ use crate::contract::{
 use crate::domain::candidates::SINGLE_CANDIDATE_WARNING;
 use crate::domain::corridor::Subdivision;
 use crate::domain::engine::{
-    NO_ACCIDENT_REASON, NO_ACCIDENT_WARNING, SAME_ROUTE_REASON, ZERO_BASELINE_REASON,
-    format_minutes,
+    NO_ACCIDENT_WARNING, SAME_ROUTE_REASON, ZERO_BASELINE_REASON, format_minutes,
 };
 use crate::domain::navigation::{
     HIGH_RISK_MIN_WEIGHT, display_sections_checked, navigation_data_checked,
@@ -285,21 +284,21 @@ pub fn evaluate_with_report(
     }
 
     let any_accident = candidates.iter().any(|c| c.totals.accident_count > 0);
-    let safest = any_accident.then(|| {
-        (0..n)
-            .filter(|&i| within[i])
-            .reduce(|best, i| {
-                let key = |j: usize| {
-                    (
-                        candidates[j].weighted_risk,
-                        candidates[j].duration_s,
-                        candidates[j].distance_m,
-                    )
-                };
-                if key(i) < key(best) { i } else { best }
-            })
-            .expect("最短時間経路は常に許容内")
-    });
+    // 全候補で事故が0件でも、推定リスクが最小の経路を選ぶ（旧方式の engine.rs は選ばない）。
+    let safest_index = (0..n)
+        .filter(|&i| within[i])
+        .reduce(|best, i| {
+            let key = |j: usize| {
+                (
+                    candidates[j].weighted_risk,
+                    candidates[j].duration_s,
+                    candidates[j].distance_m,
+                )
+            };
+            if key(i) < key(best) { i } else { best }
+        })
+        .expect("最短時間経路は常に許容内");
+    let safest = Some(safest_index);
     let base_risk = candidates[fastest].weighted_risk;
     let risk_reduction_percent = safest.and_then(|s| {
         (base_risk > 0.0).then(|| {
@@ -309,26 +308,30 @@ pub fn evaluate_with_report(
             )
         })
     });
-    let reason = match safest {
-        None => NO_ACCIDENT_REASON.to_owned(),
-        Some(s) => {
-            let mut reason = if s == fastest {
-                SAME_ROUTE_REASON.to_owned()
-            } else {
-                format!(
-                    "取得した{}候補のうち、最短時間経路から+{}分以内で、推定リスクが最小の経路を選びました。追加{:.1}分、リスク{:.1}%減です。",
-                    n,
-                    format_minutes(query.max_detour_min()),
-                    extra[s],
-                    // 2経路が異なるなら基準リスクは正で、削減率は必ずある
-                    risk_reduction_percent.unwrap_or(0.0),
-                )
-            };
-            if base_risk == 0.0 {
-                reason.push_str(ZERO_BASELINE_REASON);
-            }
-            reason
+    let reason = {
+        let mut reason = if safest_index == fastest {
+            SAME_ROUTE_REASON.to_owned()
+        } else if !any_accident {
+            format!(
+                "全候補で該当する過去の事故はありません。道路の種類ごとの平均から推定したリスクが最小の経路を選びました。追加{:.1}分、リスク{:.1}%減です。",
+                extra[safest_index],
+                // 2経路が異なるなら基準リスクは正で、削減率は必ずある
+                risk_reduction_percent.unwrap_or(0.0),
+            )
+        } else {
+            format!(
+                "道路網を探索して得た{}候補のうち、最短時間経路から+{}分以内で、推定リスクが最小の経路を選びました。追加{:.1}分、リスク{:.1}%減です。",
+                n,
+                format_minutes(query.max_detour_min()),
+                extra[safest_index],
+                // 2経路が異なるなら基準リスクは正で、削減率は必ずある
+                risk_reduction_percent.unwrap_or(0.0),
+            )
+        };
+        if base_risk == 0.0 {
+            reason.push_str(ZERO_BASELINE_REASON);
         }
+        reason
     };
     let mut warnings = Vec::new();
     if n == 1 {
@@ -412,15 +415,13 @@ pub fn check_outcome_invariants(outcome: &RouteOutcome) -> Result<(), String> {
     if outcome.safest.is_some_and(|s| s >= n) {
         return Err("safestが候補にない".into());
     }
-    // safestがnullになるのは、全候補で集合Bが空のときだけ（behavior.md 8章）
+    // safestがnullなのは、事故があるときに限って違反になる（behavior.md 8章）
     let any_accident = outcome
         .candidates
         .iter()
         .any(|c| c.totals.accident_count > 0);
-    match (outcome.safest.is_some(), any_accident) {
-        (false, true) => return Err("集合Bが空でない候補があるのにsafestがnull".into()),
-        (true, false) => return Err("全候補で集合Bが空なのにsafestがある".into()),
-        _ => {}
+    if outcome.safest.is_none() && any_accident {
+        return Err("集合Bが空でない候補があるのにsafestがnull".into());
     }
     if outcome.extra_minutes.is_some() != outcome.safest.is_some() {
         return Err("extra_minutesの有無がsafestの有無と一致しない".into());
