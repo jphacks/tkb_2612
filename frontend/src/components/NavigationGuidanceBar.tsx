@@ -47,7 +47,7 @@ export function NavigationGuidanceBar({ alert, guidance, announcement = "", bann
   }
   return (
     <div className="nav-guidance-overlay">
-      {active && banner}
+      {banner}
       <div className={active ? "nav-guidance-bar" : undefined} role={active ? "region" : undefined} aria-label={active ? "ナビ案内" : undefined}>
         {active && <Icon className="nav-guidance-icon" size={32} aria-hidden="true" />}
         <div className="nav-guidance-content">

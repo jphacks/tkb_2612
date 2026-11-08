@@ -43,7 +43,12 @@ import { useRouteSearch } from "./state/useRouteSearch";
 import type { RouteResponse } from "./lib/types";
 import { NavigationGuidanceBar } from "./components/NavigationGuidanceBar";
 import { createDemoGuidance } from "./navigation/demoGuidance";
-import { nextGuidance } from "./navigation/guidance";
+import {
+  createGuidanceHistory,
+  nextGuidance,
+  updateGuidanceHistory,
+  type GuidanceHistory,
+} from "./navigation/guidance";
 
 type Page = "places" | "conditions" | "results";
 const noop = () => {};
@@ -99,8 +104,19 @@ export default function App() {
     [navigation.route, navigation.snapshot?.kind],
   );
   // 現APIには右左折の案内地点がない。デモの模擬走行だけにサンプルを渡し、実APIでは推測しない。
-  const navigationGuidance = navigation.snapshot?.phase === "tracking" && !navigation.snapshot.remainingStale
-    ? nextGuidance(guidanceSteps, navigation.snapshot.match.p) : null;
+  const guidanceProgress = navigation.snapshot?.phase === "tracking" && !navigation.snapshot.remainingStale
+    ? navigation.snapshot.match.p : null;
+  // 通過状態はセッションごとに保持する。終了するとrouteがnullになるので、開始し直したら持ち越さない。
+  const [guidanceHistory, setGuidanceHistory] = useState<GuidanceHistory>(createGuidanceHistory);
+  useEffect(() => {
+    setGuidanceHistory(createGuidanceHistory());
+  }, [navigation.route?.id]);
+  const navigationGuidance = guidanceProgress === null
+    ? null : nextGuidance(guidanceSteps, guidanceProgress, guidanceHistory);
+  useEffect(() => {
+    if (guidanceProgress === null) return;
+    setGuidanceHistory((history) => updateGuidanceHistory(guidanceSteps, guidanceProgress, history));
+  }, [guidanceProgress, guidanceSteps]);
   const [follow, setFollow] = useState(true);
   // 注意の確認を待っている開始操作。確認の操作の中でだけ開始する。
   const [startRouteId, setStartRouteId] = useState<string | null>(null);

@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { createDemoRouteResponse } from "../api/demo";
 import type { RouteRequest } from "../lib/types";
 import { createDemoGuidance } from "./demoGuidance";
-import { nextGuidance, type GuidanceStep } from "./guidance";
+import {
+  createGuidanceHistory,
+  GUIDANCE_BACKTRACK_M,
+  nextGuidance,
+  updateGuidanceHistory,
+  type GuidanceStep,
+} from "./guidance";
 
 const steps: GuidanceStep[] = [
   { id: "right", maneuver: "right", atM: 100 },
@@ -41,5 +47,51 @@ describe("案内地点と確定進捗", () => {
     expect(createDemoGuidance(straight).map(step => step.maneuver)).toEqual(["arrive"]);
     straight.navigation = null;
     expect(createDemoGuidance(straight)).toEqual([]);
+  });
+});
+
+describe("通過済み案内のヒステリシス", () => {
+  // 東京駅→上野駅・徒歩・最短経路・揺らぎON・seed 1 の最初の曲がり角と次の右折。
+  const turnSteps: GuidanceStep[] = [
+    { id: "first-right", maneuver: "right", atM: 1335.434 },
+    { id: "second-right", maneuver: "right", atM: 1336.965 + 1233 },
+    { id: "arrival", maneuver: "arrive", atM: 3000 },
+  ];
+
+  it("曲がり角を越えた直後に進捗が揺れても、通過した右折へ戻らない", () => {
+    let history = createGuidanceHistory();
+    history = updateGuidanceHistory(turnSteps, 1336.965, history);
+    const atCorner = nextGuidance(turnSteps, 1336.965, history);
+    expect(atCorner?.id).toBe("second-right");
+    expect(atCorner?.distanceM).toBeCloseTo(1233, 6);
+
+    const jittered = nextGuidance(turnSteps, 1330.401, history);
+    expect(jittered?.id).toBe("second-right");
+    expect(jittered?.distanceM).toBeCloseTo(1239.564, 6);
+    // 履歴がなければ、通過した右折まで約5mの案内へ戻ってしまう。
+    const withoutHistory = nextGuidance(turnSteps, 1330.401);
+    expect(withoutHistory?.id).toBe("first-right");
+    expect(withoutHistory?.distanceM).toBeCloseTo(5.033, 6);
+  });
+
+  it("揺らぎの幅を超えて引き返すと、通過した案内を戻す", () => {
+    let history = updateGuidanceHistory(turnSteps, 1336.965, createGuidanceHistory());
+    const withinJitter = 1335.434 - GUIDANCE_BACKTRACK_M + 1;
+    expect(nextGuidance(turnSteps, withinJitter, history)?.id).toBe("second-right");
+
+    const backtracked = 1335.434 - GUIDANCE_BACKTRACK_M - 1;
+    expect(nextGuidance(turnSteps, backtracked, history)?.id).toBe("first-right");
+    expect(nextGuidance(turnSteps, backtracked, history)?.distanceM).toBeCloseTo(21);
+    history = updateGuidanceHistory(turnSteps, backtracked, history);
+    expect(history.has("first-right")).toBe(false);
+    expect(nextGuidance(turnSteps, backtracked, history)?.id).toBe("first-right");
+  });
+
+  it("セッションが変わると通過状態を持ち越さない", () => {
+    const previousSession = updateGuidanceHistory(turnSteps, 1336.965, createGuidanceHistory());
+    expect(nextGuidance(turnSteps, 1330.401, previousSession)?.id).toBe("second-right");
+
+    const nextSession = createGuidanceHistory();
+    expect(nextGuidance(turnSteps, 1330.401, nextSession)?.id).toBe("first-right");
   });
 });

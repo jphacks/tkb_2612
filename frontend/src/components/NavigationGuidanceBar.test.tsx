@@ -52,4 +52,14 @@ describe("ナビ上部バー", () => {
       vi.useRealTimers();
     }
   });
+
+  it("alertがなくても模擬走行バナーを表示し、案内バーは出さない", () => {
+    const view = render(
+      <NavigationGuidanceBar banner={<div className="nav-sim-banner">模擬走行中</div>} />,
+    );
+    expect(screen.getByText("模擬走行中")).toBeVisible();
+    expect(view.container.querySelector(".nav-guidance-overlay .nav-sim-banner")).not.toBeNull();
+    expect(screen.queryByRole("region", { name: "ナビ案内" })).not.toBeInTheDocument();
+    expect(view.container.querySelector(".nav-guidance-bar")).toBeNull();
+  });
 });
