@@ -2480,7 +2480,7 @@ components:
           oneOf:
             - {$ref: '#/components/schemas/RouteId'}
             - {type: 'null'}
-          description: 事故考慮経路。全候補で該当事故（集合B）が0件ならnull。
+          description: 安全ルート。新方式は全候補で該当事故（集合B）が0件でも推定リスクが最小の経路を選ぶ。旧方式は全候補0件ならnull。nullなら全候補0件である。
         candidates:
           type: array
           minItems: 1
@@ -2492,7 +2492,7 @@ components:
           type: [number, 'null']
           minimum: 0
           maximum: 100
-          description: 最短時間経路比の重み減少率、%、小数1桁。丸めたweighted_riskから計算。基準リスク0またはsafest_idがnullならnull。
+          description: 最短時間経路比の推定リスクの減少率、%、小数1桁。丸めたweighted_riskから計算。基準リスク0またはsafest_idがnullならnull。
         reason: {type: string, minLength: 1, description: 候補内選定の理由。UIは文字列として表示する。}
         warnings:
           type: array

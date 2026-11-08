@@ -65,7 +65,7 @@ unattributed_radius_m: {type: number, const: 72, description: 帰属不明の事
 | `backend/src/api/route_response.rs:191` | `safest.is_some() != any_accident` なら違反 | `safest.is_none() && any_accident` なら違反 |
 | `backend/src/domain/routing/evaluate/mod.rs:290` | `any_accident.then(...)` | 常に選ぶ（旧方式の `domain/engine.rs` は変えない） |
 | `backend/src/domain/routing/evaluate/mod.rs:421` | 両方向の検査 | `(false, true)` だけ残す |
-| `backend/src/testing/fixtures.rs` の `check_outcome_invariants` | 両方向 | 同じく一方向（`backend/tests/connection.rs:161` の期待も合わせて確認する） |
+| `backend/src/domain/routing/evaluate/mod.rs` の `check_outcome_invariants`（実体の場所を実装で確認） | 両方向 | 同じく一方向（`backend/tests/connection.rs:161` の期待も合わせて確認する） |
 
 `extra_minutes`・`risk_reduction_percent` の検査は変えない。`safest` があれば `extra_minutes` は必ずある。`risk_reduction_percent` は基準リスクが0なら null のままである。
 
@@ -78,7 +78,7 @@ Flash には文面を考えさせず、次をそのまま使わせる。
 | 新方式の `reason` | 通常（`evaluate/mod.rs:320`） | 道路網を探索して得た{N}候補のうち、最短時間経路から+{d}分以内で、推定リスクが最小の経路を選びました。追加{x}分、リスク{y}%減です。 |
 | 新方式の `reason` | 全候補0件で2経路が異なる（項目5） | 全候補で該当する過去の事故はありません。道路の種類ごとの平均から推定したリスクが最小の経路を選びました。追加{x}分、リスク{y}%減です。 |
 | カード | 2経路が異なる安全ルート | 推定リスク {p}%減 |
-| カード | 同上で `risk_reduction_percent` が null | 推定リスクの減少率は算出できません |
+| カード | 同上で `risk_reduction_percent` が null | 出さない（実装で変更。説明の欄の減少率の行に `算出できません` と出す） |
 | 説明の欄 | `safest.accident_count > fastest.accident_count` | 安全ルートは、過去事故の件数が最短ルートより多くなっています。件数は道路の種類による偶然のばらつきを含むため、推定リスクでは低い経路を選んでいます。 |
 | 説明の欄 | `safest_id` が null（旧方式だけ） | 全候補で該当する事故がないため、安全ルートは選んでいません。 |
 | ポップアップ（項目名「結び付け」） | `edge` | 道路の区間 |
@@ -95,8 +95,8 @@ Flash には文面を考えさせず、次をそのまま使わせる。
 - **説明の欄**（新規 `RouteResultNotes.tsx`）：`App.tsx` の `.map-stage` の中に、`RouteMap` と並べて置く。地図が使えないときも見えるようにするためである。ナビ中は出さない。
   - 常に表示：`warnings` の全件、件数の逆転の注記
   - `<details>`「この結果について」の中：`reason`、`risk_note`、候補数、帰属不明の範囲、`aggregation_ms`（「集計時間」と書き、通信時間と混同させない）、対象データ年
-  - 480px未満では幅いっぱいに広げ、凡例とカードに重ならないようにする。重なりは人の確認で見る（タスクF）
-- **地図**（`map/layers.ts:100` の `route-accidents-point`）：`["get","attribution"]` で描き分ける。帰属不明は半径5、灰色の枠（色は既存のトークンに合わせる）。色だけに頼らないように、大きさも変える。地図プレビュー（`RouteMap.tsx:651` の SVG）も同じ規則にする。
+  - 地図の幅が約860px未満なら凡例の上に積み、カードの下の余白を広げる（`RouteCallouts.tsx` の `cardBottomInset`）。横向きのスマホでは凡例の左に細く置く
+- **地図**（`map/layers.ts:100` の `route-accidents-point`）：`["get","attribution"]` で描き分ける。帰属不明は半径5、枠は細く半透明にする（実装で変更。枠の色を灰色にすると `colors.test.ts:34` の色の検査に反するので、色は変えない）。色だけに頼らないように、大きさも変える。地図プレビュー（`RouteMap.tsx:651` の SVG）も同じ規則にする。
 
 ## 5. 進め方
 

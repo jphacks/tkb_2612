@@ -15,7 +15,7 @@
 - 対象：schema 3 の release（`metadata.json` の `schema_version=3`）を読み込んだとき。`data::load_engine` は schema_version でエンジンを選び、3なら新方式の `RoutingEngine`、2なら旧方式の `AccidentEngine` を返す（3章）。
 - 新方式の章：5章（経路探索）、6章（事故の集合B）、7章（件数・モデルの値・高リスク区間）、8章（選定）。2〜4章、7章の件数・事故点・ナビ用データの規則、9〜10章は両方式に共通である。
 - 旧方式（OSRM候補＋72m・σ=24mのガウス重み）の規則は、[付録A](#付録a-旧方式比較用schema-2のrelease) に残す。新方式と比較するため（計画書9.3節）と、③のテストが旧方式の人工release（schema 2）で動いているためである。旧方式のエンジンは、動作を変えずに残す。
-- HTTP/JSONの契約（`openapi.yaml` の型・固定値・`required`・列挙）は変えない。`radius_m=72`・`distance_weight_sigma_m=24` は固定値として返し続ける（新方式では、`radius_m` は帰属不明の事故を数える範囲を表し、`distance_weight_sigma_m` は意味を持たない）。フロントは変更しない。
+- HTTP/JSONの契約は、Issue #26 で次の3点を変えた（[計画書](../issue-26-plan.md) 1章）。事故点の `attribution` を追加し、`distance_weight_sigma_m` を削除し、`radius_m` を `unattributed_radius_m` に改名した。また、新方式は全候補で該当事故が0件でも `safest_id` を選ぶ（8章）。
 
 ### 互換性と変更点
 
@@ -293,7 +293,9 @@ APIの正規表記を日本語にする理由：現行UI/READMEが既に日本�
 
 Bを事故ID昇順（gzip CSVの行順）で走査して、死者ありFとそれ以外Oに分ける。`sample(items,limit)` はlimit<=0で空、件数<=limitなら元順の全件、それ以外は `items[floor(i*N/limit)] (i=0..limit-1)`。
 
-先にsample(F,250)、残り枠にsample(O,250−採用死亡点数)を連結する。死亡事故が250超なら死亡事故自体も間引く。ランダム・座標ソートはしない。`points_shown=min(accident_count,250)`、間引きで集計値を変更しない。移行契約は順序を保って各点をFeature化し、ID、元年度、発生日、日本語天候/時間帯/曜日区分、人数を返す。曜日区分は前処理の値をそのまま返し、応答時に再判定しない。`points_shown < accident_count` でフロントが間引きを判定する。
+先にsample(F,250)、残り枠にsample(O,250−採用死亡点数)を連結する。死亡事故が250超なら死亡事故自体も間引く。ランダム・座標ソートはしない。`points_shown=min(accident_count,250)`、間引きで集計値を変更しない。移行契約は順序を保って各点をFeature化し、ID、元年度、発生日、日本語天候/時間帯/曜日区分、人数、`attribution` を返す。曜日区分は前処理の値をそのまま返し、応答時に再判定しない。`points_shown < accident_count` でフロントが間引きを判定する。
+
+`attribution` は、事故を経路に結び付けた方法である。`edge` は道路の区間（歩道の親の車道を含む）、`intersection` は交差点、`unattributed` はどの道路の事故か判断できず、経路から `unattributed_radius_m` 以内にあるもの（6章）。旧方式は常に `unattributed`。
 
 ### 表示用の高リスク区間
 
@@ -356,7 +358,7 @@ Bを事故ID昇順（gzip CSVの行順）で走査して、死者ありFとそ�
 - fastestは `(duration, distance)` の辞書順で最小。同値は候補順先頭。名称「最短」は**最短時間**を意味し、最短距離ではない。
 - 候補extra_minutes=`round((duration−fastest.duration)/60,3)` 分。
 - within_detourは `duration <= fastest.duration + max_detour_min*60 + 1e-6` 秒。丸めたextra_minutesで判定しない。
-- **全候補でBが空**なら、`safest_id=null`、トップレベル `extra_minutes=null`、`risk_reduction_percent=null` とする。経路候補は返す。判定はBが空かどうかで行う（丸めたスコアでは判定しない）。
+- **全候補でBが空**なら（旧方式だけ。新方式は下記「新方式（schema 3）での扱い」による）、`safest_id=null`、トップレベル `extra_minutes=null`、`risk_reduction_percent=null` とする。経路候補は返す。判定はBが空かどうかで行う（丸めたスコアでは判定しない）。
 - それ以外では、safestはwithin_detour=trueの中から `(weighted_risk（小数2桁に丸めた値）, duration, distance)` が最小、完全同値は候補順先頭。fastestは必ず対象になるので対象空にはならない。
 - トップレベルextra_minutesはsafestの同名値。
 - `risk_reduction_percent=round(100*(fastest.weighted_risk−safest.weighted_risk)/fastest.weighted_risk,1)`（丸めたweighted_riskから計算）。基準リスク0ならnull（0%と区別）。同一経路で基準リスク正なら0%。最短時間経路のスコアが0で他候補にBがある場合は、safest=fastest、削減率nullになる。
@@ -372,24 +374,25 @@ Bを事故ID昇順（gzip CSVの行順）で走査して、死者ありFとそ�
 - warningsは追加取得エラー（呼出し順）、1候補比較不能、全候補事故0件（「該当する事故が0件でも、安全であることの証明ではありません。」）の順で蓄積する。条件緩和の警告はない。
 - effective_conditionsはmode・period・day_type・weatherの4項目。未指定の条件はそれぞれ `全時間帯`・`全曜日`・`全天候` と表す。条件の解除による置換はない。天候指定は一致集計とスコアの倍率への指定であり、全天候集計を除外したという意味ではない。
 - risk_noteは、旧方式では「過去の事故件数に基づく参考指標です。経路から約72m以内の事故を、近いほど重く数えています。」に、指定天候が雨・霧・雪のときだけ「雨・霧・雪を指定した場合は、同じ天候の事故をさらに重く数えます。」を続け、最後に「交通量や通行回数で補正した事故確率ではありません。」を付ける。新方式は下記「新方式（schema 3）での扱い」による。
-- radius_m=72（旧方式では集合Bの半径）、distance_weight_sigma_m=24。aggregation_msは、旧方式では候補取得・検証・ソート終了後から集計/選定/ナビデータ/説明構築までのms、小数2桁。外部通信、JSON転送、描画を含まない。data_yearsはsource_year集合の昇順。
+- unattributed_radius_m=72（旧方式では集合Bの半径）。aggregation_msは、旧方式では候補取得・検証・ソート終了後から集計/選定/ナビデータ/説明構築までのms、小数2桁。外部通信、JSON転送、描画を含まない。data_yearsはsource_year集合の昇順。
 
 ### 新方式（schema 3）での扱い
 
 上記の選定・丸め・文面の規則は、新方式でも同じである。違いは次のとおり。
 
 - 候補は5章の探索で作る。全候補が上限B以下なので、`within_detour` は全候補で真になる。
-- 「全候補でBが空」は、全候補の `accident_count` が0であることと同じ。このときだけ `safest_id=null` とする。`weighted_risk` が正でも、全候補でBが空なら選ばない（フロントの検証条件でもある）。
+- `safest_id` は null にしない。全候補でBが空（全候補の `accident_count` が0）でも、`weighted_risk` はモデルの値（7章）で手段・時間帯・曜日・天候ごとに比較できるので、下記の順で選ぶ。このときも全候補事故0件の警告は残す。フロントの検証は「`safest_id` がnullなら全候補0件」の片方向である（旧方式の応答もこれを満たす）。
 - safestは、上記と同じ `(weighted_risk（丸めた値）, duration, distance)` の最小で選ぶ。5章のbestは、丸める前のモデルの値で最小なので、通常はbestが選ばれる。丸めた値が同じ候補があれば、上記の同点規則に従う。
-- reasonの「通常」の文面は、旧方式の「距離で重み付けしたリスク」を「推定リスク」に替えた次の文とする。ほかの3つの文面は変えない。
-  - 「取得した{N}候補のうち、最短時間経路から+{d}分以内で、推定リスクが最小の経路を選びました。追加{x}分、リスク{y}%減です。」
+- reasonの文面は次のとおり。「最短時間経路と同じ」と「基準リスクが0」は旧方式と同じで、「全候補で事故が0件」の旧方式の文面は使わない。
+  - 通常（2経路が異なり、事故がある）：「道路網を探索して得た{N}候補のうち、最短時間経路から+{d}分以内で、推定リスクが最小の経路を選びました。追加{x}分、リスク{y}%減です。」
+  - 全候補で事故が0件で、2経路が異なる：「全候補で該当する過去の事故はありません。道路の種類ごとの平均から推定したリスクが最小の経路を選びました。追加{x}分、リスク{y}%減です。」
 - warningsは、1候補比較不能（5章の候補の整理で `RoutingEngine` が入れる）、全候補事故0件の順。追加取得エラーの警告は起きない。探索の打ち切り・範囲の縮小・最短時間経路のみの場合も、警告を出さない（5章）。
 - risk_noteは、次の文をこの順に連結する。
   1. 「過去の事故に基づく推定指標です。事故を道路の区間や交差点に割り当て、道路の種類ごとの平均で偶然のばらつきを補正しています。」
   2. 移動手段が自動車のときだけ：「生活道路は交通量が少ないぶん件数が少なく出るため、重く数えています。」
   3. 指定天候が雨・霧・雪のときだけ：「雨・霧・雪を指定した場合は、同じ天候の事故をさらに重く数えます。」
   4. 「交通量や通行回数で補正した事故確率ではありません。」
-- `radius_m=72` は、帰属不明の事故を集合Bに数える範囲（6章）。`distance_weight_sigma_m=24` は互換のための固定値で、新方式では使わない。
+- `unattributed_radius_m=72` は、帰属不明の事故を集合Bに数える範囲（6章）。
 - aggregation_msは、`evaluate` の開始から、探索・集計・選定・ナビデータ・説明の構築が終わるまでのms、小数2桁。JSON転送、描画を含まない。
 
 数値計算はf64とする。`round(x,n)` は二進浮動小数上のhalf-even（Python `round` と同じ規則）とし、Rustの単純なround（half-away）へ置換しない。5桁fingerprint、7桁CSV、2桁weighted_risk、3桁リスク/kmと追加分、1桁削減率の境界fixtureを用意する。72m境界・同点規則もfixtureで検証する。
@@ -513,7 +516,7 @@ JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-
 | test_diagonal_bbox_does_not_include_distant_point                   | bbox内でも斜線から離れた点を除外。空間距離で判定                                                                                                                   |
 | test_safest_obeys_detour_and_uses_weighted_total                    | 600/900/1300秒、許容5分の境界、丸めた値での比較と同点規則（所要時間→距離）、削減率、0分ならfastest。返却全候補のwithin_detourも比較                                 |
 | test_fallback_is_shared_by_all_candidates_preserving_mode           | **緩和の試験は廃止**。全候補で天候一致0件でも条件を解除せず、`relaxed_conditions=[]`、weather_matchが全項目0、手段維持                                             |
-| test_time_fallback_and_all_zero_have_no_false_percentage            | **緩和部分は廃止**。全候補でBが空なら `safest_id / extra_minutes / risk_reduction_percent` がnull、reasonと警告。同一経路の文面                                      |
+| test_time_fallback_and_all_zero_have_no_false_percentage            | **緩和部分は廃止**。旧方式で全候補でBが空なら `safest_id / extra_minutes / risk_reduction_percent` がnull、reasonと警告。同一経路の文面                                      |
 | test_no_relaxation_if_another_candidate_has_exact_match             | 最短時間経路のスコア0で他候補にBあり→safest=fastest、削減率null                                                                                                    |
 | test_point_sampling_prioritizes_fatalities_without_affecting_totals | 400事故の集計を保持し250点、死亡10件を保持。Feature propertiesとして照合                                                                                           |
 
@@ -610,7 +613,7 @@ JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-
 - 人口集中地区の代わりに、事故原本の地形コードから推定した urban（形式書14.2節）。計画書からの逸脱であり、M3bとM5で妥当性を報告する。
 - ALTの距離表は、当初は自動車だけ・ランドマーク16個・始点からの表だけとする（形式書15章、メモリのため）。徒歩・自転車は直線距離と最大速度による下界を使う。
 - 所要時間のモデル（形式書8章の速度・右左折コスト）は初期値であり、M1で実際の経路と比べて調整する。
-- 新方式のreasonの「推定リスク」の文面とrisk_noteは、利用者の確認を経て確定する。
+- 新方式のreasonの文面は Issue #26 で確定した（[計画書](../issue-26-plan.md) 3章）。risk_noteは変えていない。
 
 ## 付録A 旧方式（比較用、schema 2のrelease）
 

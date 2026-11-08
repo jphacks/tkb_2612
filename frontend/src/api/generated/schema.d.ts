@@ -513,13 +513,13 @@ export interface components {
             api_version: "2.0";
             dataset_id: components["schemas"]["DatasetId"];
             fastest_id: components["schemas"]["RouteId"];
-            /** @description 事故考慮経路。全候補で該当事故（集合B）が0件ならnull。 */
+            /** @description 安全ルート。新方式は全候補で該当事故（集合B）が0件でも推定リスクが最小の経路を選ぶ。旧方式は全候補0件ならnull。nullなら全候補0件である。 */
             safest_id: components["schemas"]["RouteId"] | null;
             /** @description durationの安定昇順。fastest_idとnullでないsafest_idは必ずこの中に存在し、その候補だけnavigationが非null。同一IDの2選定は1個を共用。 */
             candidates: components["schemas"]["RouteCandidate"][];
             /** @description safestの追加所要時間、分、小数3桁。safest_idがnullならnull。 */
             extra_minutes: number | null;
-            /** @description 最短時間経路比の重み減少率、%、小数1桁。丸めたweighted_riskから計算。基準リスク0またはsafest_idがnullならnull。 */
+            /** @description 最短時間経路比の推定リスクの減少率、%、小数1桁。丸めたweighted_riskから計算。基準リスク0またはsafest_idがnullならnull。 */
             risk_reduction_percent: number | null;
             /** @description 候補内選定の理由。UIは文字列として表示する。 */
             reason: string;
