@@ -7,6 +7,7 @@ import {
   readSessionVotes,
   saveReportsWithVote,
   pointKey,
+  REPORTS_KEY,
   type SafetyReport,
 } from "../community/reports";
 import LocationInput, { type LocationValue } from "./LocationInput";
@@ -39,6 +40,7 @@ export function CommunitySafety() {
   const [addingSupport, setAddingSupport] = useState(false);
   const [supportText, setSupportText] = useState("");
   const positionGeneration = useRef(0);
+  const viewingId = viewing?.id;
 
   function locate() {
     const generation = ++positionGeneration.current;
@@ -72,6 +74,20 @@ export function CommunitySafety() {
     };
   }, []);
 
+  useEffect(() => {
+    const sync = (event: StorageEvent) => {
+      if (event.key !== REPORTS_KEY && event.key !== null) return;
+      const latest = readReports();
+      setReports(latest);
+      if (!viewingId) return;
+      const current = latest.find((report) => report.id === viewingId);
+      if (current) setViewing(current);
+      else close();
+    };
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, [viewingId]);
+
   function close() {
     setPoint(null);
     setViewing(null);
@@ -102,7 +118,7 @@ export function CommunitySafety() {
       supportCount: 1,
       comments: [],
     };
-    const next = [...reports, report];
+    const next = [...readReports(), report];
     try {
       setVotedPoints(saveReportsWithVote(next, report));
     } catch {
@@ -119,8 +135,22 @@ export function CommunitySafety() {
   }
 
   function updateReport(updated: SafetyReport) {
-    const next = reports.map((report) =>
-      report.id === updated.id ? updated : report,
+    const latest = readReports();
+    const current = latest.find((report) => report.id === updated.id);
+    if (!current) {
+      setError("口コミを保存できませんでした。");
+      return false;
+    }
+    const addedComments = updated.comments.filter(
+      (comment) =>
+        !current.comments.some((existing) => existing.id === comment.id),
+    );
+    const merged = {
+      ...current,
+      comments: [...current.comments, ...addedComments],
+    };
+    const next = latest.map((report) =>
+      report.id === merged.id ? merged : report,
     );
     try {
       saveReports(next);
@@ -129,7 +159,7 @@ export function CommunitySafety() {
       return false;
     }
     setReports(next);
-    setViewing(updated);
+    setViewing(merged);
     setError("");
     return true;
   }
@@ -137,8 +167,14 @@ export function CommunitySafety() {
   function support() {
     if (!viewing || addingSupport || readSessionVotes().has(pointKey(viewing)))
       return;
-    const updated = { ...viewing, supportCount: viewing.supportCount + 1 };
-    const next = reports.map((report) =>
+    const latest = readReports();
+    const current = latest.find((report) => report.id === viewing.id);
+    if (!current) {
+      setError("口コミを保存できませんでした。");
+      return;
+    }
+    const updated = { ...current, supportCount: current.supportCount + 1 };
+    const next = latest.map((report) =>
       report.id === updated.id ? updated : report,
     );
     try {

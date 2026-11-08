@@ -442,4 +442,134 @@ describe("community safety reports", () => {
     expect(sessionStorage.getItem(SESSION_VOTES_KEY)).toBeNull();
     expect(localStorage.getItem(REPORTS_KEY)).toBe(savedBeforeVote);
   });
+
+  it("adds a new post to the latest stored reports instead of the mounted snapshot", async () => {
+    const user = userEvent.setup();
+    render(<CommunitySafety />);
+    const external = {
+      id: "external",
+      kind: "danger",
+      text: "他タブで追加",
+      lat: 35.7,
+      lon: 139.8,
+      createdAt: "2026-11-04T09:15:00.000Z",
+      supportCount: 1,
+      comments: [],
+    };
+    localStorage.setItem(REPORTS_KEY, JSON.stringify([external]));
+
+    const input = await beginPost(user);
+    await user.type(input, "新しい投稿");
+    await user.click(screen.getByRole("button", { name: "確定" }));
+
+    const saved = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
+    expect(saved).toHaveLength(2);
+    expect(saved).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "external", text: "他タブで追加" }),
+        expect.objectContaining({ text: "新しい投稿" }),
+      ]),
+    );
+    expect(screen.getByRole("region", { name: "口コミ" })).toHaveTextContent(
+      "新しい投稿",
+    );
+  });
+
+  it("increments the latest support count without overwriting another tab's update", async () => {
+    const user = userEvent.setup();
+    seed();
+    render(<CommunitySafety />);
+    const [stored] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
+    localStorage.setItem(
+      REPORTS_KEY,
+      JSON.stringify([{ ...stored, supportCount: 4 }]),
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
+    );
+    await user.click(screen.getByRole("button", { name: "投票" }));
+
+    const [saved] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
+    expect(saved.supportCount).toBe(5);
+    expect(screen.getByLabelText("5票")).toBeVisible();
+  });
+
+  it("appends a comment to the latest report without overwriting its support count", async () => {
+    const user = userEvent.setup();
+    seed();
+    render(<CommunitySafety />);
+    await user.click(
+      screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
+    );
+    await user.click(screen.getByRole("button", { name: "投票" }));
+
+    const [stored] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
+    const externalComment = {
+      id: "external-comment",
+      text: "他タブの追記",
+      createdAt: "2026-11-04T10:00:00.000Z",
+    };
+    localStorage.setItem(
+      REPORTS_KEY,
+      JSON.stringify([
+        { ...stored, supportCount: 7, comments: [externalComment] },
+      ]),
+    );
+
+    await user.type(
+      screen.getByRole("textbox", { name: "詳細情報を入力" }),
+      "自分の追記",
+    );
+    await user.click(screen.getByRole("button", { name: "確定" }));
+
+    const [saved] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
+    expect(saved.supportCount).toBe(7);
+    expect(saved.comments).toEqual([
+      externalComment,
+      expect.objectContaining({ text: "自分の追記" }),
+    ]);
+  });
+
+  it("reloads reports and the open review when another tab writes storage", async () => {
+    const user = userEvent.setup();
+    seed();
+    render(<CommunitySafety />);
+    await user.click(
+      screen.getByRole("button", { name: "危険の口コミ：夜は暗い" }),
+    );
+
+    const [stored] = JSON.parse(localStorage.getItem(REPORTS_KEY)!);
+    const other = {
+      ...stored,
+      id: "other",
+      text: "別の地点",
+      lat: stored.lat + 0.01,
+      supportCount: 3,
+    };
+    localStorage.setItem(
+      REPORTS_KEY,
+      JSON.stringify([{ ...stored, supportCount: 6 }, other]),
+    );
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: REPORTS_KEY }),
+      );
+    });
+    expect(screen.getByLabelText("6票")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "危険の口コミ：別の地点" }),
+    ).toBeInTheDocument();
+
+    localStorage.clear();
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: null }));
+    });
+    expect(
+      screen.queryByRole("region", { name: "口コミ" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /の口コミ/ }),
+    ).not.toBeInTheDocument();
+  });
 });
