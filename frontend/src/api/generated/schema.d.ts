@@ -22,7 +22,7 @@ export interface paths {
          *     unknownキーは無視。hour/period整合と距離等の相関制約はbehavior.mdを参照。
          *     出発日時は受け取らない。period/day_type/weatherの自動値は/api/conditionsで得る。
          *     天候は事故を除外せず、一致事故をweather_matchで別集計し、スコアで重く数える。
-         *     全候補で該当事故が0件でも条件を解除しない。その場合safest_idはnull。
+         *     全候補で該当事故が0件でも条件を解除しない。その場合、新方式は推定リスクでsafest_idを選び、旧方式（schema 2）はnullを返す。
          *     navigationはfastest_idとnullでないsafest_idの候補だけに含め、未選定はnull。
          *     同一選定IDでは1個を共用する。新方式（schema 3）は外部の経路提供元を呼ばない。
          *     旧方式（schema 2）はナビ用生成でOSRM呼出しを追加せず、1検索最大3呼出し・steps=falseを維持する。

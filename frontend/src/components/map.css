@@ -577,7 +577,9 @@
   position: absolute;
   left: 16px;
   bottom: 16px;
-  z-index: 3;
+  /* 縦が短い地図では経路カードと重なり得る。閉じているときはカード（z-index 2）の
+     操作を妨げないように下に置き、開いたときだけ前に出す。 */
+  z-index: 1;
   width: min(340px, calc(100% - 32px));
   max-height: 45%;
   overflow-y: auto;
@@ -586,6 +588,9 @@
   border-radius: 8px;
   background: #fff;
   font-size: 12px;
+}
+.route-result-notes:has(details[open]) {
+  z-index: 3;
 }
 .route-result-notes p {
   margin: 0 0 6px;
