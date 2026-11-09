@@ -139,7 +139,7 @@ function AccidentPopup({
         <dd>{fact.deaths}人</dd>
         <dt>負傷者数</dt>
         <dd>{fact.injuries}人</dd>
-        <dt>結び付け</dt>
+        <dt>発生場所</dt>
         <dd>{attributionLabel(fact.attribution, radiusM)}</dd>
       </dl>
     </section>

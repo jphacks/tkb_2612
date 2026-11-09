@@ -1,21 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { attributionLabel } from "./accidentAttribution";
 
-describe("事故の結び付けの表示", () => {
-  it("道路の区間への割り当てを表す", () => {
-    expect(attributionLabel("edge", 72)).toBe("道路の区間");
+describe("事故の発生場所の表示", () => {
+  it("道路の区間に割り当てた事故を経路上の道路と表す", () => {
+    expect(attributionLabel("edge", 72)).toBe("経路上の道路");
   });
 
-  it("交差点への割り当てを表す", () => {
-    expect(attributionLabel("intersection", 72)).toBe("交差点");
+  it("交差点に割り当てた事故を経路上の交差点と表す", () => {
+    expect(attributionLabel("intersection", 72)).toBe("経路上の交差点");
   });
 
-  it("帰属不明と経路からの範囲を表す", () => {
-    expect(attributionLabel("unattributed", 72)).toBe(
-      "道路を特定できず（経路から72m以内）",
-    );
+  it("帰属不明の事故を経路の近くと表し、範囲を添える", () => {
+    expect(attributionLabel("unattributed", 72)).toBe("経路の近く（72m以内）");
     expect(attributionLabel("unattributed", 118)).toBe(
-      "道路を特定できず（経路から118m以内）",
+      "経路の近く（118m以内）",
     );
   });
 });

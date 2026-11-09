@@ -154,9 +154,9 @@ describe("RouteMap", () => {
       (candidate) => candidate.id === result.fastest_id,
     )!;
     const expected = {
-      edge: "道路の区間",
-      intersection: "交差点",
-      unattributed: `道路を特定できず（経路から${result.unattributed_radius_m}m以内）`,
+      edge: "経路上の道路",
+      intersection: "経路上の交差点",
+      unattributed: `経路の近く（${result.unattributed_radius_m}m以内）`,
     };
     expect(
       route.accident_points.features.map(
@@ -170,7 +170,7 @@ describe("RouteMap", () => {
         }),
       );
       const popup = screen.getByRole("region", { name: "過去の事故記録" });
-      const term = within(popup).getByText("結び付け");
+      const term = within(popup).getByText("発生場所");
       expect(term.nextElementSibling).toHaveTextContent(
         expected[accident.properties.attribution],
       );
@@ -197,9 +197,9 @@ describe("RouteMap", () => {
       }),
     );
     const popup = screen.getByRole("region", { name: "過去の事故記録" });
-    const term = within(popup).getByText("結び付け");
+    const term = within(popup).getByText("発生場所");
     expect(term.nextElementSibling).toHaveTextContent(
-      "道路を特定できず（経路から118m以内）",
+      "経路の近く（118m以内）",
     );
   });
 
