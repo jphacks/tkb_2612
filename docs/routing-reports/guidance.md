@@ -47,13 +47,13 @@
 
 ### 実 release の検査（最終）
 
-`ROUTING_REAL_RELEASE_DIR=<release> cargo test --release --test routing_real_release -- --ignored --nocapture` の結果である。案内の件数は全候補の合計で、上の表（選定経路だけ）とは対象が異なる。
+`ROUTING_REAL_RELEASE_DIR=<release> cargo test --release --test routing_real_release -- --ignored --nocapture` の結果である。案内の件数は選定経路の合計で、到着の案内を含む。上の表の案内の総数は到着を含まないので、経路の本数だけ少ない（徒歩なら `2,278+144=2,422`）。上の表は `d629a71` の集計で、この検査は環状交差点の修正の後である。修正で案内の件数が変わったのは自動車の1件だけだった（`4,006+184+1=4,191`）。
 
 | 手段 | 成功 | 処理時間の中央値 | 処理時間の最大 | 案内の件数 | `max_render_bytes` |
 |---|---|---|---|---|---|
-| 徒歩 | 100/100 | 0.010秒 | 0.227秒 | 2,422 | 49,496 |
-| 自転車 | 100/100 | 0.103秒 | 1.839秒 | 5,242 | 95,856 |
-| 自動車 | 100/100 | 0.748秒 | 4.658秒 | 4,190 | 253,158 |
+| 徒歩 | 100/100 | 0.010秒 | 0.293秒 | 2,422 | 49,496 |
+| 自転車 | 100/100 | 0.112秒 | 2.014秒 | 5,242 | 95,856 |
+| 自動車 | 100/100 | 0.768秒 | 5.190秒 | 4,191 | 253,158 |
 
 M5 の処理時間の最大は、徒歩0.33秒、自転車2.51秒、自動車5.27秒である。HTTP 経由（4並列）の最大は11.3秒だった。
 
@@ -66,6 +66,8 @@ M5 の処理時間の最大は、徒歩0.33秒、自転車2.51秒、自動車5.2
 | 本線を走るだけで、ランプの出口を `slight` と案内する | 出る辺が `_link` でなければ、`_link` の出口を分岐に数えない | `t7_passing_a_ramp_on_the_main_road_is_arrive_only`、`t7_leaving_on_a_ramp_keeps_the_side_of_the_ramp` |
 | ほぼ直進で脇道を通るだけなのに `slight` と案内する | `|a|<10°` のときは、分岐の相手を20°未満の出口に絞る（`STRAIGHT_MAX_DEG`、`STRAIGHT_FORK_MAX_DEG`） | `t7_straight_past_a_side_road_at_thirty_five_degrees_is_arrive_only` |
 | クランクで `slight` の向きが逆になる | `|a|≥10°` なら連全体の角度の符号で向きを決める | `t7_fork_direction_follows_the_whole_run_at_a_jog` |
+
+この後、コードレビュー（GPT-6.1 Sol）の指摘で、環状交差点の連に出口の先のノードが入る問題を直した。環を出た後のノードは環の連に加えず、環の直後の連は手前の方位を環の出口より前で測らない（テスト：`long_roundabout_keeps_the_step_at_its_exit_past_a_nearby_side_road`、`short_roundabout_does_not_merge_a_turn_just_after_its_exit`）。
 
 `TURN_MIN_DEG` などの既存の定数は変えていない。手段ごとに値を分ける必要はなかった。徒歩の案内量は定数を変えるほどの水準ではないと判断した。
 

@@ -499,6 +499,62 @@ fn t4_14_roundabout_second_exit_is_right_at_exit_node() {
     assert_eq!(steps[1].maneuver, Maneuver::Arrive);
 }
 
+/// 60mを超える環の出口の10m先で脇道を直進しても、案内地点は環の出口のまま。
+#[test]
+fn long_roundabout_keeps_the_step_at_its_exit_past_a_nearby_side_road() {
+    let mut b = GraphBuilder::new();
+    let w = add(&mut b, -100.0, 0.0);
+    let r0 = add(&mut b, 0.0, 0.0);
+    let r1 = add(&mut b, 40.0, 0.0);
+    let r2 = add(&mut b, 80.0, 0.0);
+    let r3 = add(&mut b, 120.0, 0.0);
+    let r4 = add(&mut b, 160.0, 0.0);
+    let after_exit = add(&mut b, 120.0, -10.0);
+    let side = add(&mut b, 220.0, -10.0);
+    let end = add(&mut b, 120.0, -110.0);
+    edge(&mut b, w, r0);
+    b.add_edge(EdgeSpec::new(r0, r1).flags(edge_flags::ROUNDABOUT));
+    b.add_edge(EdgeSpec::new(r1, r2).flags(edge_flags::ROUNDABOUT));
+    b.add_edge(EdgeSpec::new(r2, r3).flags(edge_flags::ROUNDABOUT));
+    b.add_edge(EdgeSpec::new(r3, r4).flags(edge_flags::ROUNDABOUT));
+    edge(&mut b, r3, after_exit);
+    edge(&mut b, after_exit, side);
+    edge(&mut b, after_exit, end);
+    let (prepared, steps) = guidance(&b, &[w, r0, r1, r2, r3, after_exit, end], Mode::Car, &[]);
+    assert_eq!(steps.len(), 2, "{steps:?}");
+    assert_eq!(steps[0].maneuver, Maneuver::Right);
+    assert_eq!(steps[0].at_m, node_distance(&prepared, 3));
+    assert_eq!(steps[1].maneuver, Maneuver::Arrive);
+}
+
+/// 60m未満の環でも、出口の14m先の曲がりを環の案内に合成しない。
+#[test]
+fn short_roundabout_does_not_merge_a_turn_just_after_its_exit() {
+    let mut b = GraphBuilder::new();
+    let w = add(&mut b, -100.0, 0.0);
+    let r0 = add(&mut b, 0.0, 0.0);
+    let r1 = add(&mut b, 20.0, 0.0);
+    let r2 = add(&mut b, 40.0, 0.0);
+    let r3 = add(&mut b, 60.0, 0.0);
+    let after_exit = add(&mut b, 40.0, -14.0);
+    let south = add(&mut b, 40.0, -114.0);
+    let east = add(&mut b, 140.0, -14.0);
+    edge(&mut b, w, r0);
+    b.add_edge(EdgeSpec::new(r0, r1).flags(edge_flags::ROUNDABOUT));
+    b.add_edge(EdgeSpec::new(r1, r2).flags(edge_flags::ROUNDABOUT));
+    b.add_edge(EdgeSpec::new(r2, r3).flags(edge_flags::ROUNDABOUT));
+    edge(&mut b, r2, after_exit);
+    edge(&mut b, after_exit, south);
+    edge(&mut b, after_exit, east);
+    let (prepared, steps) = guidance(&b, &[w, r0, r1, r2, after_exit, east], Mode::Car, &[]);
+    assert_eq!(steps.len(), 3, "{steps:?}");
+    assert_eq!(steps[0].maneuver, Maneuver::Right);
+    assert_eq!(steps[0].at_m, node_distance(&prepared, 2));
+    assert_eq!(steps[1].maneuver, Maneuver::Left);
+    assert_eq!(steps[1].at_m, node_distance(&prepared, 3));
+    assert_eq!(steps[2].maneuver, Maneuver::Arrive);
+}
+
 #[test]
 fn t4_15_single_directed_edge_is_arrive_only_at_length() {
     let mut b = GraphBuilder::new();
