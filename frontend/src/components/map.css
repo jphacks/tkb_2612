@@ -347,6 +347,9 @@
   z-index: 2;
   pointer-events: none;
 }
+.map-route-callouts.is-tight {
+  z-index: 4;
+}
 .map-callout-connectors {
   position: absolute;
   inset: 0;
@@ -592,6 +595,11 @@
   border-top: 1px solid #e2e8f0;
   background: #fff;
   font-size: 12px;
+}
+@media (max-height: 480px) {
+  .route-result-notes {
+    max-height: 30%;
+  }
 }
 /* デモの切替ボタン（固定配置）に文字が隠れないようにする。 */
 :root:has(.demo-menu) .route-result-notes {
