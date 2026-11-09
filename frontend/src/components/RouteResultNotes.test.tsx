@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { createDemoRouteResponse, DEMO_PLACES } from "../api/demo";
 import type { RouteRequest, RouteResponse } from "../lib/types";
-import { RouteResultNotes } from "./RouteResultNotes";
+import { RouteResultNotes, truncateRisk } from "./RouteResultNotes";
 
 const request: RouteRequest = {
   origin: DEMO_PLACES[0],
@@ -144,6 +144,19 @@ describe("RouteResultNotes", () => {
     );
     expect(within(safestRow).getAllByRole("cell").map((c) => c.textContent))
       .toEqual(["28", "12件"]);
+  });
+
+  it.each([
+    [123.98, "123"],
+    [26.8, "26"],
+    [6.14, "6.1"],
+    [1, "1.0"],
+    [0.53, "0.53"],
+    [0.29, "0.29"],
+    [0.144, "0.14"],
+    [0, "0.00"],
+  ])("truncates the estimated risk %d to %s", (value, expected) => {
+    expect(truncateRisk(value)).toBe(expected);
   });
 
   it("shows a dash when the total accident count is not available", () => {
