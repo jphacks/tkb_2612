@@ -108,11 +108,9 @@ function routeLabel(route: RouteCandidate, result: RouteResponse) {
 
 function AccidentPopup({
   accident,
-  radiusM,
   onClose,
 }: {
   accident: AccidentFeature;
-  radiusM: number;
   onClose: () => void;
 }) {
   const fact = accident.properties;
@@ -140,7 +138,7 @@ function AccidentPopup({
         <dt>負傷者数</dt>
         <dd>{fact.injuries}人</dd>
         <dt>発生場所</dt>
-        <dd>{attributionLabel(fact.attribution, radiusM)}</dd>
+        <dd>{attributionLabel(fact.attribution)}</dd>
       </dl>
     </section>
   );
@@ -853,7 +851,6 @@ export function RouteMap(props: RouteMapProps) {
       {!disabled && selectedAccident && result && (
         <AccidentPopup
           accident={selectedAccident}
-          radiusM={result.unattributed_radius_m}
           onClose={() => setAccidentId(null)}
         />
       )}

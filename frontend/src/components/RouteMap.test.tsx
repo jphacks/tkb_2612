@@ -154,9 +154,9 @@ describe("RouteMap", () => {
       (candidate) => candidate.id === result.fastest_id,
     )!;
     const expected = {
-      edge: "経路上の道路",
-      intersection: "経路上の交差点",
-      unattributed: `経路の近く（${result.unattributed_radius_m}m以内）`,
+      edge: "道路",
+      intersection: "交差点",
+      unattributed: "経路の近く",
     };
     expect(
       route.accident_points.features.map(
@@ -175,32 +175,6 @@ describe("RouteMap", () => {
         expected[accident.properties.attribution],
       );
     }
-  });
-
-  it("uses the response's unattributed radius in the accident popup", () => {
-    const result: RouteResponse = {
-      ...createDemoRouteResponse(request),
-      unattributed_radius_m:
-        118 as unknown as RouteResponse["unattributed_radius_m"],
-    };
-    const props = { ...mapProps(result), selectedRouteId: result.fastest_id };
-    render(<RouteMap {...props} />);
-    const route = result.candidates.find(
-      (candidate) => candidate.id === result.fastest_id,
-    )!;
-    const accident = route.accident_points.features.find(
-      (point) => point.properties.attribution === "unattributed",
-    )!;
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: `事故記録 ${accident.id + 1} を表示`,
-      }),
-    );
-    const popup = screen.getByRole("region", { name: "過去の事故記録" });
-    const term = within(popup).getByText("発生場所");
-    expect(term.nextElementSibling).toHaveTextContent(
-      "経路の近く（118m以内）",
-    );
   });
 
   it("shows both accident legend entries and hides them with accident points", () => {
