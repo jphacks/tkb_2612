@@ -632,15 +632,24 @@
 .route-result-notes details[open] > summary {
   margin-bottom: 6px;
 }
-.route-result-notes dl {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 2px 12px;
-  margin: 0;
+.route-result-table {
+  margin: 0 0 6px;
+  border-collapse: collapse;
 }
-.route-result-notes dt {
+.route-result-table th,
+.route-result-table td {
+  padding: 2px 12px 2px 0;
+  text-align: left;
+  font-weight: 400;
+}
+.route-result-table thead th {
   color: #475569;
 }
-.route-result-notes dd {
-  margin: 0;
+.route-result-table td {
+  font-variant-numeric: tabular-nums;
+}
+.route-result-heading {
+  margin: 8px 0 4px;
+  font-size: inherit;
+  font-weight: 600;
 }

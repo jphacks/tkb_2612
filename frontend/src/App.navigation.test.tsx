@@ -82,7 +82,11 @@ describe("ナビ中の画面構成と結線（手順10）", () => {
       expect(group.getByRole("button", { name: "実機GPSで開始" })).toBeEnabled();
       expect(group.getByRole("button", { name: "模擬走行で開始" })).toBeEnabled();
     }
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    // 比較表は出さない。表は説明の欄（経路ごとの推定リスクと事故件数）の中だけにある。
+    const notes = screen.getByRole("region", { name: "検索結果の説明" });
+    for (const table of screen.queryAllByRole("table")) {
+      expect(notes).toContainElement(table);
+    }
   });
 
   it.each(["zero", "same"] as const)("%sでは1枚の選定カードだけから開始できる", async (scenario) => {

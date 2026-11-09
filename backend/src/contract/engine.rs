@@ -277,6 +277,10 @@ pub struct EvaluatedRoute {
     pub path: RoutedPath,
     /// 集合B（天候で絞らない）の集計。
     pub totals: AccidentTotals,
+    /// 移動手段・時間帯・曜日区分・天候のどれでも絞る前の、経路に結び付いた事故の総件数。
+    /// 新方式は集合Bを作るときの `assigned` と `nearest` を合わせた事故IDの数（同じIDを
+    /// 二重に数えない）。旧方式はこの値を作らないので常に `None`（応答では `null`）。
+    pub total_accident_count: Option<u64>,
     /// 天候指定時の一致集計。天候allなら `None`。
     pub weather_match: Option<AccidentTotals>,
     /// 小数2桁に丸めた値。

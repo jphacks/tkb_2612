@@ -295,6 +295,7 @@ export function createDemoRouteResponse(
       distance: length,
       geometry: { type: "LineString", coordinates: coords },
       accident_count: count,
+      total_accident_count: count,
       fatal_accidents: 0,
       injury_accidents: count,
       deaths: 0,

@@ -122,6 +122,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 1
+                      total_accident_count: null
                       fatal_accidents: 1
                       injury_accidents: 0
                       deaths: 1
@@ -225,6 +226,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 0
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 0
                       deaths: 0
@@ -292,6 +294,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 1
                       injury_accidents: 1
                       deaths: 1
@@ -409,6 +412,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 2
                       deaths: 0
@@ -506,6 +510,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 2
                       deaths: 0
@@ -612,6 +617,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 1
                       injury_accidents: 1
                       deaths: 1
@@ -724,6 +730,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 2
                       deaths: 0
@@ -816,6 +823,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 2
                       deaths: 0
@@ -917,6 +925,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 1
                       injury_accidents: 1
                       deaths: 1
@@ -1034,6 +1043,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 2
                       deaths: 0
@@ -1131,6 +1141,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 2
                       deaths: 0
@@ -1237,6 +1248,7 @@ paths:
                         - - 139.01
                           - 35.01
                       accident_count: 255
+                      total_accident_count: null
                       fatal_accidents: 5
                       injury_accidents: 250
                       deaths: 5
@@ -2392,7 +2404,7 @@ components:
       description: 集合Bのうち事故の天候が指定天候と一致する事故の集計。該当なしは全項目0。
     RouteCandidate:
       type: object
-      required: [id, duration, distance, geometry, accident_count, fatal_accidents, injury_accidents, deaths, injuries, weather_match, weighted_risk, risk_per_km, accident_points, points_shown, high_risk_sections, high_risk_total, navigation, exact_condition_count, extra_minutes, within_detour]
+      required: [id, duration, distance, geometry, accident_count, total_accident_count, fatal_accidents, injury_accidents, deaths, injuries, weather_match, weighted_risk, risk_per_km, accident_points, points_shown, high_risk_sections, high_risk_total, navigation, exact_condition_count, extra_minutes, within_detour]
       additionalProperties: false
       properties:
         id: {$ref: '#/components/schemas/RouteId'}
@@ -2402,6 +2414,10 @@ components:
         accident_count:
           $ref: '#/components/schemas/Count'
           description: 集合B（新方式は経路の辺・交差点に割り当てた事故と72m以内の帰属不明の事故、旧方式は72m以内。移動手段・時間帯・曜日区分で絞り、天候では絞らない）の事故件数、間引き前
+        total_accident_count:
+          type: [integer, 'null']
+          minimum: 0
+          description: 経路に結び付いた事故の総件数。移動手段・時間帯・曜日区分・天候のどれでも絞る前の件数で、新方式は集合Bを作るときの経路の辺・交差点への割り当てと72m以内の帰属不明の事故を合わせた事故IDの数（同じ事故を二重に数えない）。旧方式はこの値を作らないのでnull。
         fatal_accidents:
           $ref: '#/components/schemas/Count'
           description: 死者1人以上の事故件数

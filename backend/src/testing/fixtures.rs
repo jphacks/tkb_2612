@@ -234,6 +234,8 @@ fn parse_candidate(c: &Value) -> EvaluatedRoute {
             coordinates: parse_line_string(field(c, "geometry")),
         },
         totals: parse_totals(c),
+        total_accident_count: nullable(field(c, "total_accident_count"))
+            .map(|v| as_u64(v, "total_accident_count")),
         weather_match: nullable(field(c, "weather_match")).map(parse_totals),
         weighted_risk: as_f64(field(c, "weighted_risk"), "weighted_risk"),
         risk_per_km: as_f64(field(c, "risk_per_km"), "risk_per_km"),

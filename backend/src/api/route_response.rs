@@ -266,6 +266,14 @@ fn check_candidate(
         check_position(*p, &id)?;
     }
     check_totals(&c.totals, &id)?;
+    if let Some(total) = c.total_accident_count {
+        safe(total, &id)?;
+        if total < c.totals.accident_count {
+            return violation(format!(
+                "{id}: total_accident_countがaccident_countより小さい"
+            ));
+        }
+    }
     if c.weather_match.is_some() != outcome.conditions.weather.is_some() {
         return violation(format!("{id}: weather_matchの有無が天候指定と一致しない"));
     }
@@ -638,6 +646,7 @@ struct CandidateDto<'a> {
     distance: f64,
     geometry: LineStringDto<'a>,
     accident_count: u64,
+    total_accident_count: Option<u64>,
     fatal_accidents: u64,
     injury_accidents: u64,
     deaths: u64,
@@ -671,6 +680,7 @@ impl<'a> CandidateDto<'a> {
                 coordinates: Positions(&c.path.coordinates),
             },
             accident_count: c.totals.accident_count,
+            total_accident_count: c.total_accident_count,
             fatal_accidents: c.totals.fatal_accidents,
             injury_accidents: c.totals.injury_accidents,
             deaths: c.totals.deaths,

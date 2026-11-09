@@ -149,6 +149,9 @@ pub struct AccidentSet {
     /// 事故IDの昇順。
     pub ids: Vec<u32>,
     pub locations: BTreeMap<u32, Location>,
+    /// 条件（移動手段・時間帯・曜日区分）で絞る前の事故IDの数。天候でも絞らない。
+    /// `assigned` と `nearest` を合わせた数（`nearest` は `assigned` にないIDだけ）。
+    pub total: u64,
 }
 
 /// 集合Bの集計。
@@ -362,6 +365,9 @@ pub fn build_accident_set(
         }
     }
 
+    // 絞る前の総件数。`nearest` は `assigned` にないIDだけなので、両者の和が事故IDの数。
+    let total = (assigned.len() + nearest.len()) as u64;
+
     // 6章(3)：手段・時間帯・曜日区分で絞る（天候では減らさない）。
     let mut ids = Vec::new();
     let mut locations = BTreeMap::new();
@@ -378,7 +384,11 @@ pub fn build_accident_set(
         }
     }
     ids.sort_unstable();
-    Ok(AccidentSet { ids, locations })
+    Ok(AccidentSet {
+        ids,
+        locations,
+        total,
+    })
 }
 
 /// 集合Bの件数・人数・天候一致・表示事故点（behavior.md 7章）。

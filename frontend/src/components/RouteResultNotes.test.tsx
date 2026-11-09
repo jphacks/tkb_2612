@@ -86,49 +86,122 @@ describe("RouteResultNotes", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows an unknown reduction as-is instead of turning null into zero", () => {
-    const result = createDemoRouteResponse(request, "zero");
-    expect(result.risk_reduction_percent).toBeNull();
-    const section = renderNotes(result);
-    expect(within(section).getByText("算出できません")).toBeInTheDocument();
-    expect(within(section).queryByText("0.0%")).not.toBeInTheDocument();
-  });
+  function routes(result: RouteResponse) {
+    return {
+      safest: result.candidates.find((route) => route.id === result.safest_id)!,
+      fastest: result.candidates.find(
+        (route) => route.id === result.fastest_id,
+      )!,
+    };
+  }
 
-  it("shows a numeric reduction with one decimal place", () => {
+  it("states the extra time and the risk reduction when the routes differ", () => {
     const result = createDemoRouteResponse(request);
-    expect(result.risk_reduction_percent).not.toBeNull();
+    result.extra_minutes = 4.4;
+    result.risk_reduction_percent = 77.23;
     const section = renderNotes(result);
+    const details = section.querySelector("details")!;
     expect(
-      within(section).getByText(
-        `${result.risk_reduction_percent!.toFixed(1)}%`,
+      within(details).getByText(
+        "安全ルートは最短ルートより4分長くかかりますが、推定リスクは77.2%低くなります。",
       ),
     ).toBeInTheDocument();
   });
 
-  it("puts reason and risk_note inside the details", () => {
-    const result = createDemoRouteResponse(request);
+  it("says the fastest route is also the lowest risk when both are the same", () => {
+    const result = createDemoRouteResponse(request, "same");
+    expect(result.safest_id).toBe(result.fastest_id);
     const section = renderNotes(result);
-    const details = section.querySelector("details")!;
-    expect(within(details).getByText(result.reason)).toBeInTheDocument();
-    expect(within(details).getByText(result.risk_note)).toBeInTheDocument();
+    expect(
+      within(section).getByText(/最短ルートが推定リスクもいちばん低い経路です/),
+    ).toBeInTheDocument();
+    const rows = within(section).getAllByRole("row");
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toHaveTextContent("最短ルート・安全ルート");
   });
 
-  it("renders reason as text even when it contains HTML", () => {
+  it("shows the truncated estimated risk and the total accident count per route", () => {
     const result = createDemoRouteResponse(request);
-    result.reason = "理由 <b>x</b>";
+    const { safest, fastest } = routes(result);
+    fastest.weighted_risk = 123.98;
+    fastest.accident_count = 3;
+    fastest.total_accident_count = 56;
+    safest.weighted_risk = 28.01;
+    safest.accident_count = 1;
+    safest.total_accident_count = 12;
     const section = renderNotes(result);
-    expect(within(section).getByText("理由 <b>x</b>")).toBeInTheDocument();
+    const table = within(section).getByRole("table");
+    const [fastestRow, safestRow] = within(table)
+      .getAllByRole("row")
+      .slice(1);
+    expect(within(fastestRow).getByRole("rowheader")).toHaveTextContent(
+      "最短ルート",
+    );
+    expect(within(fastestRow).getAllByRole("cell").map((c) => c.textContent))
+      .toEqual(["123", "56件"]);
+    expect(within(safestRow).getByRole("rowheader")).toHaveTextContent(
+      "安全ルート",
+    );
+    expect(within(safestRow).getAllByRole("cell").map((c) => c.textContent))
+      .toEqual(["28", "12件"]);
+  });
+
+  it("shows a dash when the total accident count is not available", () => {
+    const result = createDemoRouteResponse(request);
+    routes(result).fastest.total_accident_count = null;
+    const section = renderNotes(result);
+    const fastestRow = within(section).getAllByRole("row")[1];
+    expect(within(fastestRow).getAllByRole("cell")[1]).toHaveTextContent("—");
+  });
+
+  it("explains what the accident count covers with the radius and data years", () => {
+    const result = createDemoRouteResponse(request);
+    result.data_years = [2019, 2020, 2021, 2022, 2023, 2024, 2025];
+    const section = renderNotes(result);
+    expect(section).toHaveTextContent(
+      `事故件数は、経路上と経路の近く（${result.unattributed_radius_m}m以内）で2019〜2025年に起きた事故の数です。時間帯・曜日・天候・移動手段では絞っていません。`,
+    );
+  });
+
+  it("explains how the risk is estimated, adding the car and weather lines only when they apply", () => {
+    const result = createDemoRouteResponse(request);
+    result.effective_conditions = {
+      ...result.effective_conditions,
+      mode: "walk",
+      weather: "晴",
+    };
+    const { unmount } = render(<RouteResultNotes result={result} />);
+    let section = screen.getByRole("region", { name: "検索結果の説明" });
+    expect(section).toHaveTextContent("過去の事故を、起きた道路や交差点ごとに数えています。");
+    expect(section).toHaveTextContent("事故に遭う確率ではありません。");
+    expect(section).not.toHaveTextContent("生活道路");
+    expect(section).not.toHaveTextContent("雨・霧・雪を指定したとき");
+    unmount();
+
+    result.effective_conditions = {
+      ...result.effective_conditions,
+      mode: "car",
+      weather: "雪",
+    };
+    section = renderNotes(result);
+    expect(section).toHaveTextContent("生活道路は交通量が少ないぶん");
+    expect(section).toHaveTextContent("雨・霧・雪を指定したときは");
+  });
+
+  it("does not show the developer-facing reason, risk note or risk per km", () => {
+    const result = createDemoRouteResponse(request);
+    for (const candidate of result.candidates) candidate.risk_per_km = 456.789;
+    const section = renderNotes(result);
+    expect(within(section).queryByText(result.reason)).not.toBeInTheDocument();
+    expect(within(section).queryByText(result.risk_note)).not.toBeInTheDocument();
+    expect(section).not.toHaveTextContent("456");
+  });
+
+  it("renders warnings as text even when they contain HTML", () => {
+    const result = createDemoRouteResponse(request);
+    result.warnings = ["警告 <b>x</b>"];
+    const section = renderNotes(result);
+    expect(within(section).getByText("警告 <b>x</b>")).toBeInTheDocument();
     expect(section.querySelector("b")).toBeNull();
-  });
-
-  it("never shows weighted_risk or risk_per_km values", () => {
-    const result = createDemoRouteResponse(request);
-    for (const candidate of result.candidates) {
-      candidate.weighted_risk = 123.45;
-      candidate.risk_per_km = 456.789;
-    }
-    const section = renderNotes(result);
-    expect(section).not.toHaveTextContent("123.45");
-    expect(section).not.toHaveTextContent("456.789");
   });
 });

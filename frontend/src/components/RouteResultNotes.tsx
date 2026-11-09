@@ -1,10 +1,33 @@
-import type { RouteResponse } from "../lib/types";
+import type { RouteCandidate, RouteResponse } from "../lib/types";
+import { FASTEST_LABEL, SAFE_LABEL } from "./RouteCallouts";
 
 type Props = {
   result: RouteResponse;
 };
 
-const RISK_REDUCTION_UNKNOWN = "算出できません";
+const HEAVY_WEATHER = new Set(["雨", "霧", "雪"]);
+
+function choiceSentence(
+  result: RouteResponse,
+  safest: RouteCandidate | undefined,
+): string | null {
+  if (result.safest_id === null || safest === undefined) return null;
+  if (result.safest_id === result.fastest_id)
+    return "遠回りの上限までの経路の中では、最短ルートが推定リスクもいちばん低い経路です。";
+  const minutes = result.extra_minutes ?? safest.extra_minutes;
+  const longer =
+    minutes < 1 ? "1分未満" : `${Math.round(minutes)}分`;
+  if (result.risk_reduction_percent === null)
+    return `安全ルートは最短ルートより${longer}長くかかります。`;
+  return `安全ルートは最短ルートより${longer}長くかかりますが、推定リスクは${result.risk_reduction_percent.toFixed(1)}%低くなります。`;
+}
+
+function yearsPhrase(years: number[]): string {
+  if (years.length === 0) return "";
+  const first = Math.min(...years);
+  const last = Math.max(...years);
+  return first === last ? `${first}年に` : `${first}〜${last}年に`;
+}
 
 export function RouteResultNotes({ result }: Props) {
   const safest = result.candidates.find(
@@ -17,10 +40,21 @@ export function RouteResultNotes({ result }: Props) {
     safest !== undefined &&
     fastest !== undefined &&
     safest.accident_count > fastest.accident_count;
-  const riskReduction =
-    result.risk_reduction_percent === null
-      ? RISK_REDUCTION_UNKNOWN
-      : `${result.risk_reduction_percent.toFixed(1)}%`;
+  const choice = choiceSentence(result, safest);
+  const rows: { label: string; route: RouteCandidate }[] = [];
+  if (fastest !== undefined) {
+    rows.push({
+      label:
+        fastest.id === result.safest_id
+          ? `${FASTEST_LABEL}・${SAFE_LABEL}`
+          : FASTEST_LABEL,
+      route: fastest,
+    });
+  }
+  if (safest !== undefined && safest.id !== result.fastest_id) {
+    rows.push({ label: SAFE_LABEL, route: safest });
+  }
+  const { mode, weather } = result.effective_conditions;
 
   return (
     <section className="route-result-notes" aria-label="検索結果の説明">
@@ -41,24 +75,49 @@ export function RouteResultNotes({ result }: Props) {
       )}
       <details>
         <summary>この結果について</summary>
-        <p>{result.reason}</p>
-        <p>{result.risk_note}</p>
-        <dl>
-          <dt>推定リスクの減少率</dt>
-          <dd>{riskReduction}</dd>
-          <dt>候補数</dt>
-          <dd>{result.candidates.length}本</dd>
-          <dt>帰属不明の事故を数える範囲</dt>
-          <dd>経路から{result.unattributed_radius_m}m以内</dd>
-          <dt>集計時間</dt>
-          <dd>{Math.round(result.aggregation_ms)}ms</dd>
-          {result.data_years.length > 0 && (
-            <>
-              <dt>対象データ年</dt>
-              <dd>{result.data_years.join("・")}年</dd>
-            </>
-          )}
-        </dl>
+        {choice && <p>{choice}</p>}
+        <table className="route-result-table">
+          <thead>
+            <tr>
+              <th scope="col">経路</th>
+              <th scope="col">推定リスク</th>
+              <th scope="col">事故件数</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ label, route }) => (
+              <tr key={route.id}>
+                <th scope="row">{label}</th>
+                <td>{Math.floor(route.weighted_risk)}</td>
+                <td>
+                  {route.total_accident_count === null
+                    ? "—"
+                    : `${route.total_accident_count}件`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p>
+          事故件数は、経路上と経路の近く（{result.unattributed_radius_m}m以内）で
+          {yearsPhrase(result.data_years)}
+          起きた事故の数です。時間帯・曜日・天候・移動手段では絞っていません。
+        </p>
+        <h3 className="route-result-heading">推定リスクの求め方</h3>
+        <p>
+          過去の事故を、起きた道路や交差点ごとに数えています。件数には偶然の多い少ないがあるため、同じ種類の道路の平均を使ってならしています。死者や負傷者の多い事故ほど重く数えています。
+        </p>
+        {mode === "car" && (
+          <p>
+            生活道路は交通量が少ないぶん件数が少なく出るため、重く数えています。
+          </p>
+        )}
+        {HEAVY_WEATHER.has(weather) && (
+          <p>
+            雨・霧・雪を指定したときは、同じ天候で起きた事故をさらに重く数えています。
+          </p>
+        )}
+        <p>交通量や通行回数で補正した、事故に遭う確率ではありません。</p>
       </details>
     </section>
   );

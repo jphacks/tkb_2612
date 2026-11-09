@@ -738,6 +738,50 @@ fn conditions_filter_but_weather_does_not_reduce_the_set() {
 }
 
 #[test]
+fn total_accident_count_is_counted_before_condition_filter() {
+    let mut builder = GraphBuilder::new();
+    let a = builder.add_node_deg(35.6, 139.7);
+    let b = builder.add_node_deg(35.6, 139.701);
+    let e0 = builder.add_edge(EdgeSpec::new(a, b).length_dm(1000));
+    let graph = builder.build();
+    let specs = (0..5).map(|_| Spec::edge(e0, 500, 0.2)).collect::<Vec<_>>();
+    let mut accidents = vec![Accident::at(35.6, 139.7); 5];
+    // 0は曜日区分、2は移動手段、3は時間帯でBから外れる。1と4は残る。
+    accidents[0].day_type = DayType::Weekday.code();
+    accidents[2].modes = Mode::Walk.mask();
+    accidents[3].period = Period::Night.code();
+    for accident in &mut accidents[1..] {
+        accident.day_type = DayType::Holiday.code();
+    }
+    let engine = engine(
+        &builder,
+        empty_topology(&graph),
+        &specs,
+        snapshot(&accidents),
+    );
+    let conditions = ConditionFilter {
+        period: Some(Period::Daytime),
+        day_type: Some(DayType::Holiday),
+        weather: Some(Weather::Rain),
+    };
+    let q = query(
+        graph.node_coord(a).to_latlon(),
+        graph.node_coord(b).to_latlon(),
+        Mode::Car,
+        10.0,
+        conditions,
+    );
+    let outcome = evaluate(&engine, &q).expect("評価できる");
+    let candidate = &outcome.candidates[0];
+    assert_eq!(candidate.totals.accident_count, 2);
+    assert_eq!(
+        candidate.total_accident_count,
+        Some(5),
+        "条件で絞る前の事故IDの数を数える"
+    );
+}
+
+#[test]
 fn one_accident_with_multiple_assignments_is_counted_once() {
     let (builder, a, b, c, e0, _e1) = line_abc();
     let graph = builder.build();

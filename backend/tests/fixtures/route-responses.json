@@ -22,6 +22,7 @@
             ]
           },
           "accident_count": 1,
+          "total_accident_count": null,
           "fatal_accidents": 1,
           "injury_accidents": 0,
           "deaths": 1,
@@ -159,6 +160,7 @@
             ]
           },
           "accident_count": 0,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 0,
           "deaths": 0,
@@ -241,6 +243,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 1,
           "injury_accidents": 1,
           "deaths": 1,
@@ -408,6 +411,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 2,
           "deaths": 0,
@@ -544,6 +548,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 2,
           "deaths": 0,
@@ -683,6 +688,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 1,
           "injury_accidents": 1,
           "deaths": 1,
@@ -844,6 +850,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 2,
           "deaths": 0,
@@ -974,6 +981,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 2,
           "deaths": 0,
@@ -1107,6 +1115,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 1,
           "injury_accidents": 1,
           "deaths": 1,
@@ -1274,6 +1283,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 2,
           "deaths": 0,
@@ -1410,6 +1420,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 2,
           "deaths": 0,
@@ -1549,6 +1560,7 @@
             ]
           },
           "accident_count": 255,
+          "total_accident_count": null,
           "fatal_accidents": 5,
           "injury_accidents": 250,
           "deaths": 5,

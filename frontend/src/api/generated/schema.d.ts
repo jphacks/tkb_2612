@@ -457,6 +457,8 @@ export interface components {
             geometry: components["schemas"]["LineString"];
             /** @description 集合B（新方式は経路の辺・交差点に割り当てた事故と72m以内の帰属不明の事故、旧方式は72m以内。移動手段・時間帯・曜日区分で絞り、天候では絞らない）の事故件数、間引き前 */
             accident_count: components["schemas"]["Count"];
+            /** @description 経路に結び付いた事故の総件数。移動手段・時間帯・曜日区分・天候のどれでも絞る前の件数で、新方式は集合Bを作るときの経路の辺・交差点への割り当てと72m以内の帰属不明の事故を合わせた事故IDの数（同じ事故を二重に数えない）。旧方式はこの値を作らないのでnull。 */
+            total_accident_count: number | null;
             /** @description 死者1人以上の事故件数 */
             fatal_accidents: components["schemas"]["Count"];
             /** @description 死者0人の事故件数。fatal_accidentsとの和がaccident_count。 */

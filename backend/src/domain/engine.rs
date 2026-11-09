@@ -211,6 +211,7 @@ impl RouteEngine for AccidentEngine {
             evaluated.push(EvaluatedRoute {
                 path,
                 totals: score.totals,
+                total_accident_count: None,
                 weather_match: score.weather_match,
                 weighted_risk: score.weighted_risk,
                 risk_per_km: score.risk_per_km,

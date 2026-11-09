@@ -373,6 +373,26 @@ fn broken_correlations_are_rejected() {
 
 type OutcomeEdit = dyn Fn(&mut RouteOutcome);
 
+#[test]
+fn total_accident_count_must_not_be_below_accident_count() {
+    let mut outcome = expected_route_outcome("twoSelected");
+    let index = outcome
+        .candidates
+        .iter()
+        .position(|c| c.totals.accident_count > 0)
+        .expect("事故のある候補");
+    let c = &mut outcome.candidates[index];
+    let count = c.totals.accident_count;
+    c.total_accident_count = Some(count + 10);
+    assert!(
+        render_route_response(&outcome).is_ok(),
+        "accident_count以上は認める"
+    );
+    outcome.candidates[index].total_accident_count = Some(count - 1);
+    let message = rejection(&outcome);
+    assert!(message.contains("total_accident_count"), "{message}");
+}
+
 /// 選定・丸め・包含の相関（frontendの応答検証と同じ条件）。値は再計算せず、整合だけを見る。
 #[test]
 fn selection_and_rounding_correlations_are_checked() {

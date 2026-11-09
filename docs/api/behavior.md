@@ -271,6 +271,7 @@ APIの正規表記を日本語にする理由：現行UI/READMEが既に日本�
 ### 件数・人数
 
 - `accident_count=|B|`、`fatal_accidents=count(deaths>0)`、`injury_accidents=accident_count−fatal_accidents`。`deaths` / `injuries` はBの事故全体の死者・負傷者合計（死亡事故内の負傷者もinjuriesに含む。該当手段の当事者に限定しない）。内部加算はu64、JSONではJavaScriptの安全な整数範囲を検証する。
+- `total_accident_count`：経路に結び付いた事故の総件数。移動手段・時間帯・曜日区分・天候のどれでも絞る前の件数で、新方式は集合Bを作るときの `assigned`（経路の辺・交差点への割り当て）と `nearest`（歩道の親の車道・帰属不明の事故）を合わせた事故IDの数（同じIDを二重に数えない）。`accident_count` 以上になる。旧方式はこの値を作らないので `null`。
 - `weather_match`：天候指定時は、Bのうち事故の天候が指定天候と一致する事故だけを同じ5項目で集計したオブジェクト。該当なしは全項目0。天候がall/nullなら `null`。キーは常に返す。
 - `exact_condition_count`：非推奨の互換値。天候指定時は `weather_match.accident_count`、all時は `accident_count`。
 

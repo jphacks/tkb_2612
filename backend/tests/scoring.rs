@@ -33,6 +33,29 @@ fn at_m(x: f64, north: f64) -> Acc {
 }
 
 #[test]
+fn old_engine_total_accident_count_is_none_and_renders_as_null() {
+    let outcome = evaluate(&[at_m(100.0, 0.0)], Mode::Walk, ConditionFilter::default());
+    assert!(
+        outcome
+            .candidates
+            .iter()
+            .all(|c| c.total_accident_count.is_none()),
+        "旧方式は総件数を作らない"
+    );
+    let json: serde_json::Value = serde_json::from_slice(
+        &accident_route_backend::api::route_response::render_route_response(&outcome)
+            .expect("応答にできる"),
+    )
+    .expect("JSON");
+    assert!(
+        json["candidates"][0]
+            .get("total_accident_count")
+            .is_some_and(serde_json::Value::is_null),
+        "旧方式の応答はtotal_accident_count=null（キーは常に返す）"
+    );
+}
+
+#[test]
 fn test_filters_casualties_normalization_and_hotspots() {
     let accidents = [
         at_m(100.0, 0.0).casualties(1, 2), // 0 一致・死亡
