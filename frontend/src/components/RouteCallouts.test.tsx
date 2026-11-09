@@ -14,16 +14,12 @@ const request: RouteRequest = {
   max_detour_min: 10,
 };
 
-function renderCallouts(
-  result: RouteResponse,
-  size = { width: 800, height: 600 },
-  positions: Record<string, { x: number; y: number }> = {},
-) {
+function renderCallouts(result: RouteResponse) {
   render(
     <RouteCallouts
       result={result}
-      positions={positions}
-      size={size}
+      positions={{}}
+      size={{ width: 800, height: 600 }}
       selectedRouteId={null}
       hoveredRouteId={null}
       onSelectRoute={vi.fn()}
@@ -58,29 +54,4 @@ describe("RouteCallouts risk reduction", () => {
       expect(within(group).queryByText(/推定リスク/)).not.toBeInTheDocument();
     },
   );
-});
-
-describe("RouteCallouts bottom inset", () => {
-  function lowestCardBottom(size: { width: number; height: number }) {
-    const result = createDemoRouteResponse(request);
-    const low = { x: size.width / 2, y: size.height };
-    const group = renderCallouts(result, size, {
-      [result.fastest_id]: low,
-      [result.safest_id!]: low,
-    });
-    const cards = [...group.querySelectorAll<HTMLElement>(".map-route-card")];
-    expect(cards).toHaveLength(2);
-    return Math.max(
-      ...cards.map((card) => parseFloat(card.style.top) + parseFloat(card.style.height)),
-    );
-  }
-
-  it.each([
-    [{ width: 1280, height: 728 }, 124],
-    [{ width: 700, height: 736 }, 232],
-    [{ width: 360, height: 676 }, 232],
-    [{ width: 740, height: 296 }, 88],
-  ])("keeps cards clear of the notes and legend on a %j map", (size, inset) => {
-    expect(lowestCardBottom(size)).toBeLessThanOrEqual(size.height - inset);
-  });
 });

@@ -67,15 +67,6 @@ type Props = {
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(value, Math.max(min, max)));
 
-/**
- * カードの下に空ける高さ。map.css の .route-result-notes と揃える。
- * 説明の欄は、幅が足りないと凡例の上に積まれる。縦に余裕がなければカードを優先する。
- */
-function cardBottomInset(size: MapSize) {
-  if (size.height < 600) return 88;
-  return size.width < 860 ? 232 : 124;
-}
-
 export function RouteCallouts({
   result,
   positions,
@@ -96,7 +87,6 @@ export function RouteCallouts({
   const compact = size.width < 480;
   const cardHeight = compact ? 130 : size.height < 480 ? 134 : 146;
   const topInset = size.height < 480 ? 56 : 72;
-  const bottomInset = cardBottomInset(size);
   const cards = routes.map((route) => {
     const tone = routeTone(route.id, result);
     const anchor = positions[route.id] ?? {
@@ -115,7 +105,7 @@ export function RouteCallouts({
       y: clamp(
         anchor.y - cardHeight / 2,
         topInset,
-        size.height - cardHeight - bottomInset,
+        size.height - cardHeight - 88,
       ),
     };
   });
@@ -128,7 +118,7 @@ export function RouteCallouts({
       const upper = clamp(
         Math.min(first.y, second.y) - cardHeight / 2,
         topInset,
-        size.height - cardHeight * 2 - bottomInset - 16,
+        size.height - cardHeight * 2 - 104,
       );
       first.y = upper;
       second.y = upper + cardHeight + 16;
