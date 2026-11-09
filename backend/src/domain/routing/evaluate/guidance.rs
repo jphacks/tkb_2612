@@ -102,14 +102,7 @@ pub fn build_guidance(
             if infos[run.nodes[0]].distance_m < START_SUPPRESS_M {
                 continue;
             }
-            // 環の直後の連は、手前の方位を環の曲線で測らない。
-            let bearing_floor_m = i
-                .checked_sub(1)
-                .map(|previous| &runs[previous])
-                .filter(|previous| previous.has_roundabout)
-                .map_or(0.0, |previous| {
-                    infos[*previous.nodes.last().expect("連は空でない")].distance_m
-                });
+            let range = bearing_range(&runs, &infos, i, &full_distance_m);
             let Some(maneuver) = classify(
                 graph,
                 &path.dedges,
@@ -117,7 +110,7 @@ pub fn build_guidance(
                 run,
                 &full_distance_m,
                 &full_xy,
-                bearing_floor_m,
+                range,
             ) else {
                 continue;
             };
@@ -288,20 +281,51 @@ fn group_runs(
     runs
 }
 
+/// 連の前後の方位を測ってよい、経路に沿った距離の範囲（m）。
+#[derive(Clone, Copy)]
+struct BearingRange {
+    from_m: f64,
+    to_m: f64,
+}
+
+/// 環状交差点の連とその隣の連は、相手の連の境界を越えて方位を測らない。環の曲線や、
+/// 環のすぐ前後の曲がりが合成されて、向きを誤るため。
+fn bearing_range(
+    runs: &[Run],
+    infos: &[NodeInfo],
+    index: usize,
+    full_distance_m: &[f64],
+) -> BearingRange {
+    let run = &runs[index];
+    let separated = |other: &&Run| other.has_roundabout || run.has_roundabout;
+    let from_m = index
+        .checked_sub(1)
+        .map(|previous| &runs[previous])
+        .filter(separated)
+        .map_or(0.0, |previous| {
+            infos[*previous.nodes.last().expect("連は空でない")].distance_m
+        });
+    let to_m = runs
+        .get(index + 1)
+        .filter(separated)
+        .map_or(full_distance_m.last().copied().unwrap_or(0.0), |next| {
+            infos[next.nodes[0]].distance_m
+        });
+    BearingRange { from_m, to_m }
+}
+
 /// 連の角度（度、時計回りが正）を、先頭ノードの手前と末尾ノードの先の方位から測る（手順3）。
-/// 手前の方位は `bearing_floor_m` より前へ遡らない。
 fn run_angle(
     xy: &[(f64, f64)],
     full_distance_m: &[f64],
     start_distance_m: f64,
     end_distance_m: f64,
-    bearing_floor_m: f64,
+    range: BearingRange,
 ) -> f64 {
     if xy.len() < 2 || full_distance_m.len() < 2 {
         return 0.0;
     }
-    let total = *full_distance_m.last().expect("空でない");
-    let start_from = (start_distance_m - BEARING_BASELINE_M).max(bearing_floor_m);
+    let start_from = (start_distance_m - BEARING_BASELINE_M).max(range.from_m);
     let start = (
         point_at(xy, full_distance_m, start_from),
         point_at(xy, full_distance_m, start_distance_m),
@@ -311,7 +335,7 @@ fn run_angle(
         point_at(
             xy,
             full_distance_m,
-            (end_distance_m + BEARING_BASELINE_M).min(total),
+            (end_distance_m + BEARING_BASELINE_M).min(range.to_m),
         ),
     );
     let v1 = (start.1.0 - start.0.0, start.1.1 - start.0.1);
@@ -357,7 +381,7 @@ fn classify(
     run: &Run,
     full_distance_m: &[f64],
     full_xy: &[(f64, f64)],
-    bearing_floor_m: f64,
+    range: BearingRange,
 ) -> Option<Maneuver> {
     if run
         .nodes
@@ -376,7 +400,7 @@ fn classify(
         full_distance_m,
         start_distance_m,
         end_distance_m,
-        bearing_floor_m,
+        range,
     );
     let magnitude = angle.abs();
     if magnitude >= UTURN_MIN_DEG {

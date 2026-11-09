@@ -51,9 +51,9 @@
 
 | 手段 | 成功 | 処理時間の中央値 | 処理時間の最大 | 案内の件数 | `max_render_bytes` |
 |---|---|---|---|---|---|
-| 徒歩 | 100/100 | 0.010秒 | 0.293秒 | 2,422 | 49,496 |
-| 自転車 | 100/100 | 0.112秒 | 2.014秒 | 5,242 | 95,856 |
-| 自動車 | 100/100 | 0.768秒 | 5.190秒 | 4,191 | 253,158 |
+| 徒歩 | 100/100 | 0.011秒 | 0.248秒 | 2,422 | 49,495 |
+| 自転車 | 100/100 | 0.121秒 | 2.104秒 | 5,242 | 95,856 |
+| 自動車 | 100/100 | 0.857秒 | 5.054秒 | 4,191 | 253,158 |
 
 M5 の処理時間の最大は、徒歩0.33秒、自転車2.51秒、自動車5.27秒である。HTTP 経由（4並列）の最大は11.3秒だった。
 
@@ -67,7 +67,7 @@ M5 の処理時間の最大は、徒歩0.33秒、自転車2.51秒、自動車5.2
 | ほぼ直進で脇道を通るだけなのに `slight` と案内する | `|a|<10°` のときは、分岐の相手を20°未満の出口に絞る（`STRAIGHT_MAX_DEG`、`STRAIGHT_FORK_MAX_DEG`） | `t7_straight_past_a_side_road_at_thirty_five_degrees_is_arrive_only` |
 | クランクで `slight` の向きが逆になる | `|a|≥10°` なら連全体の角度の符号で向きを決める | `t7_fork_direction_follows_the_whole_run_at_a_jog` |
 
-この後、コードレビュー（GPT-6.1 Sol）の指摘で、環状交差点の連に出口の先のノードが入る問題を直した。環を出た後のノードは環の連に加えず、環の直後の連は手前の方位を環の出口より前で測らない（テスト：`long_roundabout_keeps_the_step_at_its_exit_past_a_nearby_side_road`、`short_roundabout_does_not_merge_a_turn_just_after_its_exit`）。
+この後、コードレビュー（GPT-6.1 Sol）の指摘で、環状交差点の連に出口の先のノードが入る問題を直した。環を出た後のノードは環の連に加えず、環の連とその隣の連は相手の連の境界を越えて方位を測らない（テスト：`long_roundabout_keeps_the_step_at_its_exit_past_a_nearby_side_road`、`short_roundabout_does_not_merge_a_turn_just_after_its_exit`、`roundabout_direction_is_independent_of_a_turn_five_metres_after_its_exit`、`turn_five_metres_before_a_roundabout_ignores_the_roundabout_curve`）。
 
 `TURN_MIN_DEG` などの既存の定数は変えていない。手段ごとに値を分ける必要はなかった。徒歩の案内量は定数を変えるほどの水準ではないと判断した。
 
