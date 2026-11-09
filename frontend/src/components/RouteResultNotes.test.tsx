@@ -167,15 +167,6 @@ describe("RouteResultNotes", () => {
     expect(within(fastestRow).getAllByRole("cell")[1]).toHaveTextContent("—");
   });
 
-  it("explains what the accident count covers with the radius and data years", () => {
-    const result = createDemoRouteResponse(request);
-    result.data_years = [2019, 2020, 2021, 2022, 2023, 2024, 2025];
-    const section = renderNotes(result);
-    expect(section).toHaveTextContent(
-      `事故件数は、経路上と経路の近く（${result.unattributed_radius_m}m以内）で2019〜2025年に起きた事故の数です。時間帯・曜日・天候・移動手段では絞っていません。`,
-    );
-  });
-
   it("explains how the risk is estimated, adding the car and weather lines only when they apply", () => {
     const result = createDemoRouteResponse(request);
     result.effective_conditions = {
@@ -186,7 +177,8 @@ describe("RouteResultNotes", () => {
     const { unmount } = render(<RouteResultNotes result={result} />);
     let section = screen.getByRole("region", { name: "検索結果の説明" });
     expect(section).toHaveTextContent("過去の事故を、起きた道路や交差点ごとに数えています。");
-    expect(section).toHaveTextContent("事故に遭う確率ではありません。");
+    expect(section).not.toHaveTextContent("事故に遭う確率");
+    expect(section).not.toHaveTextContent("絞っていません");
     expect(section).not.toHaveTextContent("生活道路");
     expect(section).not.toHaveTextContent("雨・霧・雪を指定したとき");
     unmount();

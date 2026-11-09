@@ -30,13 +30,6 @@ export function truncateRisk(value: number): string {
   return (Math.floor(value * scale + 1e-9) / scale).toFixed(digits);
 }
 
-function yearsPhrase(years: number[]): string {
-  if (years.length === 0) return "";
-  const first = Math.min(...years);
-  const last = Math.max(...years);
-  return first === last ? `${first}年に` : `${first}〜${last}年に`;
-}
-
 export function RouteResultNotes({ result }: Props) {
   const safest = result.candidates.find(
     (route) => route.id === result.safest_id,
@@ -106,11 +99,6 @@ export function RouteResultNotes({ result }: Props) {
             ))}
           </tbody>
         </table>
-        <p>
-          事故件数は、経路上と経路の近く（{result.unattributed_radius_m}m以内）で
-          {yearsPhrase(result.data_years)}
-          起きた事故の数です。時間帯・曜日・天候・移動手段では絞っていません。
-        </p>
         <h3 className="route-result-heading">推定リスクの求め方</h3>
         <p>
           過去の事故を、起きた道路や交差点ごとに数えています。件数には偶然の多い少ないがあるため、同じ種類の道路の平均を使ってならしています。死者や負傷者の多い事故ほど重く数えています。
@@ -125,7 +113,6 @@ export function RouteResultNotes({ result }: Props) {
             雨・霧・雪を指定したときは、同じ天候で起きた事故をさらに重く数えています。
           </p>
         )}
-        <p>交通量や通行回数で補正した、事故に遭う確率ではありません。</p>
       </details>
     </section>
   );
