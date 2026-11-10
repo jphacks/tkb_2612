@@ -203,6 +203,25 @@
   border-radius: 50%;
   background: #fff;
 }
+/* 口コミの地点（Issue #23）。色はSafetyIconのSAFETY_COLORSと同じ。 */
+.map-legend .legend-community-safe,
+.map-legend .legend-community-danger {
+  width: 10px;
+  height: 10px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #cbd5e1;
+}
+.map-legend .legend-community-safe {
+  background: #16a34a;
+}
+.map-legend .legend-community-danger {
+  background: #dc2626;
+}
+.map-community-pin {
+  stroke: #fff;
+  stroke-width: 2;
+}
 .map-empty,
 .map-unavailable {
   position: absolute;

@@ -30,6 +30,8 @@ use crate::config::{Config, GateBackend};
 use crate::contract::{Calendar, RouteEngine};
 use crate::data::LoadError;
 use crate::providers::clock::{Clock, SystemClock};
+use crate::providers::community::{CommunityStore, LocalCommunityStore};
+use crate::providers::community_firestore::FirestoreCommunityStore;
 use crate::providers::gate::{Gate, GatePolicy, GateStore, LocalGateStore, Quota, QuotaPeriod};
 use crate::providers::gate_firestore::{FirestoreGateStore, metadata_project_id};
 use crate::providers::geoapify::GeoapifyGeocoder;
@@ -102,7 +104,7 @@ pub enum StartupError {
     Data(LoadError),
     /// 上流HTTPクライアントを作れなかった。
     Client,
-    /// Firestoreの上流ゲートのプロジェクトを特定できなかった。
+    /// Firestore（上流ゲート・口コミの保存）のプロジェクトを特定できなかった。
     GateProject,
     Bind(std::io::Error),
 }
@@ -114,7 +116,7 @@ impl std::fmt::Display for StartupError {
             StartupError::Data(e) => write!(f, "{e}"),
             StartupError::Client => f.write_str("上流HTTPクライアントを作れません"),
             StartupError::GateProject => {
-                f.write_str("上流ゲートのFirestoreプロジェクトをメタデータサーバから取得できません")
+                f.write_str("Firestoreのプロジェクトをメタデータサーバから取得できません")
             }
             StartupError::Bind(e) => write!(f, "待受けを開始できません: {e}"),
         }
@@ -146,8 +148,10 @@ pub async fn prepare(config: &Config, loaders: Loaders) -> Result<Server, Startu
     })??;
 
     let clock: Arc<dyn Clock> = Arc::new(SystemClock);
-    let store = gate_store(config).await?;
-    let services = services(config, calendar, store, clock)?;
+    let firestore = firestore(config).await?;
+    let store = gate_store(config, firestore.as_ref());
+    let community = community_store(config, firestore.as_ref());
+    let services = services(config, calendar, store, community, clock)?;
     let settings = ApiSettings {
         request_timeout: config.request_timeout,
         route_transfer_timeout: config.route_transfer_timeout,
@@ -170,22 +174,52 @@ pub async fn prepare(config: &Config, loaders: Loaders) -> Result<Server, Startu
     })
 }
 
-async fn gate_store(config: &Config) -> Result<Arc<dyn GateStore>, StartupError> {
-    match config.upstream_gate {
-        GateBackend::Local => {
-            tracing::warn!("上流ゲートはプロセス内だけで共有します（ローカル開発専用）");
-            Ok(Arc::new(LocalGateStore::new()))
+/// Firestoreの接続（HTTPクライアントとプロジェクトID）。上流ゲートか口コミの保存で使うときだけ作る。
+async fn firestore(config: &Config) -> Result<Option<(reqwest::Client, String)>, StartupError> {
+    if config.upstream_gate != GateBackend::Firestore
+        && config.community_store != GateBackend::Firestore
+    {
+        return Ok(None);
+    }
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
+        .build()
+        .map_err(|_| StartupError::Client)?;
+    let project = metadata_project_id(&client)
+        .await
+        .map_err(|_| StartupError::GateProject)?;
+    Ok(Some((client, project)))
+}
+
+fn gate_store(
+    config: &Config,
+    firestore: Option<&(reqwest::Client, String)>,
+) -> Arc<dyn GateStore> {
+    match (config.upstream_gate, firestore) {
+        (GateBackend::Firestore, Some((client, project))) => {
+            Arc::new(FirestoreGateStore::production(client.clone(), project))
         }
-        GateBackend::Firestore => {
-            let client = reqwest::Client::builder()
-                .redirect(reqwest::redirect::Policy::none())
-                .no_proxy()
-                .build()
-                .map_err(|_| StartupError::Client)?;
-            let project = metadata_project_id(&client)
-                .await
-                .map_err(|_| StartupError::GateProject)?;
-            Ok(Arc::new(FirestoreGateStore::production(client, &project)))
+        _ => {
+            tracing::warn!("上流ゲートはプロセス内だけで共有します（ローカル開発専用）");
+            Arc::new(LocalGateStore::new())
+        }
+    }
+}
+
+fn community_store(
+    config: &Config,
+    firestore: Option<&(reqwest::Client, String)>,
+) -> Arc<dyn CommunityStore> {
+    match (config.community_store, firestore) {
+        (GateBackend::Firestore, Some((client, project))) => {
+            Arc::new(FirestoreCommunityStore::production(client.clone(), project))
+        }
+        _ => {
+            tracing::warn!(
+                "口コミはプロセス内だけに保存します（ローカル開発専用。再起動で消えます）"
+            );
+            Arc::new(LocalCommunityStore::new())
         }
     }
 }
@@ -194,6 +228,7 @@ fn services(
     config: &Config,
     calendar: Arc<dyn Calendar>,
     store: Arc<dyn GateStore>,
+    community: Arc<dyn CommunityStore>,
     clock: Arc<dyn Clock>,
 ) -> Result<Services, StartupError> {
     let client =
@@ -268,6 +303,7 @@ fn services(
         weather: Arc::new(weather),
         clock,
         weather_cache_ttl: config.weather_cache_ttl,
+        community,
     })
 }
 

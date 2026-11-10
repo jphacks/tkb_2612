@@ -56,6 +56,8 @@ gcloud secrets add-iam-policy-binding geoapify-api-key \
 
 既定の `UPSTREAM_GATE=firestore` では、全インスタンス共通の通信間隔・同時数・日次上限をFirestoreのトランザクションで管理します。プロジェクトIDはメタデータサーバから取得し、データベース `(default)` のコレクション `upstream_gates` に提供元ごとの文書を1つ置きます。保存するのは提供元識別子・時刻・件数・世代番号だけです。
 
+安全危険情報（口コミ・投票、Issue #23）も同じデータベースのコレクション `community_reports` に地点ごとの文書を1つ置きます（`COMMUNITY_STORE`、未設定は `UPSTREAM_GATE` と同じ保存先）。保存するのは地点の座標・投稿日時・票の種類・口コミ本文と、投票者の匿名IDのハッシュ（元のIDは保存しない）です。`local` はプロセス内だけに保存し、再起動で消えます。追加の権限・索引は不要です（緯度の単一フィールド索引だけで検索します）。
+
 ```sh
 gcloud firestore databases create --location=$REGION --type=firestore-native
 gcloud projects add-iam-policy-binding $PROJECT_ID \
@@ -158,4 +160,4 @@ gcloud billing budgets create --billing-account=$BILLING_ACCOUNT \
 
 - 実演前：最小1台にする（`gcloud run services update $SERVICE --region=$REGION --min-instances=1`）。`/api/health` の `release_id`・`dataset_id`・`accidents`・`data_years`、固定の検索、IAPの許可/拒否、各上流、共有ゲート、ログ除外を確認します。
 - 実演後に続けて使うなら最小0台へ戻します（`--min-instances=0`）。
-- 終了するなら、サービス・不要なイメージ・Firestoreの `upstream_gates`・シークレットとその参照を削除し、残るログの保持設定と請求を確かめます。最小0台や予算通知だけを費用の上限として扱いません。
+- 終了するなら、サービス・不要なイメージ・Firestoreの `upstream_gates` と `community_reports`・シークレットとその参照を削除し、残るログの保持設定と請求を確かめます。最小0台や予算通知だけを費用の上限として扱いません。

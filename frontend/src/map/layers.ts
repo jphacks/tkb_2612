@@ -5,8 +5,10 @@ import type {
   LineLayerSpecification,
   Map,
 } from "maplibre-gl";
-import type { RouteResponse } from "../lib/types";
+import type { RouteResponse, SafetyReport } from "../lib/types";
 import { routeColors, routeTone } from "../components/RouteCallouts";
+import { SAFETY_COLORS } from "../components/icons/SafetyIcon";
+import { dominantKind } from "../community/reports";
 import { mapColor } from "./colors";
 
 export type NavigationLayers = {
@@ -112,6 +114,18 @@ export function buildMapLayers(): LayerSpecification[] {
       type: "circle",
       source: "route-accidents",
       paint: { "circle-radius": 22, "circle-opacity": 0 },
+    },
+    // 安全危険情報共有モードの投稿地点（Issue #23）。ナビでは表示だけで操作しない。
+    {
+      id: "community-reports-point",
+      type: "circle",
+      source: "community-reports",
+      paint: {
+        "circle-radius": 6,
+        "circle-color": ["get", "color"],
+        "circle-stroke-color": surface,
+        "circle-stroke-width": 2,
+      },
     },
     {
       id: "current-accuracy-fill",
@@ -265,6 +279,20 @@ export function setNavigationLayers(map: Map, data: Partial<NavigationLayers>): 
   if (data.accuracy) updateData(state, "current-accuracy", data.accuracy);
   if (data.route) updateData(state, "navigation-route", data.route);
   if (data.alert) updateData(state, "navigation-alert", data.alert);
+  restoreMapLayers(map);
+}
+
+/** 口コミの地点を多数派の色（同数は危険）の点で描く。空配列で消去する。 */
+export function setCommunityLayer(map: Map, reports: readonly SafetyReport[]): void {
+  updateData(stateFor(map), "community-reports", {
+    type: "FeatureCollection",
+    features: reports.map((report) => ({
+      type: "Feature",
+      id: report.id,
+      geometry: { type: "Point", coordinates: [report.lon, report.lat] },
+      properties: { color: SAFETY_COLORS[dominantKind(report)] },
+    })),
+  });
   restoreMapLayers(map);
 }
 

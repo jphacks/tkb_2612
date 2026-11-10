@@ -9,6 +9,9 @@ import type {
   RouteRequest,
   RouteResponse,
   ErrorResponse,
+  SafetyReport,
+  SafetyReportList,
+  SafetyReportResult,
 } from "../lib/types";
 
 const ajv = new Ajv2020({ strict: false, allErrors: false });
@@ -22,6 +25,8 @@ const validators = Object.fromEntries(
     "GeocodeResponse",
     "HealthResponse",
     "ErrorResponse",
+    "SafetyReportList",
+    "SafetyReportResult",
   ].map((name) => [
     name,
     ajv.compile({ $ref: `${contract.$id}#/$defs/${name}` }),
@@ -283,4 +288,25 @@ export function validateHealth(value: unknown): HealthResponse {
   const response = schema<HealthResponse>("HealthResponse", value);
   if (!ascending(response.data_years)) invalid();
   return response;
+}
+
+/** 地点ごとに少なくとも1票（作成者の票）があり、IDは重複しない。 */
+function checkSafetyReport(report: SafetyReport) {
+  if (report.safe_count + report.danger_count < 1) invalid();
+  if (new Set(report.comments.map((comment) => comment.id)).size !== report.comments.length)
+    invalid();
+}
+
+export function validateSafetyReports(value: unknown): SafetyReport[] {
+  const { reports } = schema<SafetyReportList>("SafetyReportList", value);
+  reports.forEach(checkSafetyReport);
+  if (new Set(reports.map((report) => report.id)).size !== reports.length)
+    invalid();
+  return reports;
+}
+
+export function validateSafetyReport(value: unknown): SafetyReport {
+  const { report } = schema<SafetyReportResult>("SafetyReportResult", value);
+  checkSafetyReport(report);
+  return report;
 }

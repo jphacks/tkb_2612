@@ -1145,7 +1145,9 @@
                 "external_api_error",
                 "data_unavailable",
                 "service_busy",
-                "internal_error"
+                "internal_error",
+                "already_voted",
+                "vote_limit"
               ],
               "description": "HTTPとの対応はcomponents.responsesおよびbehavior.mdを参照。"
             },
@@ -1155,6 +1157,192 @@
               "description": "日本語の利用者向け説明。位置・住所・秘密・スタックトレースを含めない。"
             }
           }
+        }
+      }
+    },
+    "SafetyKind": {
+      "type": "string",
+      "enum": [
+        "safe",
+        "danger"
+      ],
+      "description": "safe=安全、danger=危険。"
+    },
+    "SafetyReportId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "SafetyText": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "口コミ。前後の空白を除いて500文字以内。空ならなし。HTMLとして解釈しない。"
+    },
+    "SafetyComment": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "text",
+        "created_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "$ref": "#/$defs/SafetyKind"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "書いた日時（UTC）"
+        }
+      }
+    },
+    "SafetyReport": {
+      "type": "object",
+      "required": [
+        "id",
+        "lat",
+        "lon",
+        "created_at",
+        "safe_count",
+        "danger_count",
+        "my_vote",
+        "comments"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/SafetyReportId"
+        },
+        "lat": {
+          "$ref": "#/$defs/Latitude"
+        },
+        "lon": {
+          "$ref": "#/$defs/Longitude"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "地点を作った日時（UTC）"
+        },
+        "safe_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5000
+        },
+        "danger_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5000
+        },
+        "my_vote": {
+          "description": "X-Voter-Idの投票者の票。送らない・未投票はnull。",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/SafetyKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "comments": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/SafetyComment"
+          },
+          "description": "古い順。新しい100件だけを残す。"
+        }
+      }
+    },
+    "SafetyReportList": {
+      "type": "object",
+      "required": [
+        "reports"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reports": {
+          "type": "array",
+          "maxItems": 500,
+          "items": {
+            "$ref": "#/$defs/SafetyReport"
+          },
+          "description": "新しい順。"
+        }
+      }
+    },
+    "SafetyReportResult": {
+      "type": "object",
+      "required": [
+        "report"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "$ref": "#/$defs/SafetyReport"
+        }
+      }
+    },
+    "SafetyVote": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/SafetyKind"
+        },
+        "text": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/SafetyText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "SafetyReportCreate": {
+      "type": "object",
+      "required": [
+        "lat",
+        "lon",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "lat": {
+          "$ref": "#/$defs/Latitude"
+        },
+        "lon": {
+          "$ref": "#/$defs/Longitude"
+        },
+        "kind": {
+          "$ref": "#/$defs/SafetyKind"
+        },
+        "text": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/SafetyText"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     }

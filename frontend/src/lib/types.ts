@@ -17,6 +17,13 @@ export type AccidentFeature = Schema["AccidentFeature"];
 export type HighRiskFeature = Schema["HighRiskFeature"];
 export type NavigationData = Schema["NavigationData"];
 export type ErrorResponse = Schema["ErrorResponse"];
+export type SafetyKind = Schema["SafetyKind"];
+export type SafetyReport = Schema["SafetyReport"];
+export type SafetyComment = Schema["SafetyComment"];
+export type SafetyReportList = Schema["SafetyReportList"];
+export type SafetyReportResult = Schema["SafetyReportResult"];
+export type SafetyReportCreate = Schema["SafetyReportCreate"];
+export type SafetyVote = Schema["SafetyVote"];
 
 export type Scenario =
   | "normal"

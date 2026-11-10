@@ -9,6 +9,7 @@ export function CommunityDetailsForm({
   onSkip,
   onConfirm,
   error,
+  busy = false,
 }: {
   kind: SafetyKind;
   count?: number;
@@ -17,6 +18,8 @@ export function CommunityDetailsForm({
   onSkip: () => void;
   onConfirm: () => void;
   error: string;
+  /** 送信中。重ねて送らないよう操作を止める。 */
+  busy?: boolean;
 }) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
@@ -27,9 +30,10 @@ export function CommunityDetailsForm({
     <form
       className="community-composer community-support-form"
       aria-label="詳細情報の入力"
+      aria-busy={busy || undefined}
       onSubmit={(event) => {
         event.preventDefault();
-        onConfirm();
+        if (!busy && value.trim()) onConfirm();
       }}
     >
       <SafetyIcon kind={kind} count={count} />
@@ -40,7 +44,7 @@ export function CommunityDetailsForm({
           ref={input}
           value={value}
           placeholder="例：夜は見通しが悪くて危険"
-          maxLength={2000}
+          maxLength={500}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
             if (
@@ -51,10 +55,19 @@ export function CommunityDetailsForm({
           }}
         />
         <div className="community-support-actions">
-          <button type="button" className="secondary" onClick={onSkip}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={onSkip}
+            disabled={busy}
+          >
             スキップ
           </button>
-          <button type="submit" className="primary" disabled={!value.trim()}>
+          <button
+            type="submit"
+            className="primary"
+            disabled={busy || !value.trim()}
+          >
             確定
           </button>
         </div>
