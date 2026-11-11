@@ -212,6 +212,7 @@ fn parse_route_response(v: &Value) -> RouteOutcome {
         },
         fastest: route_index(field(v, "fastest_id")),
         safest: nullable(field(v, "safest_id")).map(route_index),
+        middle: nullable(field(v, "middle_id")).map(route_index),
         extra_minutes: nullable(field(v, "extra_minutes")).map(|x| as_f64(x, "extra_minutes")),
         risk_reduction_percent: nullable(field(v, "risk_reduction_percent"))
             .map(|x| as_f64(x, "risk_reduction_percent")),

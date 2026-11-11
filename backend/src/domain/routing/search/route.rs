@@ -15,11 +15,13 @@ use super::ArcCost;
 use super::Path;
 use super::SearchContext;
 use super::SearchStatus;
-use super::candidates::{MAX_ROUTE_DISTANCE_DM, select_candidates_with_stats};
+use super::candidates::{
+    MAX_ROUTE_DISTANCE_DM, same_route, select_candidates_with_middle, select_candidates_with_stats,
+};
 use super::ellipse::{EllipseError, ellipse_subgraph};
 use super::endpoints::{Placement, is_same_position, path_distance_dm, placement};
 use super::fastest::fastest_path;
-use super::pipeline::search_subgraph;
+use super::pipeline::{search_best, search_subgraph};
 use super::reduced::reduced_ellipse;
 
 /// 探索の失敗（behavior.md 5章「エラー」）。
@@ -48,6 +50,8 @@ pub struct RouteStats {
     pub ellipse_ms: f64,
     /// `search_subgraph`（LARAC・RCSP・ペナルティ法）。
     pub search_ms: f64,
+    /// 中間案の楕円の切り出しと探索。中間案を探索しなければ0。
+    pub middle_ms: f64,
     /// 候補の整理。
     pub select_ms: f64,
     /// 使った部分グラフのノード数（仮想ノードを含む。作れなかったら `None`）。
@@ -61,6 +65,8 @@ pub struct RouteStats {
     /// `best` の状態。縮小した場合でも `search_subgraph` の状態（Optimal/Bounded/FastestOnly）を
     /// そのまま入れ、縮小は `reduced` で表す。p0 だけにした場合は `FastestOnly`。
     pub status: SearchStatus,
+    /// 中間案を探索した場合の `search_best` の状態。探索しなければ `None`。
+    pub middle_status: Option<SearchStatus>,
     /// 下界との相対差（`Optimal` なら0）。
     pub gap: f64,
     /// `status == Optimal`。
@@ -74,6 +80,8 @@ pub struct RouteSearch {
     pub p0: Path,
     /// 事故考慮経路（p0 だけの場合は p0 と同じ）。
     pub best: Path,
+    /// 中間案（p0 または best と有向辺の列・吸着点まで同じなら `None`）。
+    pub middle: Option<Path>,
     /// 時間の上限 B（デシ秒）。
     pub budget_ds: u64,
     /// 候補（`select_candidates` の結果。所要時間の昇順、最大6本、すべて `time_ds ≤ B`）。
@@ -158,6 +166,21 @@ pub fn find_routes(
 
 /// behavior.md 5章 手順2〜8を1回で行う。`detour_ds` は遠回りの上限（デシ秒）。
 ///
+/// 中間案は作らない（[`find_routes_with_middle_ds`] を `middle_detour_ds = None` で呼ぶ）。
+pub fn find_routes_ds(
+    ctx: &SearchContext<'_>,
+    cost: &mut dyn ArcCost,
+    start: &SnapPoint,
+    end: &SnapPoint,
+    detour_ds: u64,
+    cancel: &CancelToken,
+) -> Result<RouteSearch, RouteError> {
+    find_routes_with_middle_ds(ctx, cost, start, end, detour_ds, None, cancel)
+}
+
+/// behavior.md 5章 手順2〜8を1回で行う。`detour_ds` は本体の遠回りの上限（デシ秒）。
+/// `middle_detour_ds` が `Some(dm)` なら、`dm` を遠回りの上限にして中間案も探す。
+///
 /// 1. 2点が同じ位置なら [`RouteError::NoRoute`]。
 /// 2. 最短時間経路 p0 を求める。到達できなければ [`RouteError::NoRoute`]、距離が80,000m超なら
 ///    [`RouteError::RouteTooLong`]。
@@ -167,14 +190,17 @@ pub fn find_routes(
 ///    p0 だけにする。
 /// 6. 部分グラフがあれば [`search_subgraph`] で事故考慮経路と代替経路を求める。見つからなければ
 ///    p0 だけにする。
-/// 7. [`select_candidates`] で候補を整理する。
-/// 8. すべての候補が `time_ds ≤ B` であることを `debug_assert!` で確かめる。
-pub fn find_routes_ds(
+/// 7. p0 だけにしていなければ、`middle_detour_ds` があれば `Bm = T0 + dm` で楕円を切り出し直し、
+///    [`search_best`] で中間案を探す。切り出しは大きすぎれば縮小し、作れなければ中間案なし。
+/// 8. [`select_candidates_with_middle`] で候補を整理する。
+/// 9. すべての候補が `time_ds ≤ B` であることを `debug_assert!` で確かめる。
+pub fn find_routes_with_middle_ds(
     ctx: &SearchContext<'_>,
     cost: &mut dyn ArcCost,
     start: &SnapPoint,
     end: &SnapPoint,
     detour_ds: u64,
+    middle_detour_ds: Option<u64>,
     cancel: &CancelToken,
 ) -> Result<RouteSearch, RouteError> {
     let graph = ctx.graph;
@@ -248,7 +274,49 @@ pub fn find_routes_ds(
     let search_ms = elapsed_ms(search_start);
     cancel.check()?;
 
-    // 手順7：候補の整理。p0 だけにする場合は、p0 と同じ経路を1本だけ残す。
+    // 手順7：中間案。本体が p0 だけになっていないときだけ、より小さい上限で切り出し直して探す。
+    let mut middle = None;
+    let mut middle_ms = 0.0;
+    let mut middle_status = None;
+    if let Some(middle_detour_ds) = middle_detour_ds.filter(|_| !fastest_only) {
+        let middle_start = Instant::now();
+        let sub =
+            match ellipse_subgraph(ctx, start, end, p0.time_ds, middle_detour_ds, cost, cancel) {
+                Ok(sub) => Some(sub),
+                Err(EllipseError::TooLarge { .. }) => match reduced_ellipse(
+                    ctx,
+                    start,
+                    end,
+                    p0.time_ds,
+                    middle_detour_ds,
+                    cost,
+                    cancel,
+                ) {
+                    Ok(sub) => Some(sub),
+                    Err(EllipseError::TooLarge { .. } | EllipseError::Unreachable) => None,
+                    Err(EllipseError::Interrupted(i)) => return Err(RouteError::from(i)),
+                },
+                Err(EllipseError::Unreachable) => None,
+                Err(EllipseError::Interrupted(i)) => return Err(RouteError::from(i)),
+            };
+        let found = match &sub {
+            Some(sub) => search_best(ctx, sub, cancel)?,
+            None => None,
+        };
+        if let Some(found) = found {
+            middle_status = Some(found.status);
+            if found.status != SearchStatus::FastestOnly
+                && !same_route(&found.best, &p0)
+                && !same_route(&found.best, &best)
+            {
+                middle = Some(found.best);
+            }
+        }
+        middle_ms = elapsed_ms(middle_start);
+        cancel.check()?;
+    }
+
+    // 手順8：候補の整理。p0 だけにする場合は、p0 と同じ経路を1本だけ残す。
     let select_start = Instant::now();
     let (candidates, select) = if fastest_only {
         select_candidates_with_stats(
@@ -260,18 +328,19 @@ pub fn find_routes_ds(
             budget_ds,
         )
     } else {
-        select_candidates_with_stats(
+        select_candidates_with_middle(
             graph,
             ctx.topology,
             p0.clone(),
             best.clone(),
+            middle.clone(),
             alternatives,
             budget_ds,
         )
     };
     let select_ms = elapsed_ms(select_start);
 
-    // 手順8：候補の上限。合法性は `SearchContext` が `Restrictions` を持たないため、ここでは
+    // 手順9：候補の上限。合法性は `SearchContext` が `Restrictions` を持たないため、ここでは
     // `legality::check_path` を呼べない（結合試験と、③の検査で確かめる）。
     for candidate in &candidates {
         debug_assert!(
@@ -284,6 +353,7 @@ pub fn find_routes_ds(
     Ok(RouteSearch {
         p0,
         best,
+        middle,
         budget_ds,
         candidates,
         dropped_too_long: select.dropped_too_long as u64,
@@ -291,12 +361,14 @@ pub fn find_routes_ds(
             fastest_ms,
             ellipse_ms,
             search_ms,
+            middle_ms,
             select_ms,
             ellipse_nodes,
             ellipse_arcs,
             reduced,
             fastest_only,
             status,
+            middle_status,
             gap,
             rcsp_completed: status == SearchStatus::Optimal,
         },

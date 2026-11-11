@@ -88,7 +88,16 @@ export function validateRouteResponse(
   if (candidates.some((route, i) => route.id !== `route-${i + 1}`)) invalid();
   const fastest = candidates.find((route) => route.id === response.fastest_id);
   const safest = candidates.find((route) => route.id === response.safest_id);
+  const middle = candidates.find((route) => route.id === response.middle_id);
   if (!fastest || (response.safest_id !== null && !safest)) invalid();
+  if (
+    response.middle_id !== null &&
+    (!middle ||
+      response.safest_id === null ||
+      middle.id === response.fastest_id ||
+      middle.id === response.safest_id)
+  )
+    invalid();
   // Route selection rules belong to the backend (still under verification).
   // Check only references and invariants that hold for any selection rule.
   if (safest && !safest.within_detour) invalid();
@@ -117,7 +126,10 @@ export function validateRouteResponse(
     invalid();
   let navigationBytes = 0;
   for (const route of candidates) {
-    const selected = route.id === fastest.id || route.id === safest?.id;
+    const selected =
+      route.id === fastest.id ||
+      route.id === safest?.id ||
+      route.id === middle?.id;
     if (selected !== (route.navigation !== null)) invalid();
     if (route.navigation) {
       validateNavigation(route);
@@ -221,8 +233,8 @@ export function validateRouteResponse(
   return response;
 }
 
-/** behavior.md 7: selected routes' navigation must be at most 5,000,000 bytes. */
-const MAX_NAVIGATION_BYTES = 5_000_000;
+/** behavior.md 7: selected routes' navigation must be at most 7,500,000 bytes. */
+const MAX_NAVIGATION_BYTES = 7_500_000;
 const encoder = new TextEncoder();
 const utf8Length = (text: string) => encoder.encode(text).length;
 

@@ -179,6 +179,24 @@ describe("API 2.0 contract and cross-field validation", () => {
       },
     ],
     [
+      "middle id not in candidates",
+      (result) => {
+        result.middle_id = "route-9";
+      },
+    ],
+    [
+      "middle id equal to fastest_id",
+      (result) => {
+        result.middle_id = result.fastest_id;
+      },
+    ],
+    [
+      "middle id equal to safest_id",
+      (result) => {
+        result.middle_id = result.safest_id;
+      },
+    ],
+    [
       "missing reduction percentage while a safest route exists and the baseline risk is positive",
       (result) => {
         result.risk_reduction_percent = null;
@@ -218,6 +236,22 @@ describe("API 2.0 contract and cross-field validation", () => {
   ])("rejects %s", (_, mutate) => {
     const result = createDemoRouteResponse(request);
     mutate(result);
+    expect(() => validateRouteResponse(result, request)).toThrow(/API契約/);
+  });
+
+  it("accepts a middle route with navigation", () => {
+    const result = createDemoRouteResponse(request);
+    result.safest_id = result.fastest_id;
+    result.extra_minutes = 0;
+    result.risk_reduction_percent = 0;
+    result.middle_id = result.candidates[1].id;
+    expect(validateRouteResponse(result, request)).toBe(result);
+    expect(result.candidates[1].navigation).not.toBeNull();
+  });
+
+  it("rejects a middle id when safest is null", () => {
+    const result = createDemoRouteResponse(request, "zero");
+    result.middle_id = result.candidates[1].id;
     expect(() => validateRouteResponse(result, request)).toThrow(/API契約/);
   });
 

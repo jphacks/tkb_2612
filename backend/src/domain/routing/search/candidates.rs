@@ -153,6 +153,16 @@ pub fn overlap_ratio(graph: &Graph, topology: &Topology, a: &Path, b: &Path) -> 
     shared / total as f64
 }
 
+/// 2つの経路が、有向辺の列と吸着点（出発・到着の辺と、辺の始点からの距離）まで同じか。
+/// 同じ候補として1本にまとめる判定に使う。
+pub(crate) fn same_route(a: &Path, b: &Path) -> bool {
+    a.dedges == b.dedges
+        && a.start.edge == b.start.edge
+        && a.start.offset_dm == b.start.offset_dm
+        && a.end.edge == b.end.edge
+        && a.end.offset_dm == b.end.offset_dm
+}
+
 /// 候補の整理で落とした理由の内訳（評価用）。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SelectStats {
@@ -179,7 +189,7 @@ pub fn select_candidates(
     others: Vec<Path>,
     budget_ds: u64,
 ) -> Vec<Path> {
-    select_candidates_with_stats(graph, topology, p0, best, others, budget_ds).0
+    select_candidates_with_middle(graph, topology, p0, best, None, others, budget_ds).0
 }
 
 /// [`select_candidates`] と同じ整理を行い、80,000m超で外した候補の数も返す。
@@ -191,11 +201,24 @@ pub fn select_candidates_with_stats(
     others: Vec<Path>,
     budget_ds: u64,
 ) -> (Vec<Path>, SelectStats) {
-    let same_as_p0 = best.dedges == p0.dedges
-        && best.start.edge == p0.start.edge
-        && best.start.offset_dm == p0.start.offset_dm
-        && best.end.edge == p0.end.edge
-        && best.end.offset_dm == p0.end.offset_dm;
+    select_candidates_with_middle(graph, topology, p0, best, None, others, budget_ds)
+}
+
+/// 中間案 `middle` を加えて候補を整理する。`middle` 以外の扱いは [`select_candidates`] と同じ。
+///
+/// 並べる順は `p0`、`best`、`middle`、`others`。`middle` は `p0`・`best` と同じく80%の重複除去の
+/// 対象から外して常に残すが、`p0` または `best` と有向辺の列・吸着点まで同じなら加えない。
+/// `middle` にも時間の上限と80,000mの検査をかけ、最大 `MAX_CANDIDATES`（6）本には含める。
+/// `others` の重複判定は `p0`・`best`・先に残した `others` とだけ比べ、`middle` とは比べない。
+pub fn select_candidates_with_middle(
+    graph: &Graph,
+    topology: &Topology,
+    p0: Path,
+    best: Path,
+    middle: Option<Path>,
+    others: Vec<Path>,
+    budget_ds: u64,
+) -> (Vec<Path>, SelectStats) {
     // 時間の上限を満たす候補について、距離の上限も満たすかを返す。
     let within_limits = |p: &Path| {
         p.time_ds <= budget_ds
@@ -208,11 +231,28 @@ pub fn select_candidates_with_stats(
                 .is_some_and(|dm| dm > MAX_ROUTE_DISTANCE_DM)
     };
     let mut stats = SelectStats::default();
+
+    // 先に判定だけを行い、あとで `kept` に移す（`middle` を `best` と比べられるようにする）。
+    let same_as_p0 = same_route(&best, &p0);
+    let best_fits = !same_as_p0 && within_limits(&best);
+    let best_too_long = !same_as_p0 && !best_fits && too_long(&best);
+    let middle = middle.filter(|m| !same_route(m, &p0) && !same_route(m, &best));
+    let middle_fits = middle.as_ref().is_some_and(&within_limits);
+    let middle_too_long = middle.as_ref().is_some_and(|m| !middle_fits && too_long(m));
+
     let mut kept: Vec<Path> = vec![p0];
-    if !same_as_p0 {
-        if within_limits(&best) {
-            kept.push(best);
-        } else if too_long(&best) {
+    if best_fits {
+        kept.push(best);
+    } else if best_too_long {
+        stats.dropped_too_long += 1;
+    }
+    // `others` の重複判定から外す `middle` の位置。
+    let mut middle_index = None;
+    if let Some(middle) = middle {
+        if middle_fits {
+            middle_index = Some(kept.len());
+            kept.push(middle);
+        } else if middle_too_long {
             stats.dropped_too_long += 1;
         }
     }
@@ -226,9 +266,10 @@ pub fn select_candidates_with_stats(
             }
             continue;
         }
-        let duplicate = kept
-            .iter()
-            .any(|k| overlap_ratio(graph, topology, &candidate, k) > OVERLAP_THRESHOLD);
+        let duplicate = kept.iter().enumerate().any(|(i, k)| {
+            Some(i) != middle_index
+                && overlap_ratio(graph, topology, &candidate, k) > OVERLAP_THRESHOLD
+        });
         if !duplicate {
             kept.push(candidate);
         }

@@ -23,7 +23,7 @@ export interface paths {
          *     出発日時は受け取らない。period/day_type/weatherの自動値は/api/conditionsで得る。
          *     天候は事故を除外せず、一致事故をweather_matchで別集計し、スコアで重く数える。
          *     全候補で該当事故が0件でも条件を解除しない。その場合、新方式は推定リスクでsafest_idを選び、旧方式（schema 2）はnullを返す。
-         *     navigationはfastest_idとnullでないsafest_idの候補だけに含め、未選定はnull。
+         *     navigationはfastest_id、nullでないsafest_id、nullでないmiddle_idの候補だけに含め、未選定はnull。
          *     同一選定IDでは1個を共用する。新方式（schema 3）は外部の経路提供元を呼ばない。
          *     旧方式（schema 2）はナビ用生成でOSRM呼出しを追加せず、1検索最大3呼出し・steps=falseを維持する。
          *     旧方式では、全体期限内の追加候補のみの個別上流通信の失敗は200のwarningsに残す。
@@ -421,10 +421,10 @@ export interface components {
             severity_weight: number;
         };
         /**
-         * @description 移行追加。選定1〜2経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。
+         * @description 移行追加。選定1〜3経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。
          *     距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。
          *     110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。
-         *     選定経路分のnavigation合計は空白なしUTF-8 JSONで5000000バイト以下を検証する。
+         *     選定経路分のnavigation合計は空白なしUTF-8 JSONで7500000バイト以下を検証する。
          */
         NavigationData: {
             /** @description 元geometry全頂点の緯度の算術平均φ、度。behavior.md 6章の局所平面投影に使用。 */
@@ -480,13 +480,15 @@ export interface components {
             weighted_risk: number;
             /** @description 丸めたweighted_risk/max(distance/1000,0.001)、重み点/km、小数3桁に丸め。選定に使わない。 */
             risk_per_km: number;
+            /** @description 最短時間経路のweighted_risk（小数2桁）に対する削減率（%、小数1桁）。最短時間経路のweighted_riskが0ならnull。最短時間経路自身は0。負の値はリスクが高いことを表す。 */
+            risk_reduction_percent: number | null;
             accident_points: components["schemas"]["AccidentCollection"];
             /** @description accident_points.features.length=min(accident_count,250)。表示点数。 */
             points_shown: number;
             high_risk_sections: components["schemas"]["HighRiskCollection"];
             /** @description 高リスクの小線分の総数（100件で切る前）。新方式は事故3件以上、旧方式はseverity_weightが3以上の小線分。high_risk_sections.features.length=min(high_risk_total,100)。 */
             high_risk_total: components["schemas"]["Count"];
-            /** @description 必須。idがfastest_idまたはnullでないsafest_idならNavigationData、それ以外はnull。対象0件はsections=[]。 */
+            /** @description 必須。idがfastest_id、nullでないsafest_id、nullでないmiddle_idのいずれかならNavigationData、それ以外はnull。対象0件はsections=[]。 */
             navigation: components["schemas"]["NavigationData"] | null;
             /**
              * @deprecated
@@ -517,7 +519,9 @@ export interface components {
             fastest_id: components["schemas"]["RouteId"];
             /** @description 安全ルート。新方式は全候補で該当事故（集合B）が0件でも推定リスクが最小の経路を選ぶ。旧方式は全候補0件ならnull。nullなら全候補0件である。 */
             safest_id: components["schemas"]["RouteId"] | null;
-            /** @description durationの安定昇順。fastest_idとnullでないsafest_idは必ずこの中に存在し、その候補だけnavigationが非null。同一IDの2選定は1個を共用。 */
+            /** @description 中間案の候補ID。新方式で、最短時間経路と事故考慮経路のあいだに時間とリスクがあり、差が十分な経路があるときだけ入る。旧方式（schema 2）は常にnull。fastest_id・safest_idとは異なる。 */
+            middle_id: components["schemas"]["RouteId"] | null;
+            /** @description durationの安定昇順。fastest_id・nullでないsafest_id・nullでないmiddle_idは必ずこの中に存在し、その候補だけnavigationが非null。同一IDの複数選定は1個を共用。 */
             candidates: components["schemas"]["RouteCandidate"][];
             /** @description safestの追加所要時間、分、小数3桁。safest_idがnullならnull。 */
             extra_minutes: number | null;

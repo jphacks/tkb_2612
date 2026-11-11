@@ -25,7 +25,7 @@ pub use conditions::{ConditionFilter, DayType, Mode, Period, Weather};
 pub use engine::{
     AccidentPoint, AccidentTotals, Attribution, CandidateSet, DatasetInfo, EngineError,
     EvaluatedRoute, HighRiskSegment, NavigationData, NavigationSection, QueryError, RouteEngine,
-    RouteOutcome, RouteQuery,
+    RouteOutcome, RouteQuery, risk_reduction_percent,
 };
 pub use geo::{LatLon, LonLat};
 pub use routing::{

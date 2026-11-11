@@ -312,6 +312,7 @@ export function createDemoRouteResponse(
             },
       weighted_risk: weight,
       risk_per_km: round(weight / Math.max(length / 1000, 0.001), 3),
+      risk_reduction_percent: null,
       accident_points: { type: "FeatureCollection", features: points },
       points_shown: count,
       high_risk_sections: {
@@ -359,11 +360,21 @@ export function createDemoRouteResponse(
   for (const route of candidates)
     if (route.id === fastest.id || route.id === safest?.id)
       route.navigation = navigations.get(route.id) ?? null;
+  for (const route of candidates)
+    route.risk_reduction_percent = fastest.weighted_risk
+      ? round(
+          ((fastest.weighted_risk - route.weighted_risk) /
+            fastest.weighted_risk) *
+            100,
+          1,
+        )
+      : null;
   return {
     api_version: "2.0",
     dataset_id: DATASET_ID,
     fastest_id: fastest.id,
     safest_id: safest?.id ?? null,
+    middle_id: null,
     candidates,
     extra_minutes: safest?.extra_minutes ?? null,
     risk_reduction_percent:

@@ -1,4 +1,6 @@
 //! 小数桁の丸め（behavior.md 8章）。
+//!
+//! 両エンジンと応答で使う削減率の式は `contract` に置き、ここから再エクスポートする。
 
 /// Pythonの `round(x, digits)` と同じ丸め。
 ///
@@ -14,6 +16,8 @@ pub fn py_round(x: f64, digits: usize) -> f64 {
         .parse()
         .expect("固定桁で書式化した有限値は再び読める")
 }
+
+pub use crate::contract::risk_reduction_percent;
 
 /// CSV等へ書く固定桁の文字列（`py_round` と同じ丸め）。
 pub fn fixed(x: f64, digits: usize) -> String {

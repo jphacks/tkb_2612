@@ -4,6 +4,7 @@
     "singleRoute": {
       "fastest_id": "route-1",
       "safest_id": "route-1",
+      "middle_id": null,
       "candidates": [
         {
           "duration": 600,
@@ -35,6 +36,7 @@
             "injuries": 2
           },
           "weighted_risk": 12.0,
+          "risk_reduction_percent": 0.0,
           "risk_per_km": 12.0,
           "accident_points": {
             "type": "FeatureCollection",
@@ -142,6 +144,7 @@
     "noAccidents": {
       "fastest_id": "route-1",
       "safest_id": null,
+      "middle_id": null,
       "candidates": [
         {
           "duration": 600,
@@ -173,6 +176,7 @@
             "injuries": 0
           },
           "weighted_risk": 0.0,
+          "risk_reduction_percent": null,
           "risk_per_km": 0.0,
           "accident_points": {
             "type": "FeatureCollection",
@@ -225,6 +229,7 @@
     "twoSelected": {
       "fastest_id": "route-1",
       "safest_id": "route-2",
+      "middle_id": null,
       "candidates": [
         {
           "duration": 600,
@@ -256,6 +261,7 @@
             "injuries": 5
           },
           "weighted_risk": 12.21,
+          "risk_reduction_percent": 0.0,
           "risk_per_km": 12.21,
           "accident_points": {
             "type": "FeatureCollection",
@@ -424,6 +430,7 @@
             "injuries": 11
           },
           "weighted_risk": 3.64,
+          "risk_reduction_percent": 70.2,
           "risk_per_km": 3.309,
           "accident_points": {
             "type": "FeatureCollection",
@@ -561,6 +568,7 @@
             "injuries": 11
           },
           "weighted_risk": 8.34,
+          "risk_reduction_percent": 31.7,
           "risk_per_km": 5.957,
           "accident_points": {
             "type": "FeatureCollection",
@@ -670,6 +678,7 @@
     "weatherAll": {
       "fastest_id": "route-1",
       "safest_id": "route-2",
+      "middle_id": null,
       "candidates": [
         {
           "duration": 600,
@@ -695,6 +704,7 @@
           "injuries": 5,
           "weather_match": null,
           "weighted_risk": 12.21,
+          "risk_reduction_percent": 0.0,
           "risk_per_km": 12.21,
           "accident_points": {
             "type": "FeatureCollection",
@@ -857,6 +867,7 @@
           "injuries": 11,
           "weather_match": null,
           "weighted_risk": 3.64,
+          "risk_reduction_percent": 70.2,
           "risk_per_km": 3.309,
           "accident_points": {
             "type": "FeatureCollection",
@@ -988,6 +999,7 @@
           "injuries": 11,
           "weather_match": null,
           "weighted_risk": 8.34,
+          "risk_reduction_percent": 31.7,
           "risk_per_km": 5.957,
           "accident_points": {
             "type": "FeatureCollection",
@@ -1097,6 +1109,7 @@
     "noWeatherMatch": {
       "fastest_id": "route-1",
       "safest_id": "route-2",
+      "middle_id": null,
       "candidates": [
         {
           "duration": 600,
@@ -1128,6 +1141,7 @@
             "injuries": 0
           },
           "weighted_risk": 12.21,
+          "risk_reduction_percent": 0.0,
           "risk_per_km": 12.21,
           "accident_points": {
             "type": "FeatureCollection",
@@ -1296,6 +1310,7 @@
             "injuries": 0
           },
           "weighted_risk": 3.64,
+          "risk_reduction_percent": 70.2,
           "risk_per_km": 3.309,
           "accident_points": {
             "type": "FeatureCollection",
@@ -1433,6 +1448,7 @@
             "injuries": 0
           },
           "weighted_risk": 8.34,
+          "risk_reduction_percent": 31.7,
           "risk_per_km": 5.957,
           "accident_points": {
             "type": "FeatureCollection",
@@ -1542,6 +1558,7 @@
     "thinnedPoints": {
       "fastest_id": "route-1",
       "safest_id": "route-1",
+      "middle_id": null,
       "candidates": [
         {
           "duration": 600,
@@ -1573,6 +1590,7 @@
             "injuries": 48
           },
           "weighted_risk": 378.0,
+          "risk_reduction_percent": 0.0,
           "risk_per_km": 378.0,
           "accident_points": {
             "type": "FeatureCollection",

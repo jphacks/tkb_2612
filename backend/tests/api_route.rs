@@ -444,6 +444,8 @@ mod common_large {
         outcome.safest = Some(1);
         // 全候補が候補0の複製なので、safestの追加時間も候補0と同じ（0分）
         outcome.extra_minutes = Some(outcome.candidates[1].extra_minutes);
+        // 全候補のweighted_riskも同じなので、削減率は0%
+        outcome.risk_reduction_percent = Some(0.0);
         outcome
     }
 }
