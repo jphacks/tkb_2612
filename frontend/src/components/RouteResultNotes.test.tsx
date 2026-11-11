@@ -120,7 +120,7 @@ describe("RouteResultNotes", () => {
     expect(rows[1]).toHaveTextContent("最短ルート・安全ルート");
   });
 
-  it("shows the estimated risk relative to the fastest route (=100) and the total accident count per route", () => {
+  it("shows the estimated risk relative to the fastest route (=100) and the same filtered accident counts as the cards", () => {
     const result = createDemoRouteResponse(request);
     const { safest, fastest } = routes(result);
     fastest.weighted_risk = 123.98;
@@ -138,12 +138,12 @@ describe("RouteResultNotes", () => {
       "最短ルート",
     );
     expect(within(fastestRow).getAllByRole("cell").map((c) => c.textContent))
-      .toEqual(["100", "56件"]);
+      .toEqual(["100", "3件"]);
     expect(within(safestRow).getByRole("rowheader")).toHaveTextContent(
       "安全ルート",
     );
     expect(within(safestRow).getAllByRole("cell").map((c) => c.textContent))
-      .toEqual(["22.6", "12件"]);
+      .toEqual(["22.6", "1件"]);
   });
 
   it.each([
@@ -177,12 +177,14 @@ describe("RouteResultNotes", () => {
     expect(within(safestRow).getAllByRole("cell")[0]).toHaveTextContent("—");
   });
 
-  it("shows a dash when the total accident count is not available", () => {
+  it("still shows the filtered accident count when the total accident count is not available", () => {
     const result = createDemoRouteResponse(request);
     routes(result).fastest.total_accident_count = null;
     const section = renderNotes(result);
     const fastestRow = within(section).getAllByRole("row")[1];
-    expect(within(fastestRow).getAllByRole("cell")[1]).toHaveTextContent("—");
+    expect(within(fastestRow).getAllByRole("cell")[1]).toHaveTextContent(
+      `${routes(result).fastest.accident_count}件`,
+    );
   });
 
   it("explains how the risk is estimated, adding the car and weather lines only when they apply", () => {

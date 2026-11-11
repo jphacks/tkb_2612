@@ -97,11 +97,7 @@ export function RouteResultNotes({ result }: Props) {
                 <td>
                   {(fastest && relativeRisk(route, fastest)) || "—"}
                 </td>
-                <td>
-                  {route.total_accident_count === null
-                    ? "—"
-                    : `${route.total_accident_count}件`}
-                </td>
+                <td>{route.accident_count}件</td>
               </tr>
             ))}
           </tbody>
