@@ -81,13 +81,13 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 
 ## 4. Cloud Runサービス
 
-初期値（cloud-selection.md）：東京、1 vCPU / 2 GiB、同時受付4、最大1台、通常は最小0台、要求タイムアウトは180秒以上、ingressはall、未認証の公開をしない。startup probeは `/api/health`（全件ロードと検証が終わるまで503）で、起動4分以内に成功させます。
+初期値（cloud-selection.md）：東京、1 vCPU / 4 GiB（2 GiBでは起動時のデータ読み込み中にメモリ不足で停止する。2026-11-11の実測で、起動直後の最大2.16 GiB、測定中の最大2.25 GiB）、同時受付4、最大1台、通常は最小0台、要求タイムアウトは180秒以上、ingressはall、未認証の公開をしない。startup probeは `/api/health`（全件ロードと検証が終わるまで503）で、起動4分以内に成功させます。
 
 ```sh
 gcloud run deploy $SERVICE \
   --image=$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/$SERVICE:$RELEASE_ID \
   --region=$REGION \
-  --cpu=1 --memory=2Gi --concurrency=4 \
+  --cpu=1 --memory=4Gi --concurrency=4 \
   --min-instances=0 --max-instances=1 \
   --timeout=180 \
   --ingress=all --no-allow-unauthenticated \

@@ -109,7 +109,7 @@ API成功/失敗は`Cache-Control: no-store`・nosniff。APIを先に解決し�
 
 ## 8. 配備・アクセス・ログ【委任判断】
 
-Cloud Run東京のリクエスト課金、初期1 vCPU/2 GiB・同時受付4・最大1台、通常最小0台/実演中1台を使う。事故原本約420 MiBはRAM実測ではない。前処理をビルド前に行い、読み取り専用成果物とビルド済み画面を同梱する。実測でCPU/RAM/同時数と起動時間を見直す。詳細な比較・料金・ログ除外フィルタは[cloud-selection.md](cloud-selection.md)。
+Cloud Run東京のリクエスト課金、1 vCPU/4 GiB（2 GiBでは起動時にメモリ不足。実測の最大2.25 GiB）・同時受付4・最大1台、通常最小0台/実演中1台を使う。事故原本約420 MiBはRAM実測ではない。前処理をビルド前に行い、読み取り専用成果物とビルド済み画面を同梱する。実測でCPU/RAM/同時数と起動時間を見直す。詳細な比較・料金・ログ除外フィルタは[cloud-selection.md](cloud-selection.md)。
 
 **実演はCloud RunのURLへブラウザから直接アクセスし、IAPで許可したGoogleアカウントだけに限定する（利用者決定、2026-10-24）。** ingressはall、IAPを有効化し、許可する開発者・審査員のアカウントへ`roles/iap.httpsResourceAccessor`、IAPのサービスエージェントへ`roles/run.invoker`を与える。allUsersを付けない。アプリ独自ログインやブラウザへのトークン埋込みは作らない。HTTPS配信なのでスマートフォンのGPS・PWAも対象にする。組織外アカウントを許可する場合のOAuthクライアント設定は配備前に確認する。[Cloud RunのIAP](https://cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run)
 
