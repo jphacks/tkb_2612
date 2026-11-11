@@ -51,7 +51,7 @@ GeoJSONはWGS84の`[lon,lat]`、入力/住所候補は名前付きlat/lon。緯�
 
 `NavigationData` はprojection_lat_deg・length_m・vertex_distances_m・sections。behavior 6章の局所平面で累積距離を作り、深刻度3以上の全sidを経路順に並べ、連続sidの最大列だけ結合する。距離減衰・天候倍率を加えない。数値・結合・順序はbackend一か所に置き、表示用high_risk_sectionsの上位100件・非結合・high_risk_totalは維持する。正確な計算と相関制約は [api/behavior.md](api/behavior.md) 7章、判断理由は [navigation-delegated-decisions.md](navigation-delegated-decisions.md) に従う。
 
-80km/15,000頂点から保守的に局所全長110,000m、小線分16,466本、結合後8,233区間/経路。2経路のnavigationは5,000,000バイト以下を検証し、全route応答の小計は10,847,344バイト、メタデータ込み概ね11〜12MBのケースでサイズ・RAM・gzip圧縮を含む全体35秒期限を測る。圧縮率は保証せず、送信形式は区間オブジェクトを維持する。1Mbps・RTT 300msでgzip/identityとも本文全受信・展開・解析/検査まで180秒以内を受け入れとする（behavior 7章）。navigation構築もaggregation_msへ含む。区間を切り捨てた部分成功にはしない。
+80km/15,000頂点から保守的に局所全長110,000m、小線分16,466本、結合後8,233区間/経路。3経路のnavigationは7,500,000バイト以下を検証し、全route応答の小計は13,331,016バイト、メタデータ込み概ね13〜14MBのケースでサイズ・RAM・gzip圧縮を含む全体35秒期限を測る。圧縮率は保証せず、送信形式は区間オブジェクトを維持する。1Mbps・RTT 300msでgzip/identityとも本文全受信・展開・解析/検査まで180秒以内を受け入れとする（behavior 7章）。navigation構築もaggregation_msへ含む。区間を切り捨てた部分成功にはしない。
 
 ナビ生成・開始・進行でOSRM呼出しを増やさない。公共OSRM全利用者合計1req/秒・ROUTING_MIN_INTERVAL_MS=1050・1検索最大3呼出し・steps=falseを維持する。現在地を使う再検索は明示ボタンによる通常route検索であり、既存ゲート・上限・503を適用する。ナビの位置はブラウザ内だけで処理し、再検索と既存conditions規則以外では送信しない。実機/模擬とも同じ無保存・ログ除外を適用する。ブラウザ内の照合はfrontend-spec 7.3と [navigation-matching-cases.md](navigation-matching-cases.md) の条件・テストで規定し、方式は実装時に選び記録する。サーバの累積距離・区間生成手順はこの照合方式の選定とは別に維持する。
 
