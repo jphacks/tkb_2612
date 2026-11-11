@@ -459,7 +459,8 @@ const fn is_link(class: u8) -> bool {
     matches!(class, 1 | 3 | 5 | 7 | 9)
 }
 
-/// 斜めの分岐か（手順4の「分岐」）。向きは、分岐の相手の出口と経路の位置関係で決める。
+/// 斜めの分岐か（手順4の「分岐」）。分岐の相手は、経路の局所角との差が上限未満の出口とする。
+/// 向きは、分岐の相手の出口と経路の位置関係で決める。
 /// 出口がすべて経路より右なら `slight_left`、すべて左なら `slight_right` とする。
 /// 両側にあれば（3叉の中央の枝など）、ほぼ直進でなければ連の角度の符号で決め、
 /// ほぼ直進なら最初に見つかった出口との位置関係で決める。
@@ -491,7 +492,8 @@ fn fork_maneuver(
                 continue;
             };
             let other_class = graph.edge(other.edge()).class;
-            if other_angle.abs() >= limit
+            // 分岐の相手は、経路の局所角から近い出口に限る（入る辺からの角度では選ばない）。
+            if (other_angle - local).abs() >= limit
                 || class_rank(other_class) > out_rank
                 // 本線を走っている間、ランプの出口は分岐として案内しない。
                 || (is_link(other_class) && !is_link(out_class))
