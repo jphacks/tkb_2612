@@ -147,7 +147,7 @@ GuidanceStep:
 | `|a| ≥ UTURN_MIN_DEG` | `uturn` |
 | `|a| < OBVIOUS_MAX_DEG`、`|a| ≥ SLIGHT_MIN_DEG`、かつ「道なり」 | 案内なし |
 | `|a| ≥ TURN_MIN_DEG` | `right`（`a > 0`）／`left` |
-| `|a| ≥ SLIGHT_MIN_DEG` | `slight_right`（`a > 0`）／`slight_left` |
+| `|a| ≥ SLIGHT_MIN_DEG` | 「分岐」に当たれば下記の向きの `slight_*`、当たらなければ `slight_right`（`a > 0`）／`slight_left` |
 | `|a| < SLIGHT_MIN_DEG` で「分岐」に当たる | 下記の向きの `slight_*` |
 | それ以外 | 案内なし（直進） |
 

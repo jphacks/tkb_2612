@@ -419,6 +419,11 @@ fn classify(
         });
     }
     if magnitude >= SLIGHT_MIN_DEG {
+        // 斜めでも、近い角度の出口と分かれるなら、その出口との位置関係で向きを決める
+        // （両方の出口が同じ側に開くY字で、逆の案内を返さないため）。
+        if let Some(fork) = fork_maneuver(graph, dedges, infos, run, angle) {
+            return Some(fork);
+        }
         return Some(if angle > 0.0 {
             Maneuver::SlightRight
         } else {
