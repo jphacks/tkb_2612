@@ -195,8 +195,9 @@ export function RouteCallouts({
         : tone === "considered"
           ? SAFE_LABEL
           : FASTEST_LABEL;
-    const title =
-      same || tone === "fastest" ? label : `${label}（+${extra}分）`;
+    const extraTitle =
+      same || tone === "fastest" ? null : `（+${extra}分）`;
+    const title = extraTitle === null ? label : `${label}${extraTitle}`;
     const reduction =
       route.id === result.fastest_id ? null : route.risk_reduction_percent;
     const risk =
@@ -238,7 +239,16 @@ export function RouteCallouts({
             {routeSymbol(index)}
           </span>
           <i aria-hidden="true" />
-          <span>{title}</span>
+          <span>
+            {extraTitle === null ? (
+              title
+            ) : (
+              <>
+                <span className="map-card-title-name">{label}</span>
+                <span className="map-card-title-extra">{extraTitle}</span>
+              </>
+            )}
+          </span>
         </span>
         <strong className="map-card-duration">
           {formatMinutes(route.duration)}

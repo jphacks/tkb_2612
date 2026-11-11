@@ -7,7 +7,7 @@ import {
   MIDDLE_LABEL,
   SAFE_LABEL,
 } from "./RouteCallouts";
-import { RouteResultNotes, relativeRisk } from "./RouteResultNotes";
+import { RouteResultNotes, COMPARISON_NOTICE, relativeRisk } from "./RouteResultNotes";
 
 const request: RouteRequest = {
   origin: DEMO_PLACES[0],
@@ -25,6 +25,26 @@ function renderNotes(result: RouteResponse) {
 }
 
 describe("RouteResultNotes", () => {
+  it.each([
+    ["1枚", "same"],
+    ["2枚", "normal"],
+    ["3枚", "middle"],
+    ["事故0件", "zero"],
+  ] as const)(
+    "shows the comparison notice outside the details with %s",
+    (_label, scenario) => {
+      const result = createDemoRouteResponse(request, scenario);
+      const section = renderNotes(result);
+      const details = section.querySelector("details");
+      expect(details).not.toBeNull();
+      expect(details).not.toHaveAttribute("open");
+      const notice = within(section).getByText(COMPARISON_NOTICE);
+      expect(notice).toBeVisible();
+      expect(details).not.toContainElement(notice);
+      expect(section.firstElementChild).toBe(notice);
+    },
+  );
+
   it("shows every warning without opening the details", () => {
     const result = createDemoRouteResponse(request);
     const section = renderNotes(result);
@@ -217,7 +237,7 @@ describe("RouteResultNotes", () => {
     const { unmount } = render(<RouteResultNotes result={result} />);
     let section = screen.getByRole("region", { name: "検索結果の説明" });
     expect(section).toHaveTextContent("過去の事故を、起きた道路や交差点ごとに数えています。");
-    expect(section).not.toHaveTextContent("事故に遭う確率");
+    expect(section).not.toHaveTextContent("経路から72m以内");
     expect(section).not.toHaveTextContent("絞っていません");
     expect(section).not.toHaveTextContent("生活道路");
     expect(section).not.toHaveTextContent("雨・霧・雪を指定したとき");

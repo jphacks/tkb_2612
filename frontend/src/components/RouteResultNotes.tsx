@@ -5,6 +5,9 @@ type Props = {
   result: RouteResponse;
 };
 
+export const COMPARISON_NOTICE =
+  "過去の事故に基づく参考指標です。事故に遭う確率や安全性を保証するものではありません。";
+
 const HEAVY_WEATHER = new Set(["雨", "霧", "雪"]);
 
 function choiceSentence(
@@ -74,6 +77,7 @@ export function RouteResultNotes({ result }: Props) {
 
   return (
     <section className="route-result-notes" aria-label="検索結果の説明">
+      <p>{COMPARISON_NOTICE}</p>
       {result.safest_id === null && (
         <p>全候補で該当する事故がないため、{SAFE_LABEL}の経路は選んでいません。</p>
       )}

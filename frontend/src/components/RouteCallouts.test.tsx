@@ -111,7 +111,9 @@ describe("RouteCallouts featured routes", () => {
           selector: ".map-card-symbol",
         }),
       ).toBeInTheDocument();
-      expect(within(card).getByText(expected[index])).toBeInTheDocument();
+      expect(
+        card.querySelector(".map-card-title > span:last-child")?.textContent,
+      ).toBe(expected[index]);
     });
     expect(cards[0]).toHaveClass("route-fastest");
     expect(cards[1]).toHaveClass("route-middle");
@@ -219,6 +221,21 @@ describe("RouteCallouts featured routes", () => {
       ).not.toBeNull();
       expect(select!.querySelector(".map-route-list-risk")).not.toBeNull();
     });
+  });
+
+  it("renders the extra time as its own element in the card heading", () => {
+    const result = createDemoRouteResponse(request, "middle");
+    const group = renderCallouts(result);
+    const middleCard = group.querySelector(".route-middle") as HTMLElement;
+    const title = middleCard.querySelector(".map-card-title") as HTMLElement;
+    const name = title.querySelector(".map-card-title-name") as HTMLElement;
+    const extra = title.querySelector(".map-card-title-extra") as HTMLElement;
+    expect(name).not.toBeNull();
+    expect(extra).not.toBeNull();
+    expect(name).toHaveTextContent(MIDDLE_LABEL);
+    expect(extra).toHaveTextContent(/^（\+\d+\.\d分）$/);
+    expect(name).not.toBe(extra);
+    expect(title).toHaveTextContent(`${MIDDLE_LABEL}${extra.textContent}`);
   });
 
   it("stacks three cards without overlap on a wide map", () => {

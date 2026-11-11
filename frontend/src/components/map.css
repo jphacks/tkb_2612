@@ -461,6 +461,11 @@
 .map-card-title > span {
   flex: 1;
 }
+/* 追加時間は途中で折り返さず、名前とのあいだで折り返す。 */
+.map-card-title-extra {
+  display: inline-block;
+  white-space: nowrap;
+}
 .map-card-duration {
   font-size: 28px;
   font-weight: 700;
