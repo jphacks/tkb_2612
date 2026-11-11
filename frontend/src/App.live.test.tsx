@@ -165,6 +165,9 @@ beforeEach(() => {
             } satisfies GeocodeResponse);
       case "/api/route":
         return routeHandler ? routeHandler() : json(routeExample);
+      // 経路の周りの口コミ（Issue #23）。ナビの地図に重ねるだけ
+      case "/api/reports":
+        return json({ reports: [] });
       default:
         throw new Error(`想定外の通信: ${url.pathname}`);
     }
@@ -736,6 +739,7 @@ describe("live Appの地図初期化との競合", () => {
           "current-accuracy",
           "navigation-route",
           "navigation-alert",
+          "community-reports",
         ].sort(),
       );
       const selected = latest?.candidates[0];
@@ -770,6 +774,7 @@ describe("live Appの地図初期化との競合", () => {
         "current-accuracy",
         "navigation-route",
         "navigation-alert",
+        "community-reports",
       ])
         expect(map.sources.get(id)!.data).toEqual({
           type: "FeatureCollection",

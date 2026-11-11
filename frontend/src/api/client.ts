@@ -100,12 +100,13 @@ function readError(data: unknown): {
   }
 }
 
-async function requestJson<T>(
+export async function requestJson<T>(
   path: string,
   parse: (data: unknown) => T,
   signal?: AbortSignal,
   body?: unknown,
   timeout = DEFAULT_TIMEOUT_MS,
+  extraHeaders: Record<string, string> = {},
 ): Promise<T> {
   if (signal?.aborted) throw abortError();
   const controller = new AbortController();
@@ -122,8 +123,12 @@ async function requestJson<T>(
       method: body === undefined ? "GET" : "POST",
       headers:
         body === undefined
-          ? { Accept: "application/json" }
-          : { Accept: "application/json", "Content-Type": "application/json" },
+          ? { ...extraHeaders, Accept: "application/json" }
+          : {
+              ...extraHeaders,
+              Accept: "application/json",
+              "Content-Type": "application/json",
+            },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,
       cache: "no-store",

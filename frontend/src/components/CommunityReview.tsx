@@ -1,7 +1,16 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import type { SafetyReport } from "../community/reports";
-import { SafetyIcon } from "./icons/SafetyIcon";
+import {
+  dominantKind,
+  tallyLabel,
+  type SafetyReport,
+} from "../community/reports";
+import {
+  SafetyIcon,
+  SAFETY_COLORS,
+  SAFETY_LABELS,
+  type SafetyKind,
+} from "./icons/SafetyIcon";
 
 export function RecordedAt({ value }: { value: string | null }) {
   return value ? (
@@ -24,16 +33,15 @@ export function RecordedAt({ value }: { value: string | null }) {
 export function CommunityReview({
   report,
   onClose,
-  onSupport,
+  onVote,
   error,
-  supported,
 }: {
   report: SafetyReport;
   onClose: () => void;
-  onSupport: () => void;
+  onVote: (kind: SafetyKind) => void;
   error: string;
-  supported: boolean;
 }) {
+  const supported = report.my_vote !== null;
   const reasonId = useId();
   const shell = useRef<HTMLDivElement>(null);
   const tooltip = useRef<HTMLParagraphElement>(null);
@@ -92,26 +100,32 @@ export function CommunityReview({
       viewport?.removeEventListener("scroll", update);
     };
   }, [showReason, report, error]);
-  const comments = [
-    ...(report.text
-      ? [{ id: report.id, text: report.text, createdAt: report.createdAt }]
-      : []),
-    ...report.comments,
-  ];
+  const comments = report.comments;
+  const reasonHandlers = {
+    onPointerEnter: () => setHovered(true),
+    onPointerLeave: () => setHovered(false),
+    onFocus: () => setFocused(true),
+    onBlur: () => setFocused(false),
+  };
   return (
     <div className="community-review-shell" ref={shell}>
       <section className="community-review" aria-label="口コミ">
         <div className="community-review-meta">
-          <SafetyIcon
-            kind={report.kind}
-            size={32}
-            count={report.supportCount}
-          />
+          <SafetyIcon kind={dominantKind(report)} size={32} />
           <div>
             <span>記入日時</span>
-            <RecordedAt value={report.createdAt} />
+            <RecordedAt value={report.created_at} />
           </div>
         </div>
+        <p className="community-tally" aria-label={tallyLabel(report)}>
+          {(["safe", "danger"] as const).map((kind) => (
+            <span key={kind} style={{ color: SAFETY_COLORS[kind] }}>
+              {SAFETY_LABELS[kind]}
+              <strong>{kind === "safe" ? report.safe_count : report.danger_count}</strong>
+              票
+            </span>
+          ))}
+        </p>
         <button
           type="button"
           className="icon-button community-close"
@@ -126,7 +140,13 @@ export function CommunityReview({
             <ol className="community-comment-list">
               {comments.map((comment) => (
                 <li key={comment.id}>
-                  <RecordedAt value={comment.createdAt} />
+                  <span
+                    className="community-comment-kind"
+                    style={{ color: SAFETY_COLORS[comment.kind] }}
+                  >
+                    {SAFETY_LABELS[comment.kind]}
+                  </span>
+                  <RecordedAt value={comment.created_at} />
                   <p>{comment.text}</p>
                 </li>
               ))}
@@ -134,31 +154,37 @@ export function CommunityReview({
           </div>
         )}
         {error && <p role="alert">{error}</p>}
-        <div className="community-vote-action">
-          <button
-            type="button"
-            className="community-support-button"
-            onPointerEnter={() => setHovered(true)}
-            onPointerLeave={() => setHovered(false)}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            onClick={() => {
-              if (supported) setReasonPinned(true);
-              else onSupport();
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                setReasonPinned(false);
-                setHovered(false);
-                setFocused(false);
-              }
-            }}
-            aria-disabled={supported}
-            aria-pressed={supported}
-            aria-describedby={showReason ? reasonId : undefined}
-          >
-            投票
-          </button>
+        <div
+          className="community-vote-action"
+          role="group"
+          aria-label="この地点に投票"
+        >
+          {(["safe", "danger"] as const).map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              className="community-support-button"
+              style={{ color: SAFETY_COLORS[kind] }}
+              {...reasonHandlers}
+              onClick={() => {
+                if (supported) setReasonPinned(true);
+                else onVote(kind);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setReasonPinned(false);
+                  setHovered(false);
+                  setFocused(false);
+                }
+              }}
+              aria-disabled={supported}
+              aria-pressed={report.my_vote === kind}
+              aria-describedby={showReason ? reasonId : undefined}
+            >
+              <SafetyIcon kind={kind} size={20} />
+              {SAFETY_LABELS[kind]}に投票
+            </button>
+          ))}
         </div>
       </section>
       {showReason && (

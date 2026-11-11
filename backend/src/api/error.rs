@@ -27,6 +27,12 @@ pub enum ApiError {
     DataUnavailable,
     ServiceBusy,
     Internal,
+    /// 投票先の地点が無い（404 not_found）。
+    ReportNotFound,
+    /// この投票者は投票済み（409 already_voted）。
+    AlreadyVoted,
+    /// 地点の票が上限に達した（409 vote_limit）。
+    VoteLimit,
 }
 
 pub const ROUTING_UNAVAILABLE: &str =
@@ -38,8 +44,9 @@ impl ApiError {
     pub fn status(&self) -> StatusCode {
         match self {
             ApiError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
-            ApiError::NotFound => StatusCode::NOT_FOUND,
+            ApiError::NotFound | ApiError::ReportNotFound => StatusCode::NOT_FOUND,
             ApiError::MethodNotAllowed(_) => StatusCode::METHOD_NOT_ALLOWED,
+            ApiError::AlreadyVoted | ApiError::VoteLimit => StatusCode::CONFLICT,
             ApiError::RouteTooLong => StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::NoRoute | ApiError::ExternalApi(_) => StatusCode::BAD_GATEWAY,
             ApiError::DataUnavailable | ApiError::ServiceBusy => StatusCode::SERVICE_UNAVAILABLE,
@@ -50,8 +57,10 @@ impl ApiError {
     pub fn code(&self) -> &'static str {
         match self {
             ApiError::InvalidRequest(_) => "invalid_request",
-            ApiError::NotFound => "not_found",
+            ApiError::NotFound | ApiError::ReportNotFound => "not_found",
             ApiError::MethodNotAllowed(_) => "method_not_allowed",
+            ApiError::AlreadyVoted => "already_voted",
+            ApiError::VoteLimit => "vote_limit",
             ApiError::RouteTooLong => "route_too_long",
             ApiError::NoRoute => "no_route",
             ApiError::ExternalApi(_) => "external_api_error",
@@ -75,6 +84,9 @@ impl ApiError {
             }
             ApiError::ServiceBusy => "混み合っています。時間をおいて再試行してください。",
             ApiError::Internal => "処理に失敗しました。時間をおいて再試行してください。",
+            ApiError::ReportNotFound => "指定の地点が見つかりません。地図を更新してください。",
+            ApiError::AlreadyVoted => "この地点には投票済みです。",
+            ApiError::VoteLimit => "この地点の投票は上限に達しました。",
         }
     }
 }

@@ -390,6 +390,7 @@ pub struct TestAppBuilder {
     pub weather: Arc<dyn WeatherProvider>,
     pub clock: Arc<dyn Clock>,
     pub weather_cache_ttl: Duration,
+    pub community: Arc<dyn accident_route_backend::providers::community::CommunityStore>,
 }
 
 impl Default for TestAppBuilder {
@@ -407,6 +408,9 @@ impl Default for TestAppBuilder {
             weather: FakeWeather::new([]),
             clock: ManualClock::new(fixed_now()),
             weather_cache_ttl: Duration::from_secs(600),
+            community: Arc::new(
+                accident_route_backend::providers::community::LocalCommunityStore::new(),
+            ),
         }
     }
 }
@@ -424,6 +428,7 @@ impl TestAppBuilder {
                 weather: self.weather,
                 clock: self.clock,
                 weather_cache_ttl: self.weather_cache_ttl,
+                community: self.community,
             },
         );
         if let Some(engine) = self.engine {

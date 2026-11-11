@@ -86,6 +86,8 @@ pub struct Config {
     pub request_timeout: Duration,
     pub route_transfer_timeout: Duration,
     pub upstream_gate: GateBackend,
+    /// 安全危険情報（口コミ・投票）の保存先（`COMMUNITY_STORE`。未指定は `UPSTREAM_GATE` と同じ）。
+    pub community_store: GateBackend,
     pub open_meteo_base_url: reqwest::Url,
     pub open_meteo_api_key: Option<Secret>,
     pub weather_timeout: Duration,
@@ -140,6 +142,11 @@ impl Config {
         }
         let routing_attribution = env.required("ROUTING_ATTRIBUTION")?;
         let upstream_timeout = env.millis("UPSTREAM_TIMEOUT_MS", 8_000, 1, MAX_DURATION_MS)?;
+        let upstream_gate = env
+            .backend("UPSTREAM_GATE")?
+            .unwrap_or(GateBackend::Firestore);
+        // 未指定なら上流ゲートと同じ保存先（ローカル開発で両方をlocalにしやすくする）
+        let community_store = env.backend("COMMUNITY_STORE")?.unwrap_or(upstream_gate);
         Ok(Self {
             bind: env.bind()?,
             accident_data_dir: env.path("ACCIDENT_DATA_DIR", "backend/data/current")?,
@@ -187,13 +194,8 @@ impl Config {
                 1,
                 MAX_ROUTE_TRANSFER_TIMEOUT_MS,
             )?,
-            upstream_gate: match env.optional("UPSTREAM_GATE")?.as_deref() {
-                None | Some("firestore") => GateBackend::Firestore,
-                Some("local") => GateBackend::Local,
-                Some(_) => {
-                    return Err(env.error("UPSTREAM_GATE", "firestore または local を指定します"));
-                }
-            },
+            upstream_gate,
+            community_store,
             open_meteo_base_url: env.base_url("OPEN_METEO_BASE_URL")?,
             open_meteo_api_key: env.secret_file("OPEN_METEO_API_KEY_FILE")?,
             weather_timeout: env.millis("WEATHER_TIMEOUT_MS", 5_000, 1, MAX_DURATION_MS)?,
@@ -232,6 +234,16 @@ struct Env<'a> {
 impl Env<'_> {
     fn error(&self, variable: &'static str, problem: &'static str) -> ConfigError {
         ConfigError { variable, problem }
+    }
+
+    /// `firestore`・`local`（未設定は `None`）。
+    fn backend(&self, name: &'static str) -> Result<Option<GateBackend>, ConfigError> {
+        match self.optional(name)?.as_deref() {
+            None => Ok(None),
+            Some("firestore") => Ok(Some(GateBackend::Firestore)),
+            Some("local") => Ok(Some(GateBackend::Local)),
+            Some(_) => Err(self.error(name, "firestore または local を指定します")),
+        }
     }
 
     /// 空文字列は未設定と区別し、誤りとして扱う。

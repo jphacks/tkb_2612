@@ -159,8 +159,8 @@ Issue #9 の実装です。設定は環境変数（architecture.md 6章）だけ
 | `src/main.rs`、`src/startup.rs` | 設定の検査→ログ→releaseの解決（`ACCIDENT_DATA_DIR` を1回だけ `canonicalize`）→祝日表→待受け→事故データの読込（readyまで `/api/health`・`/api/route` は503、`/api/conditions` は使える）。読込の失敗・panicで待受けをやめて非0で終了する。SIGTERM/Ctrl-Cで受付をやめ、処理中の接続を最大10秒待つ |
 | `src/config.rs` | 6章の変数の既定値と検査。誤りは変数名だけを出し、値・秘密・URLを出さない。`BACKEND_BIND` が無く `PORT` があれば `0.0.0.0:$PORT` |
 | `src/logging.rs` | ルートのテンプレート・status・処理時間・匿名のエラーコードだけを出す。依存ライブラリのログは出さない |
-| `src/api/` | `/api/route`・`/api/geocode`・`/api/conditions`・`/api/health`・`/api/status` と静的配信、エラー変換、gzip、転送期限、気象キャッシュ |
-| `src/providers/` | OSRM・Geoapify・Open-Meteoのアダプタ、上流HTTPクライアント（プロキシ・リダイレクトなし、期限とサイズ上限）、上流ゲート（`local`・`firestore`） |
+| `src/api/` | `/api/route`・`/api/geocode`・`/api/conditions`・`/api/health`・`/api/status`・`/api/reports`（安全危険情報の共有、Issue #23） と静的配信、エラー変換、gzip、転送期限、気象キャッシュ |
+| `src/providers/` | OSRM・Geoapify・Open-Meteoのアダプタ、上流HTTPクライアント（プロキシ・リダイレクトなし、期限とサイズ上限）、上流ゲート（`local`・`firestore`）、口コミの保存（`COMMUNITY_STORE`：`local`・`firestore`。未設定は `UPSTREAM_GATE` と同じ） |
 | `examples/dev_stack.rs` | C4用の偽上流（下記）。本番の処理から使わない |
 
 ### テスト

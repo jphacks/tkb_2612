@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import type { LatLon } from "../lib/types";
+import { ApiError } from "../api/errors";
 import { INITIAL_CENTER } from "../community/coordinates";
 import {
-  readReports,
-  saveReports,
-  readSessionVotes,
-  saveReportsWithVote,
+  createSafetyReport,
+  listSafetyReports,
+  voteSafetyReport,
+} from "../community/api";
+import {
+  isTooWide,
   pointKey,
-  REPORTS_KEY,
+  type SafetyBounds,
   type SafetyReport,
 } from "../community/reports";
+import { DEMO_REPORTS_KEY } from "../community/demoStore";
 import LocationInput, { type LocationValue } from "./LocationInput";
 import { CommunityMap } from "./CommunityMap";
 import { CommunityReview } from "./CommunityReview";
@@ -22,6 +26,22 @@ import {
 } from "./icons/SafetyIcon";
 import "./community.css";
 
+/** 地図の移動が落ち着いてから読み直すまでの待ち時間。 */
+export const RELOAD_DELAY_MS = 300;
+const SAVE_FAILED = "口コミを保存できませんでした。時間をおいて再試行してください。";
+export const TOO_WIDE = "表示範囲が広すぎます。地図を拡大すると口コミを表示します。";
+
+function failure(error: unknown, fallback: string) {
+  return error instanceof ApiError ? error.message : fallback;
+}
+
+/** 一覧の中の同じ地点を差し替える（無ければ先頭に足す）。 */
+function upsert(reports: SafetyReport[], report: SafetyReport) {
+  return reports.some((item) => item.id === report.id)
+    ? reports.map((item) => (item.id === report.id ? report : item))
+    : [report, ...reports];
+}
+
 export function CommunitySafety() {
   const [center, setCenter] = useState<LatLon>(INITIAL_CENTER);
   const [currentPosition, setCurrentPosition] = useState<LatLon | null>(null);
@@ -29,18 +49,22 @@ export function CommunitySafety() {
     text: "",
     place: null,
   });
-  const [reports, setReports] = useState(readReports);
+  const [reports, setReports] = useState<SafetyReport[]>([]);
+  const [bounds, setBounds] = useState<SafetyBounds | null>(null);
+  const [reloads, setReloads] = useState(0);
+  const [loadError, setLoadError] = useState("");
   const [point, setPoint] = useState<LatLon | null>(null);
   const [viewing, setViewing] = useState<SafetyReport | null>(null);
   const [kind, setKind] = useState<SafetyKind | null>(null);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
-  const [votedPoints, setVotedPoints] = useState(readSessionVotes);
   const [composingPost, setComposingPost] = useState(false);
-  const [addingSupport, setAddingSupport] = useState(false);
-  const [supportText, setSupportText] = useState("");
+  const [voteKind, setVoteKind] = useState<SafetyKind | null>(null);
+  const [voteText, setVoteText] = useState("");
+  const [busy, setBusy] = useState(false);
   const positionGeneration = useRef(0);
-  const viewingId = viewing?.id;
+  const viewingId = useRef<string | null>(null);
+  viewingId.current = viewing?.id ?? null;
 
   function locate() {
     const generation = ++positionGeneration.current;
@@ -74,19 +98,48 @@ export function CommunitySafety() {
     };
   }, []);
 
+  // 表示範囲の口コミを読む。地図の移動中は待ち、新しい範囲で前の読込を取り消す。
+  // 広すぎる範囲（地図を引いたとき）は読まずに拡大を促す（表示中の地点はそのまま）。
   useEffect(() => {
-    const sync = (event: StorageEvent) => {
-      if (event.key !== REPORTS_KEY && event.key !== null) return;
-      const latest = readReports();
-      setReports(latest);
-      if (!viewingId) return;
-      const current = latest.find((report) => report.id === viewingId);
-      if (current) setViewing(current);
-      else close();
+    if (!bounds) return;
+    if (isTooWide(bounds)) {
+      setLoadError(TOO_WIDE);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      listSafetyReports(bounds, controller.signal)
+        .then((latest) => {
+          if (controller.signal.aborted) return;
+          setReports(latest);
+          setLoadError("");
+          const open = latest.find((report) => report.id === viewingId.current);
+          if (open) setViewing(open);
+        })
+        .catch((failed: unknown) => {
+          if (controller.signal.aborted) return;
+          setLoadError(failure(failed, "口コミを読み込めませんでした。"));
+        });
+    }, RELOAD_DELAY_MS);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
     };
-    window.addEventListener("storage", sync);
-    return () => window.removeEventListener("storage", sync);
-  }, [viewingId]);
+  }, [bounds, reloads]);
+
+  // 他の人の投稿を取り込むため、画面に戻ったとき（デモでは別タブの保存時も）読み直す。
+  useEffect(() => {
+    const reload = () => setReloads((count) => count + 1);
+    const storage = (event: StorageEvent) => {
+      if (event.key === DEMO_REPORTS_KEY || event.key === null) reload();
+    };
+    window.addEventListener("focus", reload);
+    window.addEventListener("storage", storage);
+    return () => {
+      window.removeEventListener("focus", reload);
+      window.removeEventListener("storage", storage);
+    };
+  }, []);
 
   function close() {
     setPoint(null);
@@ -94,12 +147,13 @@ export function CommunitySafety() {
     setKind(null);
     setText("");
     setError("");
-    setAddingSupport(false);
-    setSupportText("");
+    setVoteKind(null);
+    setVoteText("");
     setComposingPost(false);
   }
   function pick(next: LatLon) {
     ++positionGeneration.current;
+    if (busy) return;
     close();
     const existing = reports.find(
       (report) => pointKey(report) === pointKey(next),
@@ -107,108 +161,61 @@ export function CommunitySafety() {
     if (existing) setViewing(existing);
     else setPoint(next);
   }
-  function post(details: string) {
-    if (!point || !kind || readSessionVotes().has(pointKey(point))) return;
-    const report: SafetyReport = {
-      ...point,
-      id: crypto.randomUUID(),
-      kind,
-      text: details.trim(),
-      createdAt: new Date().toISOString(),
-      supportCount: 1,
-      comments: [],
-    };
-    const next = [...readReports(), report];
+
+  async function post(details: string) {
+    if (!point || !kind || busy) return;
+    setBusy(true);
     try {
-      setVotedPoints(saveReportsWithVote(next, report));
-    } catch {
-      setError("口コミを保存できませんでした。");
-      return;
+      const report = await createSafetyReport({
+        lat: point.lat,
+        lon: point.lon,
+        kind,
+        text: details.trim() || null,
+      });
+      setReports((list) => upsert(list, report));
+      // 書込み前に読んだ一覧が後から届いて上書きしないよう、読込を取り消して読み直す
+      setReloads((count) => count + 1);
+      setViewing(report);
+      setPoint(null);
+      setKind(null);
+      setText("");
+      setComposingPost(false);
+      setError("");
+    } catch (failed) {
+      setError(failure(failed, SAVE_FAILED));
+    } finally {
+      setBusy(false);
     }
-    setReports(next);
-    setViewing(report);
-    setPoint(null);
-    setKind(null);
-    setText("");
-    setComposingPost(false);
-    setError("");
   }
 
-  function updateReport(updated: SafetyReport) {
-    const latest = readReports();
-    const current = latest.find((report) => report.id === updated.id);
-    if (!current) {
-      setError("口コミを保存できませんでした。");
-      return false;
-    }
-    const addedComments = updated.comments.filter(
-      (comment) =>
-        !current.comments.some((existing) => existing.id === comment.id),
-    );
-    const merged = {
-      ...current,
-      comments: [...current.comments, ...addedComments],
-    };
-    const next = latest.map((report) =>
-      report.id === merged.id ? merged : report,
-    );
+  async function vote(details: string) {
+    if (!viewing || !voteKind || busy) return;
+    setBusy(true);
     try {
-      saveReports(next);
-    } catch {
-      setError("口コミを保存できませんでした。");
-      return false;
-    }
-    setReports(next);
-    setViewing(merged);
-    setError("");
-    return true;
-  }
-
-  function support() {
-    if (!viewing || addingSupport || readSessionVotes().has(pointKey(viewing)))
-      return;
-    const latest = readReports();
-    const current = latest.find((report) => report.id === viewing.id);
-    if (!current) {
-      setError("口コミを保存できませんでした。");
-      return;
-    }
-    const updated = { ...current, supportCount: current.supportCount + 1 };
-    const next = latest.map((report) =>
-      report.id === updated.id ? updated : report,
-    );
-    try {
-      setVotedPoints(saveReportsWithVote(next, updated));
-    } catch {
-      setError("口コミを保存できませんでした。");
-      return;
-    }
-    setReports(next);
-    setViewing(updated);
-    setError("");
-    setSupportText("");
-    setAddingSupport(true);
-  }
-
-  function confirmSupport() {
-    if (!viewing || !supportText.trim()) return;
-    const updated: SafetyReport = {
-      ...viewing,
-      comments: [
-        ...viewing.comments,
-        {
-          id: crypto.randomUUID(),
-          text: supportText.trim(),
-          createdAt: new Date().toISOString(),
-        },
-      ],
-    };
-    if (updateReport(updated)) {
-      setAddingSupport(false);
-      setSupportText("");
+      const report = await voteSafetyReport(viewing.id, {
+        kind: voteKind,
+        text: details.trim() || null,
+      });
+      setReports((list) => upsert(list, report));
+      setReloads((count) => count + 1);
+      setViewing(report);
+      setVoteKind(null);
+      setVoteText("");
+      setError("");
+    } catch (failed) {
+      setError(failure(failed, SAVE_FAILED));
+      if (failed instanceof ApiError && failed.code === "already_voted") {
+        // 別のタブ等で投票済み。最新の票を読み直して投票済みの表示にする
+        setVoteKind(null);
+        setVoteText("");
+        setReloads((count) => count + 1);
+      }
+    } finally {
+      setBusy(false);
     }
   }
 
+  const forming = composingPost || voteKind !== null;
   return (
     <main className="community-page" aria-label="安全危険情報共有モード">
       <CommunityMap
@@ -219,36 +226,42 @@ export function CommunitySafety() {
         onPick={pick}
         onReport={(report) => {
           ++positionGeneration.current;
+          if (busy) return;
           close();
           setViewing(report);
         }}
         onLocate={locate}
-        popupWidth={viewing || composingPost ? 320 : 146}
-        popupHeight={viewing || composingPost ? 200 : kind ? 136 : 82}
+        onBoundsChange={setBounds}
+        popupWidth={viewing || forming ? 320 : 146}
+        popupHeight={viewing ? 240 : forming ? 200 : kind ? 136 : 82}
         bottomInset={80}
       >
         {viewing ? (
-          addingSupport ? (
+          voteKind ? (
             <CommunityDetailsForm
-              kind={viewing.kind}
-              count={viewing.supportCount}
-              value={supportText}
-              onChange={setSupportText}
-              onSkip={() => {
-                setAddingSupport(false);
-                setSupportText("");
-                setError("");
-              }}
-              onConfirm={confirmSupport}
+              kind={voteKind}
+              count={
+                (voteKind === "safe"
+                  ? viewing.safe_count
+                  : viewing.danger_count) + 1
+              }
+              value={voteText}
+              onChange={setVoteText}
+              onSkip={() => void vote("")}
+              onConfirm={() => void vote(voteText)}
               error={error}
+              busy={busy}
             />
           ) : (
             <CommunityReview
               key={viewing.id}
               report={viewing}
               onClose={close}
-              onSupport={support}
-              supported={votedPoints.has(pointKey(viewing))}
+              onVote={(next) => {
+                setError("");
+                setVoteText("");
+                setVoteKind(next);
+              }}
               error={error}
             />
           )
@@ -259,9 +272,10 @@ export function CommunitySafety() {
               kind={kind}
               value={text}
               onChange={setText}
-              onSkip={() => post("")}
-              onConfirm={() => post(text)}
+              onSkip={() => void post("")}
+              onConfirm={() => void post(text)}
               error={error}
+              busy={busy}
             />
           ) : (
             <div
@@ -323,6 +337,11 @@ export function CommunitySafety() {
           }}
         />
       </div>
+      {loadError && (
+        <p className="community-load-error" role="status">
+          {loadError}
+        </p>
+      )}
     </main>
   );
 }
