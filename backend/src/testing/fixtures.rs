@@ -11,8 +11,8 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 use crate::contract::{
-    AccidentPoint, AccidentTotals, ConditionFilter, DatasetInfo, DayType, EvaluatedRoute,
-    GuidanceStep, HighRiskSegment, LatLon, LonLat, Maneuver, Mode, NavigationData,
+    AccidentPoint, AccidentTotals, Attribution, ConditionFilter, DatasetInfo, DayType,
+    EvaluatedRoute, GuidanceStep, HighRiskSegment, LatLon, LonLat, Maneuver, Mode, NavigationData,
     NavigationSection, Period, RouteOutcome, RouteQuery, RoutedPath, Weather,
 };
 
@@ -64,7 +64,7 @@ pub fn route_example_accidents() -> Vec<FixtureAccident> {
     array(&doc, "accidents")
         .iter()
         .map(|feature| FixtureAccident {
-            point: parse_accident_feature(feature),
+            point: parse_input_accident_feature(feature),
             modes: array(feature, "modes")
                 .iter()
                 .map(|m| {
@@ -234,6 +234,8 @@ fn parse_candidate(c: &Value) -> EvaluatedRoute {
             coordinates: parse_line_string(field(c, "geometry")),
         },
         totals: parse_totals(c),
+        total_accident_count: nullable(field(c, "total_accident_count"))
+            .map(|v| as_u64(v, "total_accident_count")),
         weather_match: nullable(field(c, "weather_match")).map(parse_totals),
         weighted_risk: as_f64(field(c, "weighted_risk"), "weighted_risk"),
         risk_per_km: as_f64(field(c, "risk_per_km"), "risk_per_km"),
@@ -267,6 +269,15 @@ fn parse_totals(v: &Value) -> AccidentTotals {
 
 fn parse_accident_feature(f: &Value) -> AccidentPoint {
     let p = field(f, "properties");
+    let mut point = parse_input_accident_feature(f);
+    point.attribution = Attribution::from_label(as_str(field(p, "attribution"), "attribution"))
+        .expect("attribution");
+    point
+}
+
+/// 入力fixtureの事故点。入力には結び付けの結果がないので `Unattributed` にする。
+fn parse_input_accident_feature(f: &Value) -> AccidentPoint {
+    let p = field(f, "properties");
     let geometry = field(f, "geometry");
     assert_eq!(as_str(field(geometry, "type"), "geometry.type"), "Point");
     AccidentPoint {
@@ -279,6 +290,7 @@ fn parse_accident_feature(f: &Value) -> AccidentPoint {
         weather: Weather::from_label(as_str(field(p, "weather"), "weather")).expect("weather"),
         period: Period::from_label(as_str(field(p, "period"), "period")).expect("period"),
         day_type: DayType::from_label(as_str(field(p, "day_type"), "day_type")).expect("day_type"),
+        attribution: Attribution::Unattributed,
     }
 }
 

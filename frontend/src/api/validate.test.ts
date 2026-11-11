@@ -49,6 +49,14 @@ describe("API 2.0 contract and cross-field validation", () => {
     ).toBe(true);
   });
 
+  it("accepts a selected safest route even when all records are zero", () => {
+    const result = createDemoRouteResponse(request, "zero");
+    result.safest_id = result.fastest_id;
+    result.extra_minutes = 0;
+    expect(validateRouteResponse(result, request)).toBe(result);
+    expect(result.candidates[0].navigation).not.toBeNull();
+  });
+
   it("accepts a positive model risk on routes without observed accidents", () => {
     const result = createDemoRouteResponse(request, "zero");
     for (const route of result.candidates) {
@@ -86,6 +94,15 @@ describe("API 2.0 contract and cross-field validation", () => {
   });
 
   it.each<[string, (result: RouteResponse) => void]>([
+    [
+      "missing safest route while accidents exist",
+      (result) => {
+        result.safest_id = null;
+        result.extra_minutes = null;
+        result.risk_reduction_percent = null;
+        result.candidates[1].navigation = null;
+      },
+    ],
     [
       "unknown route reference",
       (result) => {

@@ -22,7 +22,7 @@ export interface paths {
          *     unknownキーは無視。hour/period整合と距離等の相関制約はbehavior.mdを参照。
          *     出発日時は受け取らない。period/day_type/weatherの自動値は/api/conditionsで得る。
          *     天候は事故を除外せず、一致事故をweather_matchで別集計し、スコアで重く数える。
-         *     全候補で該当事故が0件でも条件を解除しない。その場合safest_idはnull。
+         *     全候補で該当事故が0件でも条件を解除しない。その場合、新方式は推定リスクでsafest_idを選び、旧方式（schema 2）はnullを返す。
          *     navigationはfastest_idとnullでないsafest_idの候補だけに含め、未選定はnull。
          *     同一選定IDでは1個を共用する。新方式（schema 3）は外部の経路提供元を呼ばない。
          *     旧方式（schema 2）はナビ用生成でOSRM呼出しを追加せず、1検索最大3呼出し・steps=falseを維持する。
@@ -397,6 +397,11 @@ export interface components {
                 period: components["schemas"]["Period"];
                 /** @description 発生年月日から前処理で判定した曜日区分。フロントで再判定しない。 */
                 day_type: components["schemas"]["DayType"];
+                /**
+                 * @description 事故を経路に結び付けた方法。edgeは道路の区間（歩道の親の車道を含む）、intersectionは交差点、unattributedはどの道路の事故か判断できず、経路からunattributed_radius_m以内にあるもの。旧方式は常にunattributed。
+                 * @enum {string}
+                 */
+                attribution: "edge" | "intersection" | "unattributed";
             };
         };
         /**
@@ -511,6 +516,8 @@ export interface components {
             geometry: components["schemas"]["LineString"];
             /** @description 集合B（新方式は経路の辺・交差点に割り当てた事故と72m以内の帰属不明の事故、旧方式は72m以内。移動手段・時間帯・曜日区分で絞り、天候では絞らない）の事故件数、間引き前 */
             accident_count: components["schemas"]["Count"];
+            /** @description 経路に結び付いた事故の総件数。移動手段・時間帯・曜日区分・天候のどれでも絞る前の件数で、新方式は集合Bを作るときの経路の辺・交差点への割り当てと72m以内の帰属不明の事故を合わせた事故IDの数（同じ事故を二重に数えない）。旧方式はこの値を作らないのでnull。 */
+            total_accident_count: number | null;
             /** @description 死者1人以上の事故件数 */
             fatal_accidents: components["schemas"]["Count"];
             /** @description 死者0人の事故件数。fatal_accidentsとの和がaccident_count。 */
@@ -567,13 +574,13 @@ export interface components {
             api_version: "2.0";
             dataset_id: components["schemas"]["DatasetId"];
             fastest_id: components["schemas"]["RouteId"];
-            /** @description 事故考慮経路。全候補で該当事故（集合B）が0件ならnull。 */
+            /** @description 安全ルート。新方式は全候補で該当事故（集合B）が0件でも推定リスクが最小の経路を選ぶ。旧方式は全候補0件ならnull。nullなら全候補0件である。 */
             safest_id: components["schemas"]["RouteId"] | null;
             /** @description durationの安定昇順。fastest_idとnullでないsafest_idは必ずこの中に存在し、その候補だけnavigationが非null。同一IDの2選定は1個を共用。 */
             candidates: components["schemas"]["RouteCandidate"][];
             /** @description safestの追加所要時間、分、小数3桁。safest_idがnullならnull。 */
             extra_minutes: number | null;
-            /** @description 最短時間経路比の重み減少率、%、小数1桁。丸めたweighted_riskから計算。基準リスク0またはsafest_idがnullならnull。 */
+            /** @description 最短時間経路比の推定リスクの減少率、%、小数1桁。丸めたweighted_riskから計算。基準リスク0またはsafest_idがnullならnull。 */
             risk_reduction_percent: number | null;
             /** @description 候補内選定の理由。UIは文字列として表示する。 */
             reason: string;
@@ -586,15 +593,10 @@ export interface components {
             relaxed_conditions: string[];
             effective_conditions: components["schemas"]["EffectiveConditions"];
             /**
-             * @description 事故集計（集合B）の経路周辺半径、メートル。新方式では帰属不明の事故を数える範囲
+             * @description 帰属不明の事故を数える経路からの範囲、メートル。旧方式では事故を数える半径
              * @constant
              */
-            radius_m: 72;
-            /**
-             * @description 距離重みのガウスσ、メートル。旧方式だけが使い、新方式では互換のための固定値
-             * @constant
-             */
-            distance_weight_sigma_m: 24;
+            unattributed_radius_m: 72;
             /** @description 集計・選定・ナビデータ構築時間（新方式は経路探索を含む。旧方式は候補取得後から）、ミリ秒、小数2桁。外部通信と転送を除く。 */
             aggregation_ms: number;
             data_years: components["schemas"]["Years"];

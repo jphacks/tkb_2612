@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 
 use accident_route_backend::contract::geo::METERS_PER_DEGREE;
 use accident_route_backend::contract::{
-    BoxFuture, CancelToken, CandidateSet, ConditionFilter, DatasetInfo, DayType, EngineError,
-    Interrupt, LatLon, Maneuver, Mode, Period, ProviderRoute, RouteEngine, RouteQuery, Router,
-    RoutingError, RoutingRequest, Weather,
+    Attribution, BoxFuture, CancelToken, CandidateSet, ConditionFilter, DatasetInfo, DayType,
+    EngineError, Interrupt, LatLon, Maneuver, Mode, Period, ProviderRoute, RouteEngine, RouteQuery,
+    Router, RoutingError, RoutingRequest, Weather,
 };
 use accident_route_backend::domain::routing::accident::{
     AssignTarget, Assignment, UnassignedReason, UnassignedRecord,
@@ -22,7 +22,8 @@ use accident_route_backend::domain::routing::graph::synthetic::{EdgeSpec, GraphB
 use accident_route_backend::domain::routing::graph::{Coord, EdgeId, Graph, NodeId, access};
 use accident_route_backend::domain::routing::prep::odindex::build_odindex;
 use accident_route_backend::domain::routing::risk::{
-    CoefRecord, RiskModel, RiskParams, TABLE_LEN, WeatherMultiplier,
+    CELL_COUNT, CoefRecord, EDGE_K_NO_RISK, RiskModel, RiskParams, TABLE_LEN, WeatherMultiplier,
+    table_index,
 };
 use accident_route_backend::domain::routing::search::alt::Landmarks;
 use accident_route_backend::domain::routing::snap::point_on_edge;
@@ -278,11 +279,40 @@ fn dataset() -> DatasetInfo {
     }
 }
 
+/// 指定した辺だけリスクを持つモデル（事故0件でも推定リスクが正になる）。
+fn model_with_edge_risk(graph: &Graph, topology: &Topology, edge_k: Vec<u8>) -> RiskModel {
+    assert_eq!(edge_k.len(), graph.edge_count());
+    let mut model = zero_risk(graph, topology);
+    model.edge_k = edge_k;
+    for cell in 0..CELL_COUNT {
+        model.k_table[table_index(Mode::Car, 1, cell)] = CoefRecord {
+            r: 1e-4,
+            s: 2.0,
+            a: 1.0,
+            rho: [0.2; 5],
+            pad: 0.0,
+        };
+    }
+    model
+}
+
 fn engine(
     builder: &GraphBuilder,
     topology: Topology,
     specs: &[Spec],
     snapshot: AccidentSnapshot,
+) -> RoutingEngine {
+    let graph = builder.build();
+    let risk = zero_risk(&graph, &topology);
+    engine_with_risk(builder, topology, specs, snapshot, risk)
+}
+
+fn engine_with_risk(
+    builder: &GraphBuilder,
+    topology: Topology,
+    specs: &[Spec],
+    snapshot: AccidentSnapshot,
+    risk: RiskModel,
 ) -> RoutingEngine {
     let parts = builder.parts();
     let (graph, restrictions) = builder.build_all();
@@ -294,7 +324,6 @@ fn engine(
         EdgeAccidentIndex::build(&assignment, graph.edge_count(), topology.cluster_count());
     let unassigned = UnassignedGrid::build(&assignment, &snapshot);
     let odindex = build_odindex(&parts);
-    let risk = zero_risk(&graph, &topology);
     let data = RoutingData {
         graph,
         restrictions,
@@ -596,6 +625,110 @@ fn unassigned_accidents_stop_at_the_72m_boundary() {
 }
 
 #[test]
+fn attribution_reflects_how_each_accident_was_linked() {
+    let mut builder = GraphBuilder::new();
+    let a = builder.add_node_deg(35.6, 139.7);
+    let b = builder.add_node_deg(35.6, 139.701);
+    let c = builder.add_node_deg(35.6, 139.702);
+    let walk0 = builder.add_edge(
+        EdgeSpec::new(a, b)
+            .length_dm(1000)
+            .access(access::WALK_FWD | access::WALK_BWD),
+    );
+    let walk1 = builder.add_edge(
+        EdgeSpec::new(b, c)
+            .length_dm(1000)
+            .access(access::WALK_FWD | access::WALK_BWD),
+    );
+    let parent0 = builder.add_edge(
+        EdgeSpec::new(a, b)
+            .length_dm(1000)
+            .access(access::CAR_FWD | access::CAR_BWD),
+    );
+    let parent1 = builder.add_edge(
+        EdgeSpec::new(b, c)
+            .length_dm(1000)
+            .access(access::CAR_FWD | access::CAR_BWD),
+    );
+    let graph = builder.build();
+    let topology = topology(&graph, &[vec![b]], &[(walk0, parent0), (walk1, parent1)]);
+    let mid_lon = (graph.node_coord(a).to_latlon().lon + graph.node_coord(b).to_latlon().lon) / 2.0;
+    let specs = vec![
+        Spec::edge(walk0, 500, 1.0),
+        Spec::cluster(0, 1.0),
+        Spec::edge(parent0, 500, 1.0),
+        Spec::default(),
+    ];
+    let mut accidents = vec![
+        Accident::at(35.6, 139.7),
+        Accident::at(35.6, 139.7),
+        Accident::at(35.6, mid_lon),
+        Accident::at(north(35.6, 10.0), mid_lon),
+    ];
+    for accident in &mut accidents {
+        accident.modes = Mode::Walk.mask();
+    }
+    let engine = engine(&builder, topology, &specs, snapshot(&accidents));
+    let q = query(
+        graph.node_coord(a).to_latlon(),
+        graph.node_coord(c).to_latlon(),
+        Mode::Walk,
+        10.0,
+        ConditionFilter::default(),
+    );
+    let outcome = evaluate(&engine, &q).expect("評価できる");
+    let points = &outcome.candidates[0].accident_points;
+    assert_eq!(
+        points.iter().map(|p| p.id).collect::<Vec<_>>(),
+        vec![0, 1, 2, 3]
+    );
+    assert_eq!(
+        points.iter().map(|p| p.attribution).collect::<Vec<_>>(),
+        vec![
+            Attribution::Edge,
+            Attribution::Intersection,
+            Attribution::Edge,
+            Attribution::Unattributed,
+        ]
+    );
+}
+
+#[test]
+fn sidewalk_parent_accident_is_not_reported_as_unattributed() {
+    let mut builder = GraphBuilder::new();
+    let a = builder.add_node_deg(35.6, 139.7);
+    let b = builder.add_node_deg(35.6, 139.701);
+    let walk = builder.add_edge(
+        EdgeSpec::new(a, b)
+            .length_dm(1000)
+            .access(access::WALK_FWD | access::WALK_BWD),
+    );
+    let parent = builder.add_edge(
+        EdgeSpec::new(a, b)
+            .length_dm(1000)
+            .access(access::CAR_FWD | access::CAR_BWD),
+    );
+    let graph = builder.build();
+    let topology = topology(&graph, &[], &[(walk, parent)]);
+    let mid_lon = (graph.node_coord(a).to_latlon().lon + graph.node_coord(b).to_latlon().lon) / 2.0;
+    let mut accident = Accident::at(north(35.6, 10.0), mid_lon);
+    accident.modes = Mode::Walk.mask();
+    let specs = vec![Spec::edge(parent, 500, 1.0)];
+    let engine = engine(&builder, topology, &specs, snapshot(&[accident]));
+    let q = query(
+        graph.node_coord(a).to_latlon(),
+        graph.node_coord(b).to_latlon(),
+        Mode::Walk,
+        10.0,
+        ConditionFilter::default(),
+    );
+    let outcome = evaluate(&engine, &q).expect("評価できる");
+    let point = &outcome.candidates[0].accident_points[0];
+    assert_eq!(point.attribution, Attribution::Edge);
+    assert_ne!(point.attribution, Attribution::Unattributed);
+}
+
+#[test]
 fn conditions_filter_but_weather_does_not_reduce_the_set() {
     let mut builder = GraphBuilder::new();
     let a = builder.add_node_deg(35.6, 139.7);
@@ -639,6 +772,50 @@ fn conditions_filter_but_weather_does_not_reduce_the_set() {
     assert_eq!(candidate.weather_match.expect("天候指定").accident_count, 1);
     let ids: Vec<u64> = candidate.accident_points.iter().map(|p| p.id).collect();
     assert_eq!(ids, vec![1, 4]);
+}
+
+#[test]
+fn total_accident_count_is_counted_before_condition_filter() {
+    let mut builder = GraphBuilder::new();
+    let a = builder.add_node_deg(35.6, 139.7);
+    let b = builder.add_node_deg(35.6, 139.701);
+    let e0 = builder.add_edge(EdgeSpec::new(a, b).length_dm(1000));
+    let graph = builder.build();
+    let specs = (0..5).map(|_| Spec::edge(e0, 500, 0.2)).collect::<Vec<_>>();
+    let mut accidents = vec![Accident::at(35.6, 139.7); 5];
+    // 0は曜日区分、2は移動手段、3は時間帯でBから外れる。1と4は残る。
+    accidents[0].day_type = DayType::Weekday.code();
+    accidents[2].modes = Mode::Walk.mask();
+    accidents[3].period = Period::Night.code();
+    for accident in &mut accidents[1..] {
+        accident.day_type = DayType::Holiday.code();
+    }
+    let engine = engine(
+        &builder,
+        empty_topology(&graph),
+        &specs,
+        snapshot(&accidents),
+    );
+    let conditions = ConditionFilter {
+        period: Some(Period::Daytime),
+        day_type: Some(DayType::Holiday),
+        weather: Some(Weather::Rain),
+    };
+    let q = query(
+        graph.node_coord(a).to_latlon(),
+        graph.node_coord(b).to_latlon(),
+        Mode::Car,
+        10.0,
+        conditions,
+    );
+    let outcome = evaluate(&engine, &q).expect("評価できる");
+    let candidate = &outcome.candidates[0];
+    assert_eq!(candidate.totals.accident_count, 2);
+    assert_eq!(
+        candidate.total_accident_count,
+        Some(5),
+        "条件で絞る前の事故IDの数を数える"
+    );
 }
 
 #[test]
@@ -968,8 +1145,58 @@ fn cancellation_during_search_returns_interrupted_quickly() {
 // 選定・文面
 // ---------------------------------------------------------------------------------------------
 
+/// 事故の有無にかかわらず2本の候補ができるグラフ（A→B→D が最短、A→C→D が遠回り）。
+struct TwoRouteGraph {
+    builder: GraphBuilder,
+    graph: Graph,
+    origin: NodeId,
+    dest: NodeId,
+    fast_edges: [EdgeId; 2],
+}
+
+fn two_route_graph() -> TwoRouteGraph {
+    let mut builder = GraphBuilder::new();
+    let a = builder.add_node_deg(35.6, 139.7);
+    let b = builder.add_node_deg(35.6, 139.701);
+    let c = builder.add_node_deg(35.601, 139.7005);
+    let d = builder.add_node_deg(35.6, 139.702);
+    let fast1 = builder.add_edge(EdgeSpec::new(a, b).length_dm(1000));
+    let fast2 = builder.add_edge(EdgeSpec::new(b, d).length_dm(1000));
+    builder.add_edge(EdgeSpec::new(a, c).length_dm(1100));
+    builder.add_edge(EdgeSpec::new(c, d).length_dm(1100));
+    let graph = builder.build();
+    TwoRouteGraph {
+        builder,
+        graph,
+        origin: a,
+        dest: d,
+        fast_edges: [fast1, fast2],
+    }
+}
+
+fn evaluate_two_routes(
+    two: &TwoRouteGraph,
+    specs: &[Spec],
+    snapshot: AccidentSnapshot,
+    risk: Option<RiskModel>,
+) -> accident_route_backend::contract::RouteOutcome {
+    let topology = empty_topology(&two.graph);
+    let engine = match risk {
+        Some(risk) => engine_with_risk(&two.builder, topology, specs, snapshot, risk),
+        None => engine(&two.builder, topology, specs, snapshot),
+    };
+    let q = query(
+        two.graph.node_coord(two.origin).to_latlon(),
+        two.graph.node_coord(two.dest).to_latlon(),
+        Mode::Car,
+        10.0,
+        ConditionFilter::default(),
+    );
+    evaluate(&engine, &q).expect("評価できる")
+}
+
 #[test]
-fn all_zero_accidents_selects_no_safest_route() {
+fn all_zero_accidents_still_selects_a_safest_route() {
     let (builder, a, b, _e0) = line_ab();
     let graph = builder.build();
     let engine = engine(&builder, empty_topology(&graph), &[], snapshot(&[]));
@@ -981,16 +1208,98 @@ fn all_zero_accidents_selects_no_safest_route() {
         ConditionFilter::default(),
     );
     let outcome = evaluate(&engine, &q).expect("評価できる");
-    assert_eq!(outcome.safest, None);
-    assert_eq!(outcome.extra_minutes, None);
+    assert_eq!(outcome.safest, Some(0));
+    assert_eq!(outcome.extra_minutes, Some(0.0));
     assert_eq!(outcome.risk_reduction_percent, None);
-    assert_eq!(outcome.reason, old_engine::NO_ACCIDENT_REASON);
+    assert!(outcome.reason.starts_with(old_engine::SAME_ROUTE_REASON));
+    assert_eq!(
+        outcome.reason,
+        format!(
+            "{}{}",
+            old_engine::SAME_ROUTE_REASON,
+            old_engine::ZERO_BASELINE_REASON
+        )
+    );
     assert_eq!(
         outcome.warnings,
         vec![
             candidates::SINGLE_CANDIDATE_WARNING.to_owned(),
             old_engine::NO_ACCIDENT_WARNING.to_owned(),
         ]
+    );
+    check_outcome_invariants(&outcome).expect("相関制約");
+}
+
+#[test]
+fn all_zero_accidents_selects_the_lowest_model_risk_route() {
+    let two = two_route_graph();
+    let topology = empty_topology(&two.graph);
+    let mut edge_k = vec![EDGE_K_NO_RISK; two.graph.edge_count()];
+    for edge in two.fast_edges {
+        edge_k[edge as usize] = 1;
+    }
+    let risk = model_with_edge_risk(&two.graph, &topology, edge_k);
+    let outcome = evaluate_two_routes(&two, &[], snapshot(&[]), Some(risk));
+
+    assert!(outcome.candidates.len() >= 2);
+    assert_ne!(outcome.safest, Some(outcome.fastest));
+    let s = outcome.safest.expect("全候補0件でもsafestを選ぶ");
+    assert!(
+        outcome
+            .candidates
+            .iter()
+            .all(|c| c.totals.accident_count == 0)
+    );
+    assert!(outcome.candidates.iter().any(|c| c.weighted_risk > 0.0));
+    assert!(outcome.candidates[s].navigation.is_some());
+    assert!(
+        outcome
+            .warnings
+            .iter()
+            .any(|w| w == old_engine::NO_ACCIDENT_WARNING)
+    );
+    let extra = outcome.extra_minutes.expect("追加時間");
+    let reduction = outcome.risk_reduction_percent.expect("削減率");
+    assert_eq!(outcome.candidates[s].extra_minutes, extra);
+    assert_eq!(
+        outcome.reason,
+        format!(
+            "全候補で該当する過去の事故はありません。道路の種類ごとの平均から推定したリスクが最小の経路を選びました。追加{extra:.1}分、リスク{reduction:.1}%減です。"
+        )
+    );
+    check_outcome_invariants(&outcome).expect("相関制約");
+}
+
+#[test]
+fn accident_candidates_use_the_network_search_reason() {
+    let two = two_route_graph();
+    let topology = empty_topology(&two.graph);
+    let mut edge_k = vec![EDGE_K_NO_RISK; two.graph.edge_count()];
+    for edge in two.fast_edges {
+        edge_k[edge as usize] = 1;
+    }
+    let risk = model_with_edge_risk(&two.graph, &topology, edge_k);
+    let specs = [Spec::edge(two.fast_edges[0], 500, 1.0)];
+    let outcome = evaluate_two_routes(
+        &two,
+        &specs,
+        snapshot(&[Accident::at(35.6, 139.7).injuries(1)]),
+        Some(risk),
+    );
+
+    assert!(outcome.candidates.len() >= 2);
+    assert_ne!(outcome.safest, Some(outcome.fastest));
+    let s = outcome.safest.expect("事故があるのでsafestを選ぶ");
+    assert_eq!(outcome.candidates[s].totals.accident_count, 0);
+    let extra = outcome.extra_minutes.expect("追加時間");
+    let reduction = outcome.risk_reduction_percent.expect("削減率");
+    assert_eq!(
+        outcome.reason,
+        format!(
+            "道路網を探索して得た{}候補のうち、最短時間経路から+{}分以内で、推定リスクが最小の経路を選びました。追加{extra:.1}分、リスク{reduction:.1}%減です。",
+            outcome.candidates.len(),
+            old_engine::format_minutes(10.0),
+        )
     );
     check_outcome_invariants(&outcome).expect("相関制約");
 }

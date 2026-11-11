@@ -151,15 +151,11 @@ fn invariant_check_rejects_broken_outcomes() {
         let error = check_outcome_invariants(&outcome).expect_err(message);
         assert!(error.contains(message), "{name}: {error}");
     };
-    // 全候補0件なのにsafestがある（選定候補のnavigationは揃えておく）
-    rejects(
-        "noAccidents",
-        &|o| {
-            o.safest = Some(0);
-            o.extra_minutes = Some(0.0);
-        },
-        "全候補で集合Bが空なのにsafestがある",
-    );
+    // 全候補0件でもsafestを選んでよい（選定候補のnavigationは揃えておく）
+    let mut no_accidents = expected_route_outcome("noAccidents");
+    no_accidents.safest = Some(0);
+    no_accidents.extra_minutes = Some(0.0);
+    check_outcome_invariants(&no_accidents).expect("全候補0件でもsafestを選べる");
     rejects(
         "twoSelected",
         &|o| {

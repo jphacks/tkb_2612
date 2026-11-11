@@ -363,6 +363,22 @@ describe("App search flow and condition ownership", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the result explanation after a search", async () => {
+    await openResults();
+    expect(
+      screen.getByRole("region", { name: "検索結果の説明" }),
+    ).toBeVisible();
+  });
+
+  it("keeps the result explanation visible when the map is unavailable", async () => {
+    const user = await openResults();
+    await switchScenario(user, "地図利用不可");
+    expect(await screen.findByText("地図を利用できません")).toBeVisible();
+    expect(
+      await screen.findByRole("region", { name: "検索結果の説明" }),
+    ).toBeVisible();
+  });
+
   it("ignores a pending GPS result that arrives after a route search has started", async () => {
     mode.demo = false;
     vi.stubGlobal("isSecureContext", true);

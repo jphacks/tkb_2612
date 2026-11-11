@@ -85,8 +85,12 @@ export function RouteCallouts({
       : Math.min(208, size.width - 24);
   // Narrow maps use smaller text and padding (.is-compact).
   const compact = size.width < 480;
-  const cardHeight = compact ? 112 : size.height < 480 ? 116 : 128;
+  const cardHeight = compact ? 130 : size.height < 480 ? 134 : 146;
   const topInset = size.height < 480 ? 56 : 72;
+  // 地図が低いと（説明の欄を開いたときなど）縦に積めないので、横に並べる。
+  // ナビ開始のボタンが切れたり隠れたりしないように、カードを手前に出す（.is-tight）。
+  const tight =
+    size.height < topInset + (cardHeight + 16) * routes.length + 88;
   const cards = routes.map((route) => {
     const tone = routeTone(route.id, result);
     const anchor = positions[route.id] ?? {
@@ -109,7 +113,13 @@ export function RouteCallouts({
       ),
     };
   });
-  if (cards.length === 2) {
+  if (tight) {
+    const y = Math.max(8, Math.min(topInset, size.height - cardHeight - 8));
+    cards.forEach((card, index) => {
+      card.x = routes.length > 1 ? 12 + index * (cardWidth + 12) : card.x;
+      card.y = y;
+    });
+  } else if (cards.length === 2) {
     const [first, second] = cards;
     const overlaps =
       Math.abs(first.x - second.x) < cardWidth + 12 &&
@@ -127,7 +137,7 @@ export function RouteCallouts({
 
   return (
     <div
-      className={`map-route-callouts${compact ? " is-compact" : ""}`}
+      className={`map-route-callouts${compact ? " is-compact" : ""}${tight ? " is-tight" : ""}`}
       role="group"
       aria-label="表示する経路"
     >
@@ -193,6 +203,13 @@ export function RouteCallouts({
                 過去事故 <b>{route.accident_count}</b> 件
                 {same && <span className="map-card-same">同一経路</span>}
               </span>
+              {route.id === result.safest_id &&
+                result.safest_id !== result.fastest_id &&
+                result.risk_reduction_percent !== null && (
+                  <span className="map-card-risk">
+                    推定リスク {result.risk_reduction_percent.toFixed(1)}%減
+                  </span>
+                )}
             </button>
             <button
               type="button"

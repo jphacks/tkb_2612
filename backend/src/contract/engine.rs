@@ -22,11 +22,10 @@ pub const MAX_DETOUR_RANGE_MIN: RangeInclusive<f64> = 0.0..=30.0;
 pub const DEFAULT_MAX_DETOUR_MIN: f64 = 10.0;
 /// 返す候補の上限。
 pub const MAX_CANDIDATES: usize = 6;
-/// 集合Bの経路周辺半径（m）。応答の `radius_m`。新方式（schema 3）では、
+/// 集合Bの経路周辺半径（m）。応答の `unattributed_radius_m`。新方式（schema 3）では、
 /// 帰属不明の事故を集合Bに数える範囲（behavior.md 6章）。
 pub const RADIUS_M: f64 = 72.0;
-/// 距離重みのガウスσ（m）。応答の `distance_weight_sigma_m`。旧方式（schema 2）だけが使い、
-/// 新方式では互換のための固定値として返す。
+/// 距離重みのガウスσ（m）。旧方式（schema 2）の距離重みのσ。応答には出さない。
 pub const DISTANCE_WEIGHT_SIGMA_M: f64 = 24.0;
 /// 候補ごとの表示事故点の上限。
 pub const MAX_ACCIDENT_POINTS: usize = 250;
@@ -207,6 +206,38 @@ pub struct AccidentPoint {
     pub weather: Weather,
     pub period: Period,
     pub day_type: DayType,
+    pub attribution: Attribution,
+}
+
+/// 事故を経路に結び付けた方法。応答の `attribution`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Attribution {
+    /// 道路の区間（歩道の親の車道を含む）。
+    Edge,
+    /// 交差点。
+    Intersection,
+    /// どの道路の事故か判断できない。旧方式は常にこれ。
+    Unattributed,
+}
+
+impl Attribution {
+    pub const ALL: [Attribution; 3] = [
+        Attribution::Edge,
+        Attribution::Intersection,
+        Attribution::Unattributed,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Attribution::Edge => "edge",
+            Attribution::Intersection => "intersection",
+            Attribution::Unattributed => "unattributed",
+        }
+    }
+
+    pub fn from_label(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|a| a.label() == s)
+    }
 }
 
 /// 表示用の高リスク小線分。終点の元頂点番号は常に `source_vertex_start_index + 1`。
@@ -291,6 +322,10 @@ pub struct EvaluatedRoute {
     pub path: RoutedPath,
     /// 集合B（天候で絞らない）の集計。
     pub totals: AccidentTotals,
+    /// 移動手段・時間帯・曜日区分・天候のどれでも絞る前の、経路に結び付いた事故の総件数。
+    /// 新方式は集合Bを作るときの `assigned` と `nearest` を合わせた事故IDの数（同じIDを
+    /// 二重に数えない）。旧方式はこの値を作らないので常に `None`（応答では `null`）。
+    pub total_accident_count: Option<u64>,
     /// 天候指定時の一致集計。天候allなら `None`。
     pub weather_match: Option<AccidentTotals>,
     /// 小数2桁に丸めた値。
@@ -337,7 +372,7 @@ pub struct RouteOutcome {
     pub candidates: Vec<EvaluatedRoute>,
     /// `candidates` の添字。
     pub fastest: usize,
-    /// `candidates` の添字。全候補で集合Bが空なら `None`。
+    /// `candidates` の添字。新方式は常に `Some`。旧方式は全候補で集合Bが空なら `None`。
     pub safest: Option<usize>,
     pub extra_minutes: Option<f64>,
     pub risk_reduction_percent: Option<f64>,

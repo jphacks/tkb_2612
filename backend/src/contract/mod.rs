@@ -23,9 +23,9 @@ pub use calendar::{Calendar, DayClassification, DayTypeReason, DepartureClass, T
 pub use cancel::{CancelGuard, CancelToken, Interrupt};
 pub use conditions::{ConditionFilter, DayType, Mode, Period, Weather};
 pub use engine::{
-    AccidentPoint, AccidentTotals, CandidateSet, DatasetInfo, EngineError, EvaluatedRoute,
-    GuidanceStep, HighRiskSegment, Maneuver, NavigationData, NavigationSection, QueryError,
-    RouteEngine, RouteOutcome, RouteQuery,
+    AccidentPoint, AccidentTotals, Attribution, CandidateSet, DatasetInfo, EngineError,
+    EvaluatedRoute, GuidanceStep, HighRiskSegment, Maneuver, NavigationData, NavigationSection,
+    QueryError, RouteEngine, RouteOutcome, RouteQuery,
 };
 pub use geo::{LatLon, LonLat};
 pub use routing::{

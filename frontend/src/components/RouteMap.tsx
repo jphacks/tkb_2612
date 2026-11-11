@@ -42,6 +42,7 @@ import {
   type MapPoint,
   type MapSize,
 } from "./RouteCallouts";
+import { attributionLabel } from "./accidentAttribution";
 
 /** ナビ中だけ渡す。比較用の経路カードを隠し、ナビ用レイヤーを重ねる。 */
 export type NavigationMapProps = {
@@ -143,6 +144,8 @@ function AccidentPopup({
         <dd>{fact.deaths}人</dd>
         <dt>負傷者数</dt>
         <dd>{fact.injuries}人</dd>
+        <dt>発生場所</dt>
+        <dd>{attributionLabel(fact.attribution)}</dd>
       </dl>
     </section>
   );
@@ -675,6 +678,8 @@ export function RouteMap(props: RouteMapProps) {
             {showAccidents &&
               selectedRoute?.accident_points.features.map((point) => {
                 const [x, y] = project(point.geometry.coordinates);
+                const unattributed =
+                  point.properties.attribution === "unattributed";
                 const activate = () => setAccidentId(point.id);
                 return (
                   <g
@@ -695,7 +700,12 @@ export function RouteMap(props: RouteMapProps) {
                       strokeWidth="44"
                       vectorEffect="non-scaling-stroke"
                     />
-                    <circle cx={x} cy={y} r="7" className="map-accident-dot" />
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={unattributed ? 5 : 7}
+                      className={`map-accident-dot${unattributed ? " is-unattributed" : ""}`}
+                    />
                   </g>
                 );
               })}
@@ -861,10 +871,16 @@ export function RouteMap(props: RouteMapProps) {
             </>
           )}
           {showAccidents && (
-            <span>
-              <i className="legend-accident" />
-              事故記録
-            </span>
+            <>
+              <span>
+                <i className="legend-accident" />
+                経路上の事故
+              </span>
+              <span>
+                <i className="legend-accident-unattributed" />
+                経路の近くの事故
+              </span>
+            </>
           )}
           {safetyReports.length > 0 && (
             <>
@@ -890,7 +906,7 @@ export function RouteMap(props: RouteMapProps) {
           現在地に追従
         </button>
       )}
-      {!disabled && selectedAccident && (
+      {!disabled && selectedAccident && result && (
         <AccidentPopup
           accident={selectedAccident}
           onClose={() => setAccidentId(null)}

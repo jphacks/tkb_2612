@@ -12,8 +12,8 @@ use accident_route_backend::api::route_response::{
     NAV_MAX_VERTICES, ROUTE_MAX_DISTANCE_M, check_detour, render_route_response,
 };
 use accident_route_backend::contract::{
-    AccidentPoint, AccidentTotals, EvaluatedRoute, GuidanceStep, HighRiskSegment, LonLat, Maneuver,
-    NavigationData, NavigationSection, RouteOutcome,
+    AccidentPoint, AccidentTotals, Attribution, EvaluatedRoute, GuidanceStep, HighRiskSegment,
+    LonLat, Maneuver, NavigationData, NavigationSection, RouteOutcome,
 };
 use accident_route_backend::testing::fixtures::{
     check_outcome_invariants, expected_route_outcome, fixture_dataset_info, route_example,
@@ -41,6 +41,42 @@ fn every_fixture_outcome_renders_to_the_fixture_json() {
         let mut expected = route_response_json(&name);
         expected.as_object_mut().unwrap().remove("aggregation_ms");
         assert_json_matches(&actual, &expected);
+    }
+}
+
+#[test]
+fn safest_may_exist_without_any_accident_but_not_with_accidents() {
+    // 全候補0件でもsafestを選んでよい。
+    let mut no_accidents = expected_route_outcome("noAccidents");
+    no_accidents.safest = Some(no_accidents.fastest);
+    no_accidents.extra_minutes = Some(no_accidents.candidates[no_accidents.fastest].extra_minutes);
+    assert!(render_route_response(&no_accidents).is_ok());
+
+    // 事故があるのにsafestがnullなのは拒否する。
+    let mut with_accidents = expected_route_outcome("twoSelected");
+    with_accidents.safest = None;
+    with_accidents.extra_minutes = None;
+    with_accidents.risk_reduction_percent = None;
+    with_accidents.candidates[1].navigation = None;
+    let message = rejection(&with_accidents);
+    assert!(message.contains("事故があるのにsafestがnull"), "{message}");
+}
+
+#[test]
+fn accident_attribution_and_unattributed_radius_are_rendered() {
+    for (attribution, label) in [
+        (Attribution::Edge, "edge"),
+        (Attribution::Intersection, "intersection"),
+        (Attribution::Unattributed, "unattributed"),
+    ] {
+        let mut outcome = expected_route_outcome("singleRoute");
+        outcome.candidates[0].accident_points[0].attribution = attribution;
+        let actual = render(&outcome);
+        let properties = &actual["candidates"][0]["accident_points"]["features"][0]["properties"];
+        assert_eq!(properties["attribution"], label);
+        assert_eq!(actual["unattributed_radius_m"].as_f64(), Some(72.0));
+        assert!(actual.get("radius_m").is_none());
+        assert!(actual.get("distance_weight_sigma_m").is_none());
     }
 }
 
@@ -410,6 +446,26 @@ fn broken_correlations_are_rejected() {
 }
 
 type OutcomeEdit = dyn Fn(&mut RouteOutcome);
+
+#[test]
+fn total_accident_count_must_not_be_below_accident_count() {
+    let mut outcome = expected_route_outcome("twoSelected");
+    let index = outcome
+        .candidates
+        .iter()
+        .position(|c| c.totals.accident_count > 0)
+        .expect("事故のある候補");
+    let c = &mut outcome.candidates[index];
+    let count = c.totals.accident_count;
+    c.total_accident_count = Some(count + 10);
+    assert!(
+        render_route_response(&outcome).is_ok(),
+        "accident_count以上は認める"
+    );
+    outcome.candidates[index].total_accident_count = Some(count - 1);
+    let message = rejection(&outcome);
+    assert!(message.contains("total_accident_count"), "{message}");
+}
 
 /// 選定・丸め・包含の相関（frontendの応答検証と同じ条件）。値は再計算せず、整合だけを見る。
 #[test]

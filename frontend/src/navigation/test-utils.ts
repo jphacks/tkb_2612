@@ -10,7 +10,7 @@ export function testRoute(xs = [0, 500], duration = 50): RouteCandidate {
   return {
     id: "route-1", geometry: { type: "LineString", coordinates }, distance: length, duration,
     navigation: { projection_lat_deg: 35, length_m: length, vertex_distances_m: distances, sections: [], guidance: [{ maneuver: "arrive", at_m: length }] }, high_risk_total: 0,
-    accident_count: 0, fatal_accidents: 0, injury_accidents: 0, deaths: 0, injuries: 0, weather_match: null,
+    accident_count: 0, total_accident_count: 0, fatal_accidents: 0, injury_accidents: 0, deaths: 0, injuries: 0, weather_match: null,
     weighted_risk: 0, risk_per_km: 0, points_shown: 0, accident_points: { type: "FeatureCollection", features: [] },
     high_risk_sections: { type: "FeatureCollection", features: [] }, exact_condition_count: 0, extra_minutes: 0, within_detour: true
   };

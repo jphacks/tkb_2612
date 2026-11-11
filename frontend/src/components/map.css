@@ -100,9 +100,16 @@
   stroke: var(--caution);
   stroke-width: 3;
 }
+.map-accident-dot.is-unattributed {
+  stroke-width: 2;
+  stroke-opacity: 0.55;
+}
 .map-accident-button:focus-visible .map-accident-dot {
   stroke: #0f172a;
   stroke-width: 5;
+}
+.map-accident-button:focus-visible .map-accident-dot.is-unattributed {
+  stroke-opacity: 1;
 }
 .map-preview-label {
   position: absolute;
@@ -202,6 +209,14 @@
   border: 2px solid var(--caution);
   border-radius: 50%;
   background: #fff;
+}
+.map-legend .legend-accident-unattributed {
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--caution);
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0.55;
 }
 /* 口コミの地点（Issue #23）。色はSafetyIconのSAFETY_COLORSと同じ。 */
 .map-legend .legend-community-safe,
@@ -351,6 +366,9 @@
   z-index: 2;
   pointer-events: none;
 }
+.map-route-callouts.is-tight {
+  z-index: 4;
+}
 .map-callout-connectors {
   position: absolute;
   inset: 0;
@@ -471,6 +489,13 @@
   margin-left: auto;
   font-size: 10px;
 }
+.map-card-risk {
+  display: block;
+  /* Room for the navigation button in the bottom-right corner. */
+  padding-right: 44px;
+  color: #15803d;
+  font-size: 11px;
+}
 .map-controls,
 .map-preview-label,
 .map-legend {
@@ -568,4 +593,82 @@
 }
 .map-follow-button:hover {
   background: var(--soft);
+}
+
+/* 説明の欄は地図に重ねず、地図の下に帯として置く。経路カードや凡例に隠れないように、
+   地図のほうを縮める。 */
+.map-stage:has(> .route-result-notes) {
+  display: flex;
+  flex-direction: column;
+}
+.map-stage:has(> .route-result-notes) > .route-map-shell {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+}
+.route-result-notes {
+  flex: none;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 8px 16px;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+  font-size: 12px;
+}
+@media (max-height: 480px) {
+  .route-result-notes {
+    max-height: 30%;
+  }
+}
+/* デモの切替ボタン（固定配置）に文字が隠れないようにする。 */
+:root:has(.demo-menu) .route-result-notes {
+  padding-right: 188px;
+}
+@media (max-width: 699px) {
+  :root:has(.demo-menu) .route-result-notes {
+    padding-right: 16px;
+    padding-bottom: 64px;
+  }
+}
+.route-result-notes p {
+  margin: 0 0 6px;
+  line-height: 1.5;
+}
+.route-result-notes ul {
+  margin: 0 0 6px;
+  padding-left: 16px;
+  line-height: 1.5;
+}
+.route-result-notes summary {
+  padding: 2px 0;
+  font-weight: 600;
+  cursor: pointer;
+}
+.route-result-notes summary:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: -3px;
+}
+.route-result-notes details[open] > summary {
+  margin-bottom: 6px;
+}
+.route-result-table {
+  margin: 0 0 6px;
+  border-collapse: collapse;
+}
+.route-result-table th,
+.route-result-table td {
+  padding: 2px 12px 2px 0;
+  text-align: left;
+  font-weight: 400;
+}
+.route-result-table thead th {
+  color: #475569;
+}
+.route-result-table td {
+  font-variant-numeric: tabular-nums;
+}
+.route-result-heading {
+  margin: 8px 0 4px;
+  font-size: inherit;
+  font-weight: 600;
 }

@@ -47,7 +47,7 @@ paths:
         unknownキーは無視。hour/period整合と距離等の相関制約はbehavior.mdを参照。
         出発日時は受け取らない。period/day_type/weatherの自動値は/api/conditionsで得る。
         天候は事故を除外せず、一致事故をweather_matchで別集計し、スコアで重く数える。
-        全候補で該当事故が0件でも条件を解除しない。その場合safest_idはnull。
+        全候補で該当事故が0件でも条件を解除しない。その場合、新方式は推定リスクでsafest_idを選び、旧方式（schema 2）はnullを返す。
         navigationはfastest_idとnullでないsafest_idの候補だけに含め、未選定はnull。
         同一選定IDでは1個を共用する。新方式（schema 3）は外部の経路提供元を呼ばない。
         旧方式（schema 2）はナビ用生成でOSRM呼出しを追加せず、1検索最大3呼出し・steps=falseを維持する。
@@ -123,6 +123,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 1
+                      total_accident_count: null
                       fatal_accidents: 1
                       injury_accidents: 0
                       deaths: 1
@@ -153,6 +154,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                       points_shown: 1
                       high_risk_sections:
                         type: FeatureCollection
@@ -204,8 +206,7 @@ paths:
                       period: 昼
                       day_type: 休日
                       weather: 晴
-                    radius_m: 72
-                    distance_weight_sigma_m: 24
+                    unattributed_radius_m: 72
                     aggregation_ms: 0
                     data_years:
                     - 2025
@@ -229,6 +230,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 0
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 0
                       deaths: 0
@@ -275,8 +277,7 @@ paths:
                       period: 深夜
                       day_type: 休日
                       weather: 雪
-                    radius_m: 72
-                    distance_weight_sigma_m: 24
+                    unattributed_radius_m: 72
                     aggregation_ms: 0
                     data_years:
                     - 2025
@@ -300,6 +301,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 1
                       injury_accidents: 1
                       deaths: 1
@@ -330,6 +332,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                         - type: Feature
                           id: 1
                           geometry:
@@ -345,6 +348,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                       points_shown: 2
                       high_risk_sections:
                         type: FeatureCollection
@@ -418,6 +422,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 2
                       deaths: 0
@@ -448,6 +453,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                         - type: Feature
                           id: 2
                           geometry:
@@ -463,6 +469,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                       points_shown: 2
                       high_risk_sections:
                         type: FeatureCollection
@@ -516,6 +523,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 2
                       deaths: 0
@@ -546,6 +554,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                         - type: Feature
                           id: 2
                           geometry:
@@ -561,6 +570,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                       points_shown: 2
                       high_risk_sections:
                         type: FeatureCollection
@@ -596,8 +606,7 @@ paths:
                       period: 昼
                       day_type: 休日
                       weather: 晴
-                    radius_m: 72
-                    distance_weight_sigma_m: 24
+                    unattributed_radius_m: 72
                     aggregation_ms: 0
                     data_years:
                     - 2025
@@ -621,6 +630,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 1
                       injury_accidents: 1
                       deaths: 1
@@ -646,6 +656,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                         - type: Feature
                           id: 1
                           geometry:
@@ -661,6 +672,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                       points_shown: 2
                       high_risk_sections:
                         type: FeatureCollection
@@ -734,6 +746,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 2
                       deaths: 0
@@ -759,6 +772,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                         - type: Feature
                           id: 2
                           geometry:
@@ -774,6 +788,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                       points_shown: 2
                       high_risk_sections:
                         type: FeatureCollection
@@ -827,6 +842,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 2
                       deaths: 0
@@ -852,6 +868,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                         - type: Feature
                           id: 2
                           geometry:
@@ -867,6 +884,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                       points_shown: 2
                       high_risk_sections:
                         type: FeatureCollection
@@ -902,8 +920,7 @@ paths:
                       period: 昼
                       day_type: 休日
                       weather: 全天候
-                    radius_m: 72
-                    distance_weight_sigma_m: 24
+                    unattributed_radius_m: 72
                     aggregation_ms: 0
                     data_years:
                     - 2025
@@ -927,6 +944,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 1
                       injury_accidents: 1
                       deaths: 1
@@ -957,6 +975,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                         - type: Feature
                           id: 1
                           geometry:
@@ -972,6 +991,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                       points_shown: 2
                       high_risk_sections:
                         type: FeatureCollection
@@ -1045,6 +1065,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 2
                       deaths: 0
@@ -1075,6 +1096,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                         - type: Feature
                           id: 2
                           geometry:
@@ -1090,6 +1112,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                       points_shown: 2
                       high_risk_sections:
                         type: FeatureCollection
@@ -1143,6 +1166,7 @@ paths:
                         - - 139.01
                           - 35
                       accident_count: 2
+                      total_accident_count: null
                       fatal_accidents: 0
                       injury_accidents: 2
                       deaths: 0
@@ -1173,6 +1197,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                         - type: Feature
                           id: 2
                           geometry:
@@ -1188,6 +1213,7 @@ paths:
                             weather: 晴
                             period: 昼
                             day_type: 休日
+                            attribution: unattributed
                       points_shown: 2
                       high_risk_sections:
                         type: FeatureCollection
@@ -1223,8 +1249,7 @@ paths:
                       period: 昼
                       day_type: 休日
                       weather: 霧
-                    radius_m: 72
-                    distance_weight_sigma_m: 24
+                    unattributed_radius_m: 72
                     aggregation_ms: 0
                     data_years:
                     - 2025
@@ -1248,6 +1273,7 @@ paths:
                         - - 139.01
                           - 35.01
                       accident_count: 255
+                      total_accident_count: null
                       fatal_accidents: 5
                       injury_accidents: 250
                       deaths: 5
@@ -1263,256 +1289,256 @@ paths:
                       accident_points:
                         type: FeatureCollection
                         features:
-                        - {type: Feature, id: 13, geometry: {type: Point, coordinates: [139.00092, 35.01]}, properties: {deaths: 1, injuries: 0, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 64, geometry: {type: Point, coordinates: [139.002552, 35.01]}, properties: {deaths: 1, injuries: 0, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 133, geometry: {type: Point, coordinates: [139.00476, 35.01]}, properties: {deaths: 1, injuries: 0, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 206, geometry: {type: Point, coordinates: [139.007096, 35.01]}, properties: {deaths: 1, injuries: 0, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 253, geometry: {type: Point, coordinates: [139.0086, 35.01]}, properties: {deaths: 1, injuries: 0, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 3, geometry: {type: Point, coordinates: [139.0006, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 4, geometry: {type: Point, coordinates: [139.000632, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 5, geometry: {type: Point, coordinates: [139.000664, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 6, geometry: {type: Point, coordinates: [139.000696, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 7, geometry: {type: Point, coordinates: [139.000728, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 8, geometry: {type: Point, coordinates: [139.00076, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 9, geometry: {type: Point, coordinates: [139.000792, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 10, geometry: {type: Point, coordinates: [139.000824, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 11, geometry: {type: Point, coordinates: [139.000856, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 12, geometry: {type: Point, coordinates: [139.000888, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 14, geometry: {type: Point, coordinates: [139.000952, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 15, geometry: {type: Point, coordinates: [139.000984, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 16, geometry: {type: Point, coordinates: [139.001016, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 17, geometry: {type: Point, coordinates: [139.001048, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 18, geometry: {type: Point, coordinates: [139.00108, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 19, geometry: {type: Point, coordinates: [139.001112, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 20, geometry: {type: Point, coordinates: [139.001144, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 21, geometry: {type: Point, coordinates: [139.001176, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 22, geometry: {type: Point, coordinates: [139.001208, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 23, geometry: {type: Point, coordinates: [139.00124, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 24, geometry: {type: Point, coordinates: [139.001272, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 25, geometry: {type: Point, coordinates: [139.001304, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 26, geometry: {type: Point, coordinates: [139.001336, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 27, geometry: {type: Point, coordinates: [139.001368, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 28, geometry: {type: Point, coordinates: [139.0014, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 29, geometry: {type: Point, coordinates: [139.001432, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 30, geometry: {type: Point, coordinates: [139.001464, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 31, geometry: {type: Point, coordinates: [139.001496, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 32, geometry: {type: Point, coordinates: [139.001528, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 33, geometry: {type: Point, coordinates: [139.00156, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 34, geometry: {type: Point, coordinates: [139.001592, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 35, geometry: {type: Point, coordinates: [139.001624, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 36, geometry: {type: Point, coordinates: [139.001656, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 37, geometry: {type: Point, coordinates: [139.001688, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 38, geometry: {type: Point, coordinates: [139.00172, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 39, geometry: {type: Point, coordinates: [139.001752, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 40, geometry: {type: Point, coordinates: [139.001784, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 41, geometry: {type: Point, coordinates: [139.001816, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 42, geometry: {type: Point, coordinates: [139.001848, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 43, geometry: {type: Point, coordinates: [139.00188, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 44, geometry: {type: Point, coordinates: [139.001912, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 45, geometry: {type: Point, coordinates: [139.001944, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 46, geometry: {type: Point, coordinates: [139.001976, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 47, geometry: {type: Point, coordinates: [139.002008, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 48, geometry: {type: Point, coordinates: [139.00204, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 49, geometry: {type: Point, coordinates: [139.002072, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 50, geometry: {type: Point, coordinates: [139.002104, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 51, geometry: {type: Point, coordinates: [139.002136, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 52, geometry: {type: Point, coordinates: [139.002168, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 54, geometry: {type: Point, coordinates: [139.002232, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 55, geometry: {type: Point, coordinates: [139.002264, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 56, geometry: {type: Point, coordinates: [139.002296, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 57, geometry: {type: Point, coordinates: [139.002328, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 58, geometry: {type: Point, coordinates: [139.00236, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 59, geometry: {type: Point, coordinates: [139.002392, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 60, geometry: {type: Point, coordinates: [139.002424, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 61, geometry: {type: Point, coordinates: [139.002456, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 62, geometry: {type: Point, coordinates: [139.002488, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 63, geometry: {type: Point, coordinates: [139.00252, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 65, geometry: {type: Point, coordinates: [139.002584, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 66, geometry: {type: Point, coordinates: [139.002616, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 67, geometry: {type: Point, coordinates: [139.002648, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 68, geometry: {type: Point, coordinates: [139.00268, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 69, geometry: {type: Point, coordinates: [139.002712, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 70, geometry: {type: Point, coordinates: [139.002744, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 71, geometry: {type: Point, coordinates: [139.002776, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 72, geometry: {type: Point, coordinates: [139.002808, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 73, geometry: {type: Point, coordinates: [139.00284, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 74, geometry: {type: Point, coordinates: [139.002872, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 75, geometry: {type: Point, coordinates: [139.002904, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 76, geometry: {type: Point, coordinates: [139.002936, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 77, geometry: {type: Point, coordinates: [139.002968, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 78, geometry: {type: Point, coordinates: [139.003, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 79, geometry: {type: Point, coordinates: [139.003032, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 80, geometry: {type: Point, coordinates: [139.003064, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 81, geometry: {type: Point, coordinates: [139.003096, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 82, geometry: {type: Point, coordinates: [139.003128, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 83, geometry: {type: Point, coordinates: [139.00316, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 84, geometry: {type: Point, coordinates: [139.003192, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 85, geometry: {type: Point, coordinates: [139.003224, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 86, geometry: {type: Point, coordinates: [139.003256, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 87, geometry: {type: Point, coordinates: [139.003288, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 88, geometry: {type: Point, coordinates: [139.00332, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 89, geometry: {type: Point, coordinates: [139.003352, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 90, geometry: {type: Point, coordinates: [139.003384, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 91, geometry: {type: Point, coordinates: [139.003416, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 92, geometry: {type: Point, coordinates: [139.003448, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 93, geometry: {type: Point, coordinates: [139.00348, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 94, geometry: {type: Point, coordinates: [139.003512, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 95, geometry: {type: Point, coordinates: [139.003544, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 96, geometry: {type: Point, coordinates: [139.003576, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 97, geometry: {type: Point, coordinates: [139.003608, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 98, geometry: {type: Point, coordinates: [139.00364, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 99, geometry: {type: Point, coordinates: [139.003672, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 100, geometry: {type: Point, coordinates: [139.003704, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 101, geometry: {type: Point, coordinates: [139.003736, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 102, geometry: {type: Point, coordinates: [139.003768, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 103, geometry: {type: Point, coordinates: [139.0038, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 105, geometry: {type: Point, coordinates: [139.003864, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 106, geometry: {type: Point, coordinates: [139.003896, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 107, geometry: {type: Point, coordinates: [139.003928, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 108, geometry: {type: Point, coordinates: [139.00396, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 109, geometry: {type: Point, coordinates: [139.003992, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 110, geometry: {type: Point, coordinates: [139.004024, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 111, geometry: {type: Point, coordinates: [139.004056, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 112, geometry: {type: Point, coordinates: [139.004088, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 113, geometry: {type: Point, coordinates: [139.00412, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 114, geometry: {type: Point, coordinates: [139.004152, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 115, geometry: {type: Point, coordinates: [139.004184, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 116, geometry: {type: Point, coordinates: [139.004216, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 117, geometry: {type: Point, coordinates: [139.004248, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 118, geometry: {type: Point, coordinates: [139.00428, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 119, geometry: {type: Point, coordinates: [139.004312, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 120, geometry: {type: Point, coordinates: [139.004344, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 121, geometry: {type: Point, coordinates: [139.004376, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 122, geometry: {type: Point, coordinates: [139.004408, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 123, geometry: {type: Point, coordinates: [139.00444, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 124, geometry: {type: Point, coordinates: [139.004472, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 125, geometry: {type: Point, coordinates: [139.004504, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 126, geometry: {type: Point, coordinates: [139.004536, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 127, geometry: {type: Point, coordinates: [139.004568, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 128, geometry: {type: Point, coordinates: [139.0046, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 129, geometry: {type: Point, coordinates: [139.004632, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 130, geometry: {type: Point, coordinates: [139.004664, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 131, geometry: {type: Point, coordinates: [139.004696, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 132, geometry: {type: Point, coordinates: [139.004728, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 134, geometry: {type: Point, coordinates: [139.004792, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 135, geometry: {type: Point, coordinates: [139.004824, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 136, geometry: {type: Point, coordinates: [139.004856, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 137, geometry: {type: Point, coordinates: [139.004888, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 138, geometry: {type: Point, coordinates: [139.00492, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 139, geometry: {type: Point, coordinates: [139.004952, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 140, geometry: {type: Point, coordinates: [139.004984, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 141, geometry: {type: Point, coordinates: [139.005016, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 142, geometry: {type: Point, coordinates: [139.005048, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 143, geometry: {type: Point, coordinates: [139.00508, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 144, geometry: {type: Point, coordinates: [139.005112, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 145, geometry: {type: Point, coordinates: [139.005144, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 146, geometry: {type: Point, coordinates: [139.005176, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 147, geometry: {type: Point, coordinates: [139.005208, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 148, geometry: {type: Point, coordinates: [139.00524, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 149, geometry: {type: Point, coordinates: [139.005272, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 150, geometry: {type: Point, coordinates: [139.005304, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 151, geometry: {type: Point, coordinates: [139.005336, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 152, geometry: {type: Point, coordinates: [139.005368, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 153, geometry: {type: Point, coordinates: [139.0054, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 154, geometry: {type: Point, coordinates: [139.005432, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 156, geometry: {type: Point, coordinates: [139.005496, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 157, geometry: {type: Point, coordinates: [139.005528, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 158, geometry: {type: Point, coordinates: [139.00556, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 159, geometry: {type: Point, coordinates: [139.005592, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 160, geometry: {type: Point, coordinates: [139.005624, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 161, geometry: {type: Point, coordinates: [139.005656, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 162, geometry: {type: Point, coordinates: [139.005688, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 163, geometry: {type: Point, coordinates: [139.00572, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 164, geometry: {type: Point, coordinates: [139.005752, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 165, geometry: {type: Point, coordinates: [139.005784, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 166, geometry: {type: Point, coordinates: [139.005816, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 167, geometry: {type: Point, coordinates: [139.005848, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 168, geometry: {type: Point, coordinates: [139.00588, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 169, geometry: {type: Point, coordinates: [139.005912, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 170, geometry: {type: Point, coordinates: [139.005944, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 171, geometry: {type: Point, coordinates: [139.005976, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 172, geometry: {type: Point, coordinates: [139.006008, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 173, geometry: {type: Point, coordinates: [139.00604, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 174, geometry: {type: Point, coordinates: [139.006072, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 175, geometry: {type: Point, coordinates: [139.006104, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 176, geometry: {type: Point, coordinates: [139.006136, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 177, geometry: {type: Point, coordinates: [139.006168, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 178, geometry: {type: Point, coordinates: [139.0062, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 179, geometry: {type: Point, coordinates: [139.006232, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 180, geometry: {type: Point, coordinates: [139.006264, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 181, geometry: {type: Point, coordinates: [139.006296, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 182, geometry: {type: Point, coordinates: [139.006328, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 183, geometry: {type: Point, coordinates: [139.00636, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 184, geometry: {type: Point, coordinates: [139.006392, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 185, geometry: {type: Point, coordinates: [139.006424, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 186, geometry: {type: Point, coordinates: [139.006456, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 187, geometry: {type: Point, coordinates: [139.006488, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 188, geometry: {type: Point, coordinates: [139.00652, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 189, geometry: {type: Point, coordinates: [139.006552, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 190, geometry: {type: Point, coordinates: [139.006584, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 191, geometry: {type: Point, coordinates: [139.006616, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 192, geometry: {type: Point, coordinates: [139.006648, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 193, geometry: {type: Point, coordinates: [139.00668, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 194, geometry: {type: Point, coordinates: [139.006712, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 195, geometry: {type: Point, coordinates: [139.006744, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 196, geometry: {type: Point, coordinates: [139.006776, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 197, geometry: {type: Point, coordinates: [139.006808, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 198, geometry: {type: Point, coordinates: [139.00684, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 199, geometry: {type: Point, coordinates: [139.006872, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 200, geometry: {type: Point, coordinates: [139.006904, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 201, geometry: {type: Point, coordinates: [139.006936, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 202, geometry: {type: Point, coordinates: [139.006968, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 203, geometry: {type: Point, coordinates: [139.007, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 204, geometry: {type: Point, coordinates: [139.007032, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 207, geometry: {type: Point, coordinates: [139.007128, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 208, geometry: {type: Point, coordinates: [139.00716, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 209, geometry: {type: Point, coordinates: [139.007192, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 210, geometry: {type: Point, coordinates: [139.007224, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 211, geometry: {type: Point, coordinates: [139.007256, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 212, geometry: {type: Point, coordinates: [139.007288, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 213, geometry: {type: Point, coordinates: [139.00732, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 214, geometry: {type: Point, coordinates: [139.007352, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 215, geometry: {type: Point, coordinates: [139.007384, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 216, geometry: {type: Point, coordinates: [139.007416, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 217, geometry: {type: Point, coordinates: [139.007448, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 218, geometry: {type: Point, coordinates: [139.00748, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 219, geometry: {type: Point, coordinates: [139.007512, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 220, geometry: {type: Point, coordinates: [139.007544, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 221, geometry: {type: Point, coordinates: [139.007576, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 222, geometry: {type: Point, coordinates: [139.007608, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 223, geometry: {type: Point, coordinates: [139.00764, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 224, geometry: {type: Point, coordinates: [139.007672, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 225, geometry: {type: Point, coordinates: [139.007704, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 226, geometry: {type: Point, coordinates: [139.007736, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 227, geometry: {type: Point, coordinates: [139.007768, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 228, geometry: {type: Point, coordinates: [139.0078, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 229, geometry: {type: Point, coordinates: [139.007832, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 230, geometry: {type: Point, coordinates: [139.007864, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 231, geometry: {type: Point, coordinates: [139.007896, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 232, geometry: {type: Point, coordinates: [139.007928, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 233, geometry: {type: Point, coordinates: [139.00796, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 234, geometry: {type: Point, coordinates: [139.007992, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 235, geometry: {type: Point, coordinates: [139.008024, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 236, geometry: {type: Point, coordinates: [139.008056, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 237, geometry: {type: Point, coordinates: [139.008088, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 238, geometry: {type: Point, coordinates: [139.00812, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 239, geometry: {type: Point, coordinates: [139.008152, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 240, geometry: {type: Point, coordinates: [139.008184, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 241, geometry: {type: Point, coordinates: [139.008216, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 242, geometry: {type: Point, coordinates: [139.008248, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 243, geometry: {type: Point, coordinates: [139.00828, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 244, geometry: {type: Point, coordinates: [139.008312, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 245, geometry: {type: Point, coordinates: [139.008344, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 246, geometry: {type: Point, coordinates: [139.008376, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 247, geometry: {type: Point, coordinates: [139.008408, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 248, geometry: {type: Point, coordinates: [139.00844, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 249, geometry: {type: Point, coordinates: [139.008472, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 250, geometry: {type: Point, coordinates: [139.008504, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 251, geometry: {type: Point, coordinates: [139.008536, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 252, geometry: {type: Point, coordinates: [139.008568, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 254, geometry: {type: Point, coordinates: [139.008632, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 255, geometry: {type: Point, coordinates: [139.008664, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
-                        - {type: Feature, id: 256, geometry: {type: Point, coordinates: [139.008696, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日}}
+                        - {type: Feature, id: 13, geometry: {type: Point, coordinates: [139.00092, 35.01]}, properties: {deaths: 1, injuries: 0, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 64, geometry: {type: Point, coordinates: [139.002552, 35.01]}, properties: {deaths: 1, injuries: 0, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 133, geometry: {type: Point, coordinates: [139.00476, 35.01]}, properties: {deaths: 1, injuries: 0, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 206, geometry: {type: Point, coordinates: [139.007096, 35.01]}, properties: {deaths: 1, injuries: 0, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 253, geometry: {type: Point, coordinates: [139.0086, 35.01]}, properties: {deaths: 1, injuries: 0, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 3, geometry: {type: Point, coordinates: [139.0006, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 4, geometry: {type: Point, coordinates: [139.000632, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 5, geometry: {type: Point, coordinates: [139.000664, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 6, geometry: {type: Point, coordinates: [139.000696, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 7, geometry: {type: Point, coordinates: [139.000728, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 8, geometry: {type: Point, coordinates: [139.00076, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 9, geometry: {type: Point, coordinates: [139.000792, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 10, geometry: {type: Point, coordinates: [139.000824, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 11, geometry: {type: Point, coordinates: [139.000856, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 12, geometry: {type: Point, coordinates: [139.000888, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 14, geometry: {type: Point, coordinates: [139.000952, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 15, geometry: {type: Point, coordinates: [139.000984, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 16, geometry: {type: Point, coordinates: [139.001016, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 17, geometry: {type: Point, coordinates: [139.001048, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 18, geometry: {type: Point, coordinates: [139.00108, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 19, geometry: {type: Point, coordinates: [139.001112, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 20, geometry: {type: Point, coordinates: [139.001144, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 21, geometry: {type: Point, coordinates: [139.001176, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 22, geometry: {type: Point, coordinates: [139.001208, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 23, geometry: {type: Point, coordinates: [139.00124, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 24, geometry: {type: Point, coordinates: [139.001272, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 25, geometry: {type: Point, coordinates: [139.001304, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 26, geometry: {type: Point, coordinates: [139.001336, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 27, geometry: {type: Point, coordinates: [139.001368, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 28, geometry: {type: Point, coordinates: [139.0014, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 29, geometry: {type: Point, coordinates: [139.001432, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 30, geometry: {type: Point, coordinates: [139.001464, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 31, geometry: {type: Point, coordinates: [139.001496, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 32, geometry: {type: Point, coordinates: [139.001528, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 33, geometry: {type: Point, coordinates: [139.00156, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 34, geometry: {type: Point, coordinates: [139.001592, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 35, geometry: {type: Point, coordinates: [139.001624, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 36, geometry: {type: Point, coordinates: [139.001656, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 37, geometry: {type: Point, coordinates: [139.001688, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 38, geometry: {type: Point, coordinates: [139.00172, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 39, geometry: {type: Point, coordinates: [139.001752, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 40, geometry: {type: Point, coordinates: [139.001784, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 41, geometry: {type: Point, coordinates: [139.001816, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 42, geometry: {type: Point, coordinates: [139.001848, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 43, geometry: {type: Point, coordinates: [139.00188, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 44, geometry: {type: Point, coordinates: [139.001912, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 45, geometry: {type: Point, coordinates: [139.001944, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 46, geometry: {type: Point, coordinates: [139.001976, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 47, geometry: {type: Point, coordinates: [139.002008, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 48, geometry: {type: Point, coordinates: [139.00204, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 49, geometry: {type: Point, coordinates: [139.002072, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 50, geometry: {type: Point, coordinates: [139.002104, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 51, geometry: {type: Point, coordinates: [139.002136, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 52, geometry: {type: Point, coordinates: [139.002168, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 54, geometry: {type: Point, coordinates: [139.002232, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 55, geometry: {type: Point, coordinates: [139.002264, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 56, geometry: {type: Point, coordinates: [139.002296, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 57, geometry: {type: Point, coordinates: [139.002328, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 58, geometry: {type: Point, coordinates: [139.00236, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 59, geometry: {type: Point, coordinates: [139.002392, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 60, geometry: {type: Point, coordinates: [139.002424, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 61, geometry: {type: Point, coordinates: [139.002456, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 62, geometry: {type: Point, coordinates: [139.002488, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 63, geometry: {type: Point, coordinates: [139.00252, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 65, geometry: {type: Point, coordinates: [139.002584, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 66, geometry: {type: Point, coordinates: [139.002616, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 67, geometry: {type: Point, coordinates: [139.002648, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 68, geometry: {type: Point, coordinates: [139.00268, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 69, geometry: {type: Point, coordinates: [139.002712, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 70, geometry: {type: Point, coordinates: [139.002744, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 71, geometry: {type: Point, coordinates: [139.002776, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 72, geometry: {type: Point, coordinates: [139.002808, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 73, geometry: {type: Point, coordinates: [139.00284, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 74, geometry: {type: Point, coordinates: [139.002872, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 75, geometry: {type: Point, coordinates: [139.002904, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 76, geometry: {type: Point, coordinates: [139.002936, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 77, geometry: {type: Point, coordinates: [139.002968, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 78, geometry: {type: Point, coordinates: [139.003, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 79, geometry: {type: Point, coordinates: [139.003032, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 80, geometry: {type: Point, coordinates: [139.003064, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 81, geometry: {type: Point, coordinates: [139.003096, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 82, geometry: {type: Point, coordinates: [139.003128, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 83, geometry: {type: Point, coordinates: [139.00316, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 84, geometry: {type: Point, coordinates: [139.003192, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 85, geometry: {type: Point, coordinates: [139.003224, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 86, geometry: {type: Point, coordinates: [139.003256, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 87, geometry: {type: Point, coordinates: [139.003288, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 88, geometry: {type: Point, coordinates: [139.00332, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 89, geometry: {type: Point, coordinates: [139.003352, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 90, geometry: {type: Point, coordinates: [139.003384, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 91, geometry: {type: Point, coordinates: [139.003416, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 92, geometry: {type: Point, coordinates: [139.003448, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 93, geometry: {type: Point, coordinates: [139.00348, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 94, geometry: {type: Point, coordinates: [139.003512, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 95, geometry: {type: Point, coordinates: [139.003544, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 96, geometry: {type: Point, coordinates: [139.003576, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 97, geometry: {type: Point, coordinates: [139.003608, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 98, geometry: {type: Point, coordinates: [139.00364, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 99, geometry: {type: Point, coordinates: [139.003672, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 100, geometry: {type: Point, coordinates: [139.003704, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 101, geometry: {type: Point, coordinates: [139.003736, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 102, geometry: {type: Point, coordinates: [139.003768, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 103, geometry: {type: Point, coordinates: [139.0038, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 105, geometry: {type: Point, coordinates: [139.003864, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 106, geometry: {type: Point, coordinates: [139.003896, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 107, geometry: {type: Point, coordinates: [139.003928, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 108, geometry: {type: Point, coordinates: [139.00396, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 109, geometry: {type: Point, coordinates: [139.003992, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 110, geometry: {type: Point, coordinates: [139.004024, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 111, geometry: {type: Point, coordinates: [139.004056, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 112, geometry: {type: Point, coordinates: [139.004088, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 113, geometry: {type: Point, coordinates: [139.00412, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 114, geometry: {type: Point, coordinates: [139.004152, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 115, geometry: {type: Point, coordinates: [139.004184, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 116, geometry: {type: Point, coordinates: [139.004216, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 117, geometry: {type: Point, coordinates: [139.004248, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 118, geometry: {type: Point, coordinates: [139.00428, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 119, geometry: {type: Point, coordinates: [139.004312, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 120, geometry: {type: Point, coordinates: [139.004344, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 121, geometry: {type: Point, coordinates: [139.004376, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 122, geometry: {type: Point, coordinates: [139.004408, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 123, geometry: {type: Point, coordinates: [139.00444, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 124, geometry: {type: Point, coordinates: [139.004472, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 125, geometry: {type: Point, coordinates: [139.004504, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 126, geometry: {type: Point, coordinates: [139.004536, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 127, geometry: {type: Point, coordinates: [139.004568, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 128, geometry: {type: Point, coordinates: [139.0046, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 129, geometry: {type: Point, coordinates: [139.004632, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 130, geometry: {type: Point, coordinates: [139.004664, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 131, geometry: {type: Point, coordinates: [139.004696, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 132, geometry: {type: Point, coordinates: [139.004728, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 134, geometry: {type: Point, coordinates: [139.004792, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 135, geometry: {type: Point, coordinates: [139.004824, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 136, geometry: {type: Point, coordinates: [139.004856, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 137, geometry: {type: Point, coordinates: [139.004888, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 138, geometry: {type: Point, coordinates: [139.00492, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 139, geometry: {type: Point, coordinates: [139.004952, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 140, geometry: {type: Point, coordinates: [139.004984, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 141, geometry: {type: Point, coordinates: [139.005016, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 142, geometry: {type: Point, coordinates: [139.005048, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 143, geometry: {type: Point, coordinates: [139.00508, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 144, geometry: {type: Point, coordinates: [139.005112, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 145, geometry: {type: Point, coordinates: [139.005144, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 146, geometry: {type: Point, coordinates: [139.005176, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 147, geometry: {type: Point, coordinates: [139.005208, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 148, geometry: {type: Point, coordinates: [139.00524, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 149, geometry: {type: Point, coordinates: [139.005272, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 150, geometry: {type: Point, coordinates: [139.005304, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 151, geometry: {type: Point, coordinates: [139.005336, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 152, geometry: {type: Point, coordinates: [139.005368, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 153, geometry: {type: Point, coordinates: [139.0054, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 154, geometry: {type: Point, coordinates: [139.005432, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 156, geometry: {type: Point, coordinates: [139.005496, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 157, geometry: {type: Point, coordinates: [139.005528, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 158, geometry: {type: Point, coordinates: [139.00556, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 159, geometry: {type: Point, coordinates: [139.005592, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 160, geometry: {type: Point, coordinates: [139.005624, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 161, geometry: {type: Point, coordinates: [139.005656, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 162, geometry: {type: Point, coordinates: [139.005688, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 163, geometry: {type: Point, coordinates: [139.00572, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 164, geometry: {type: Point, coordinates: [139.005752, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 165, geometry: {type: Point, coordinates: [139.005784, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 166, geometry: {type: Point, coordinates: [139.005816, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 167, geometry: {type: Point, coordinates: [139.005848, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 168, geometry: {type: Point, coordinates: [139.00588, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 169, geometry: {type: Point, coordinates: [139.005912, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 170, geometry: {type: Point, coordinates: [139.005944, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 171, geometry: {type: Point, coordinates: [139.005976, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 172, geometry: {type: Point, coordinates: [139.006008, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 173, geometry: {type: Point, coordinates: [139.00604, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 174, geometry: {type: Point, coordinates: [139.006072, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 175, geometry: {type: Point, coordinates: [139.006104, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 176, geometry: {type: Point, coordinates: [139.006136, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 177, geometry: {type: Point, coordinates: [139.006168, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 178, geometry: {type: Point, coordinates: [139.0062, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 179, geometry: {type: Point, coordinates: [139.006232, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 180, geometry: {type: Point, coordinates: [139.006264, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 181, geometry: {type: Point, coordinates: [139.006296, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 182, geometry: {type: Point, coordinates: [139.006328, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 183, geometry: {type: Point, coordinates: [139.00636, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 184, geometry: {type: Point, coordinates: [139.006392, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 185, geometry: {type: Point, coordinates: [139.006424, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 186, geometry: {type: Point, coordinates: [139.006456, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 187, geometry: {type: Point, coordinates: [139.006488, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 188, geometry: {type: Point, coordinates: [139.00652, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 189, geometry: {type: Point, coordinates: [139.006552, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 190, geometry: {type: Point, coordinates: [139.006584, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 191, geometry: {type: Point, coordinates: [139.006616, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 192, geometry: {type: Point, coordinates: [139.006648, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 193, geometry: {type: Point, coordinates: [139.00668, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 194, geometry: {type: Point, coordinates: [139.006712, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 195, geometry: {type: Point, coordinates: [139.006744, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 196, geometry: {type: Point, coordinates: [139.006776, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 197, geometry: {type: Point, coordinates: [139.006808, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 198, geometry: {type: Point, coordinates: [139.00684, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 199, geometry: {type: Point, coordinates: [139.006872, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 200, geometry: {type: Point, coordinates: [139.006904, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 201, geometry: {type: Point, coordinates: [139.006936, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 202, geometry: {type: Point, coordinates: [139.006968, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 203, geometry: {type: Point, coordinates: [139.007, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 204, geometry: {type: Point, coordinates: [139.007032, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 207, geometry: {type: Point, coordinates: [139.007128, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 208, geometry: {type: Point, coordinates: [139.00716, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 209, geometry: {type: Point, coordinates: [139.007192, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 210, geometry: {type: Point, coordinates: [139.007224, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 211, geometry: {type: Point, coordinates: [139.007256, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 212, geometry: {type: Point, coordinates: [139.007288, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 213, geometry: {type: Point, coordinates: [139.00732, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 214, geometry: {type: Point, coordinates: [139.007352, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 215, geometry: {type: Point, coordinates: [139.007384, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 216, geometry: {type: Point, coordinates: [139.007416, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 217, geometry: {type: Point, coordinates: [139.007448, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 218, geometry: {type: Point, coordinates: [139.00748, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 219, geometry: {type: Point, coordinates: [139.007512, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 220, geometry: {type: Point, coordinates: [139.007544, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 221, geometry: {type: Point, coordinates: [139.007576, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 222, geometry: {type: Point, coordinates: [139.007608, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 223, geometry: {type: Point, coordinates: [139.00764, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 224, geometry: {type: Point, coordinates: [139.007672, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 225, geometry: {type: Point, coordinates: [139.007704, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 226, geometry: {type: Point, coordinates: [139.007736, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 227, geometry: {type: Point, coordinates: [139.007768, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 228, geometry: {type: Point, coordinates: [139.0078, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 229, geometry: {type: Point, coordinates: [139.007832, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 230, geometry: {type: Point, coordinates: [139.007864, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 231, geometry: {type: Point, coordinates: [139.007896, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 232, geometry: {type: Point, coordinates: [139.007928, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 233, geometry: {type: Point, coordinates: [139.00796, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 234, geometry: {type: Point, coordinates: [139.007992, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 235, geometry: {type: Point, coordinates: [139.008024, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 236, geometry: {type: Point, coordinates: [139.008056, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 237, geometry: {type: Point, coordinates: [139.008088, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 238, geometry: {type: Point, coordinates: [139.00812, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 239, geometry: {type: Point, coordinates: [139.008152, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 240, geometry: {type: Point, coordinates: [139.008184, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 241, geometry: {type: Point, coordinates: [139.008216, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 242, geometry: {type: Point, coordinates: [139.008248, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 243, geometry: {type: Point, coordinates: [139.00828, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 244, geometry: {type: Point, coordinates: [139.008312, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 245, geometry: {type: Point, coordinates: [139.008344, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 246, geometry: {type: Point, coordinates: [139.008376, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 247, geometry: {type: Point, coordinates: [139.008408, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 248, geometry: {type: Point, coordinates: [139.00844, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 雨, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 249, geometry: {type: Point, coordinates: [139.008472, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 250, geometry: {type: Point, coordinates: [139.008504, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 251, geometry: {type: Point, coordinates: [139.008536, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 252, geometry: {type: Point, coordinates: [139.008568, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 254, geometry: {type: Point, coordinates: [139.008632, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 255, geometry: {type: Point, coordinates: [139.008664, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
+                        - {type: Feature, id: 256, geometry: {type: Point, coordinates: [139.008696, 35.01]}, properties: {deaths: 0, injuries: 1, source_year: 2025, date: 20250101, weather: 晴, period: 昼, day_type: 休日, attribution: unattributed}}
                       points_shown: 250
                       high_risk_sections:
                         type: FeatureCollection
@@ -1729,8 +1755,7 @@ paths:
                       period: 昼
                       day_type: 休日
                       weather: 雨
-                    radius_m: 72
-                    distance_weight_sigma_m: 24
+                    unattributed_radius_m: 72
                     aggregation_ms: 0
                     data_years:
                     - 2025
@@ -2347,7 +2372,7 @@ components:
         geometry: {$ref: '#/components/schemas/Point'}
         properties:
           type: object
-          required: [deaths, injuries, source_year, date, weather, period, day_type]
+          required: [deaths, injuries, source_year, date, weather, period, day_type, attribution]
           additionalProperties: false
           properties:
             deaths: {type: integer, minimum: 0, maximum: 999, description: 事故全体の死者数、人}
@@ -2364,6 +2389,10 @@ components:
             day_type:
               $ref: '#/components/schemas/DayType'
               description: 発生年月日から前処理で判定した曜日区分。フロントで再判定しない。
+            attribution:
+              type: string
+              enum: [edge, intersection, unattributed]
+              description: 事故を経路に結び付けた方法。edgeは道路の区間（歩道の親の車道を含む）、intersectionは交差点、unattributedはどの道路の事故か判断できず、経路からunattributed_radius_m以内にあるもの。旧方式は常にunattributed。
     AccidentCollection:
       type: object
       required: [type, features]
@@ -2541,7 +2570,7 @@ components:
       description: 集合Bのうち事故の天候が指定天候と一致する事故の集計。該当なしは全項目0。
     RouteCandidate:
       type: object
-      required: [id, duration, distance, geometry, accident_count, fatal_accidents, injury_accidents, deaths, injuries, weather_match, weighted_risk, risk_per_km, accident_points, points_shown, high_risk_sections, high_risk_total, navigation, exact_condition_count, extra_minutes, within_detour]
+      required: [id, duration, distance, geometry, accident_count, total_accident_count, fatal_accidents, injury_accidents, deaths, injuries, weather_match, weighted_risk, risk_per_km, accident_points, points_shown, high_risk_sections, high_risk_total, navigation, exact_condition_count, extra_minutes, within_detour]
       additionalProperties: false
       properties:
         id: {$ref: '#/components/schemas/RouteId'}
@@ -2551,6 +2580,10 @@ components:
         accident_count:
           $ref: '#/components/schemas/Count'
           description: 集合B（新方式は経路の辺・交差点に割り当てた事故と72m以内の帰属不明の事故、旧方式は72m以内。移動手段・時間帯・曜日区分で絞り、天候では絞らない）の事故件数、間引き前
+        total_accident_count:
+          type: [integer, 'null']
+          minimum: 0
+          description: 経路に結び付いた事故の総件数。移動手段・時間帯・曜日区分・天候のどれでも絞る前の件数で、新方式は集合Bを作るときの経路の辺・交差点への割り当てと72m以内の帰属不明の事故を合わせた事故IDの数（同じ事故を二重に数えない）。旧方式はこの値を作らないのでnull。
         fatal_accidents:
           $ref: '#/components/schemas/Count'
           description: 死者1人以上の事故件数
@@ -2619,7 +2652,7 @@ components:
         weather: {type: string, enum: [晴, 曇, 雨, 霧, 雪, 全天候]}
     RouteResponse:
       type: object
-      required: [api_version, dataset_id, fastest_id, safest_id, candidates, extra_minutes, risk_reduction_percent, reason, warnings, relaxed_conditions, effective_conditions, radius_m, distance_weight_sigma_m, aggregation_ms, data_years, risk_note]
+      required: [api_version, dataset_id, fastest_id, safest_id, candidates, extra_minutes, risk_reduction_percent, reason, warnings, relaxed_conditions, effective_conditions, unattributed_radius_m, aggregation_ms, data_years, risk_note]
       additionalProperties: false
       properties:
         api_version: {type: string, const: '2.0', description: GeoJSON包装・5区分の時間帯・曜日区分・選定経路のnavigationを含む未リリースの統合契約版}
@@ -2629,7 +2662,7 @@ components:
           oneOf:
             - {$ref: '#/components/schemas/RouteId'}
             - {type: 'null'}
-          description: 事故考慮経路。全候補で該当事故（集合B）が0件ならnull。
+          description: 安全ルート。新方式は全候補で該当事故（集合B）が0件でも推定リスクが最小の経路を選ぶ。旧方式は全候補0件ならnull。nullなら全候補0件である。
         candidates:
           type: array
           minItems: 1
@@ -2641,7 +2674,7 @@ components:
           type: [number, 'null']
           minimum: 0
           maximum: 100
-          description: 最短時間経路比の重み減少率、%、小数1桁。丸めたweighted_riskから計算。基準リスク0またはsafest_idがnullならnull。
+          description: 最短時間経路比の推定リスクの減少率、%、小数1桁。丸めたweighted_riskから計算。基準リスク0またはsafest_idがnullならnull。
         reason: {type: string, minLength: 1, description: 候補内選定の理由。UIは文字列として表示する。}
         warnings:
           type: array
@@ -2654,8 +2687,7 @@ components:
           deprecated: true
           description: 互換フィールド。条件の自動緩和は行わないため常に空配列。
         effective_conditions: {$ref: '#/components/schemas/EffectiveConditions'}
-        radius_m: {type: number, const: 72, description: 事故集計（集合B）の経路周辺半径、メートル。新方式では帰属不明の事故を数える範囲}
-        distance_weight_sigma_m: {type: number, const: 24, description: 距離重みのガウスσ、メートル。旧方式だけが使い、新方式では互換のための固定値}
+        unattributed_radius_m: {type: number, const: 72, description: 帰属不明の事故を数える経路からの範囲、メートル。旧方式では事故を数える半径}
         aggregation_ms: {type: number, minimum: 0, description: 集計・選定・ナビデータ構築時間（新方式は経路探索を含む。旧方式は候補取得後から）、ミリ秒、小数2桁。外部通信と転送を除く。}
         data_years: {$ref: '#/components/schemas/Years'}
         risk_note: {type: string, minLength: 1, description: 推定指標の説明と、曝露補正した事故確率ではない旨。文面はbehavior.md 8章}

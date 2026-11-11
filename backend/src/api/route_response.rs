@@ -1,7 +1,7 @@
 //! `RouteOutcome` → `RouteResponse` のJSON（openapi.yaml）。
 //!
 //! ID文字列・`api_version`・`exact_condition_count`・`points_shown`・`effective_conditions` の
-//! 表記・固定値（`relaxed_conditions`・`radius_m`・`distance_weight_sigma_m`）だけを組み立て、
+//! 表記・固定値（`relaxed_conditions`・`unattributed_radius_m`）だけを組み立て、
 //! 数値・件数・順序・選定・文言は②の値をそのまま使う（再計算しない）。
 //!
 //! 変換の前に相関制約・OpenAPIの値の範囲・JSONの安全整数範囲・有限値・navigationのサイズ
@@ -13,7 +13,7 @@ use std::io;
 use serde::ser::{Serialize, SerializeSeq, SerializeTuple, Serializer};
 
 use crate::contract::engine::{
-    DISTANCE_WEIGHT_SIGMA_M, MAX_ACCIDENT_POINTS, MAX_CANDIDATES, MAX_HIGH_RISK_SECTIONS, RADIUS_M,
+    MAX_ACCIDENT_POINTS, MAX_CANDIDATES, MAX_HIGH_RISK_SECTIONS, RADIUS_M,
 };
 use crate::contract::geo::{LAT_RANGE, LON_RANGE};
 use crate::contract::{
@@ -189,8 +189,8 @@ pub fn check_outcome(outcome: &RouteOutcome) -> Result<(), InvalidOutcome> {
         .candidates
         .iter()
         .any(|c| c.totals.accident_count > 0);
-    if outcome.safest.is_some() != any_accident {
-        return violation("safestの有無が集合Bの有無と一致しない");
+    if outcome.safest.is_none() && any_accident {
+        return violation("事故があるのにsafestがnull");
     }
     if outcome.extra_minutes.is_some() != outcome.safest.is_some()
         || (outcome.safest.is_none() && outcome.risk_reduction_percent.is_some())
@@ -267,6 +267,14 @@ fn check_candidate(
         check_position(*p, &id)?;
     }
     check_totals(&c.totals, &id)?;
+    if let Some(total) = c.total_accident_count {
+        safe(total, &id)?;
+        if total < c.totals.accident_count {
+            return violation(format!(
+                "{id}: total_accident_countがaccident_countより小さい"
+            ));
+        }
+    }
     if c.weather_match.is_some() != outcome.conditions.weather.is_some() {
         return violation(format!("{id}: weather_matchの有無が天候指定と一致しない"));
     }
@@ -514,6 +522,7 @@ struct AccidentPropertiesDto {
     weather: &'static str,
     period: &'static str,
     day_type: &'static str,
+    attribution: &'static str,
 }
 
 #[derive(serde::Serialize)]
@@ -541,6 +550,7 @@ impl From<&AccidentPoint> for AccidentFeatureDto {
                 weather: p.weather.label(),
                 period: p.period.label(),
                 day_type: p.day_type.label(),
+                attribution: p.attribution.label(),
             },
         }
     }
@@ -676,6 +686,7 @@ struct CandidateDto<'a> {
     distance: f64,
     geometry: LineStringDto<'a>,
     accident_count: u64,
+    total_accident_count: Option<u64>,
     fatal_accidents: u64,
     injury_accidents: u64,
     deaths: u64,
@@ -709,6 +720,7 @@ impl<'a> CandidateDto<'a> {
                 coordinates: Positions(&c.path.coordinates),
             },
             accident_count: c.totals.accident_count,
+            total_accident_count: c.total_accident_count,
             fatal_accidents: c.totals.fatal_accidents,
             injury_accidents: c.totals.injury_accidents,
             deaths: c.totals.deaths,
@@ -761,8 +773,7 @@ struct RouteResponseDto<'a> {
     warnings: &'a [String],
     relaxed_conditions: [&'static str; 0],
     effective_conditions: EffectiveConditionsDto,
-    radius_m: f64,
-    distance_weight_sigma_m: f64,
+    unattributed_radius_m: f64,
     aggregation_ms: f64,
     data_years: &'a [u16],
     risk_note: &'a str,
@@ -793,8 +804,7 @@ impl<'a> RouteResponseDto<'a> {
                 day_type: conditions.day_type.map_or("全曜日", |d| d.label()),
                 weather: conditions.weather.map_or("全天候", |w| w.label()),
             },
-            radius_m: RADIUS_M,
-            distance_weight_sigma_m: DISTANCE_WEIGHT_SIGMA_M,
+            unattributed_radius_m: RADIUS_M,
             aggregation_ms: outcome.aggregation_ms,
             data_years: &outcome.data_years,
             risk_note: &outcome.risk_note,

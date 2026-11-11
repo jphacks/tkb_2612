@@ -22,6 +22,7 @@
             ]
           },
           "accident_count": 1,
+          "total_accident_count": null,
           "fatal_accidents": 1,
           "injury_accidents": 0,
           "deaths": 1,
@@ -55,7 +56,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               }
             ]
@@ -134,8 +136,7 @@
         "day_type": "休日",
         "weather": "晴"
       },
-      "radius_m": 72,
-      "distance_weight_sigma_m": 24,
+      "unattributed_radius_m": 72,
       "aggregation_ms": 0,
       "data_years": [
         2025
@@ -165,6 +166,7 @@
             ]
           },
           "accident_count": 0,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 0,
           "deaths": 0,
@@ -223,8 +225,7 @@
         "day_type": "休日",
         "weather": "雪"
       },
-      "radius_m": 72,
-      "distance_weight_sigma_m": 24,
+      "unattributed_radius_m": 72,
       "aggregation_ms": 0,
       "data_years": [
         2025
@@ -254,6 +255,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 1,
           "injury_accidents": 1,
           "deaths": 1,
@@ -287,7 +289,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -307,7 +310,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               }
             ]
@@ -425,6 +429,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 2,
           "deaths": 0,
@@ -458,7 +463,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -478,7 +484,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               }
             ]
@@ -565,6 +572,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 2,
           "deaths": 0,
@@ -598,7 +606,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -618,7 +627,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               }
             ]
@@ -672,8 +682,7 @@
         "day_type": "休日",
         "weather": "晴"
       },
-      "radius_m": 72,
-      "distance_weight_sigma_m": 24,
+      "unattributed_radius_m": 72,
       "aggregation_ms": 0,
       "data_years": [
         2025
@@ -703,6 +712,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 1,
           "injury_accidents": 1,
           "deaths": 1,
@@ -730,7 +740,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -750,7 +761,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               }
             ]
@@ -868,6 +880,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 2,
           "deaths": 0,
@@ -895,7 +908,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -915,7 +929,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               }
             ]
@@ -1002,6 +1017,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 2,
           "deaths": 0,
@@ -1029,7 +1045,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1049,7 +1066,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               }
             ]
@@ -1103,8 +1121,7 @@
         "day_type": "休日",
         "weather": "全天候"
       },
-      "radius_m": 72,
-      "distance_weight_sigma_m": 24,
+      "unattributed_radius_m": 72,
       "aggregation_ms": 0,
       "data_years": [
         2025
@@ -1134,6 +1151,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 1,
           "injury_accidents": 1,
           "deaths": 1,
@@ -1167,7 +1185,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1187,7 +1206,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               }
             ]
@@ -1305,6 +1325,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 2,
           "deaths": 0,
@@ -1338,7 +1359,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1358,7 +1380,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               }
             ]
@@ -1445,6 +1468,7 @@
             ]
           },
           "accident_count": 2,
+          "total_accident_count": null,
           "fatal_accidents": 0,
           "injury_accidents": 2,
           "deaths": 0,
@@ -1478,7 +1502,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1498,7 +1523,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               }
             ]
@@ -1552,8 +1578,7 @@
         "day_type": "休日",
         "weather": "霧"
       },
-      "radius_m": 72,
-      "distance_weight_sigma_m": 24,
+      "unattributed_radius_m": 72,
       "aggregation_ms": 0,
       "data_years": [
         2025
@@ -1583,6 +1608,7 @@
             ]
           },
           "accident_count": 255,
+          "total_accident_count": null,
           "fatal_accidents": 5,
           "injury_accidents": 250,
           "deaths": 5,
@@ -1616,7 +1642,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1636,7 +1663,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1656,7 +1684,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1676,7 +1705,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1696,7 +1726,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1716,7 +1747,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1736,7 +1768,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1756,7 +1789,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1776,7 +1810,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1796,7 +1831,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1816,7 +1852,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1836,7 +1873,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1856,7 +1894,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1876,7 +1915,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1896,7 +1936,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1916,7 +1957,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1936,7 +1978,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1956,7 +1999,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1976,7 +2020,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -1996,7 +2041,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2016,7 +2062,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2036,7 +2083,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2056,7 +2104,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2076,7 +2125,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2096,7 +2146,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2116,7 +2167,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2136,7 +2188,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2156,7 +2209,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2176,7 +2230,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2196,7 +2251,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2216,7 +2272,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2236,7 +2293,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2256,7 +2314,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2276,7 +2335,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2296,7 +2356,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2316,7 +2377,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2336,7 +2398,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2356,7 +2419,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2376,7 +2440,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2396,7 +2461,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2416,7 +2482,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2436,7 +2503,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2456,7 +2524,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2476,7 +2545,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2496,7 +2566,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2516,7 +2587,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2536,7 +2608,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2556,7 +2629,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2576,7 +2650,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2596,7 +2671,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2616,7 +2692,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2636,7 +2713,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2656,7 +2734,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2676,7 +2755,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2696,7 +2776,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2716,7 +2797,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2736,7 +2818,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2756,7 +2839,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2776,7 +2860,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2796,7 +2881,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2816,7 +2902,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2836,7 +2923,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2856,7 +2944,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2876,7 +2965,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2896,7 +2986,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2916,7 +3007,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2936,7 +3028,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2956,7 +3049,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2976,7 +3070,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -2996,7 +3091,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3016,7 +3112,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3036,7 +3133,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3056,7 +3154,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3076,7 +3175,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3096,7 +3196,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3116,7 +3217,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3136,7 +3238,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3156,7 +3259,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3176,7 +3280,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3196,7 +3301,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3216,7 +3322,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3236,7 +3343,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3256,7 +3364,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3276,7 +3385,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3296,7 +3406,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3316,7 +3427,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3336,7 +3448,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3356,7 +3469,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3376,7 +3490,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3396,7 +3511,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3416,7 +3532,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3436,7 +3553,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3456,7 +3574,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3476,7 +3595,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3496,7 +3616,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3516,7 +3637,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3536,7 +3658,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3556,7 +3679,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3576,7 +3700,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3596,7 +3721,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3616,7 +3742,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3636,7 +3763,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3656,7 +3784,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3676,7 +3805,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3696,7 +3826,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3716,7 +3847,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3736,7 +3868,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3756,7 +3889,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3776,7 +3910,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3796,7 +3931,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3816,7 +3952,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3836,7 +3973,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3856,7 +3994,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3876,7 +4015,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3896,7 +4036,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3916,7 +4057,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3936,7 +4078,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3956,7 +4099,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3976,7 +4120,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -3996,7 +4141,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4016,7 +4162,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4036,7 +4183,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4056,7 +4204,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4076,7 +4225,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4096,7 +4246,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4116,7 +4267,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4136,7 +4288,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4156,7 +4309,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4176,7 +4330,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4196,7 +4351,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4216,7 +4372,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4236,7 +4393,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4256,7 +4414,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4276,7 +4435,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4296,7 +4456,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4316,7 +4477,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4336,7 +4498,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4356,7 +4519,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4376,7 +4540,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4396,7 +4561,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4416,7 +4582,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4436,7 +4603,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4456,7 +4624,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4476,7 +4645,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4496,7 +4666,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4516,7 +4687,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4536,7 +4708,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4556,7 +4729,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4576,7 +4750,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4596,7 +4771,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4616,7 +4792,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4636,7 +4813,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4656,7 +4834,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4676,7 +4855,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4696,7 +4876,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4716,7 +4897,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4736,7 +4918,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4756,7 +4939,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4776,7 +4960,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4796,7 +4981,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4816,7 +5002,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4836,7 +5023,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4856,7 +5044,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4876,7 +5065,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4896,7 +5086,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4916,7 +5107,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4936,7 +5128,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4956,7 +5149,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4976,7 +5170,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -4996,7 +5191,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5016,7 +5212,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5036,7 +5233,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5056,7 +5254,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5076,7 +5275,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5096,7 +5296,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5116,7 +5317,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5136,7 +5338,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5156,7 +5359,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5176,7 +5380,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5196,7 +5401,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5216,7 +5422,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5236,7 +5443,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5256,7 +5464,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5276,7 +5485,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5296,7 +5506,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5316,7 +5527,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5336,7 +5548,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5356,7 +5569,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5376,7 +5590,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5396,7 +5611,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5416,7 +5632,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5436,7 +5653,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5456,7 +5674,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5476,7 +5695,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5496,7 +5716,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5516,7 +5737,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5536,7 +5758,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5556,7 +5779,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5576,7 +5800,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5596,7 +5821,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5616,7 +5842,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5636,7 +5863,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5656,7 +5884,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5676,7 +5905,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5696,7 +5926,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5716,7 +5947,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5736,7 +5968,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5756,7 +5989,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5776,7 +6010,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5796,7 +6031,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5816,7 +6052,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5836,7 +6073,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5856,7 +6094,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5876,7 +6115,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5896,7 +6136,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5916,7 +6157,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5936,7 +6178,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5956,7 +6199,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5976,7 +6220,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -5996,7 +6241,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6016,7 +6262,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6036,7 +6283,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6056,7 +6304,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6076,7 +6325,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6096,7 +6346,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6116,7 +6367,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6136,7 +6388,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6156,7 +6409,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6176,7 +6430,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6196,7 +6451,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6216,7 +6472,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6236,7 +6493,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6256,7 +6514,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6276,7 +6535,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6296,7 +6556,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6316,7 +6577,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6336,7 +6598,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6356,7 +6619,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6376,7 +6640,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6396,7 +6661,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6416,7 +6682,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6436,7 +6703,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6456,7 +6724,8 @@
                   "date": 20250101,
                   "weather": "雨",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6476,7 +6745,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6496,7 +6766,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6516,7 +6787,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6536,7 +6808,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6556,7 +6829,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6576,7 +6850,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               },
               {
@@ -6596,7 +6871,8 @@
                   "date": 20250101,
                   "weather": "晴",
                   "period": "昼",
-                  "day_type": "休日"
+                  "day_type": "休日",
+                  "attribution": "unattributed"
                 }
               }
             ]
@@ -6939,8 +7215,7 @@
         "day_type": "休日",
         "weather": "雨"
       },
-      "radius_m": 72,
-      "distance_weight_sigma_m": 24,
+      "unattributed_radius_m": 72,
       "aggregation_ms": 0,
       "data_years": [
         2025
