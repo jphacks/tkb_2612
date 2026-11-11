@@ -2613,12 +2613,13 @@ components:
         risk_note: {type: string, minLength: 1, description: 推定指標の説明と、曝露補正した事故確率ではない旨。文面はbehavior.md 8章}
     GeocodeResult:
       type: object
-      required: [lat, lon, label]
+      required: [lat, lon, label, detail]
       additionalProperties: false
       properties:
         lat: {$ref: '#/components/schemas/Latitude'}
         lon: {$ref: '#/components/schemas/Longitude'}
-        label: {type: string, description: 提供元の表示名。HTMLとして解釈しない。}
+        label: {type: string, description: '施設名・地点名。名前が無い候補は提供元の住所全体。HTMLとして解釈しない。'}
+        detail: {type: [string, 'null'], description: '都道府県・市区町村・地区からなる短い所在地。無ければnull。HTMLとして解釈しない。'}
     GeocodeResponse:
       type: object
       required: [results, attribution]

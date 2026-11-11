@@ -327,17 +327,25 @@ fn cases() -> Vec<Case> {
         )
         .with(|b| {
             b.geocoder = FakeGeocoder::new([Ok(vec![
-                common::place(
+                common::place_with_detail(
                     35.681_236_8,
                     139.767_125_1,
-                    "東京駅, 丸の内一丁目, 千代田区, 東京都, 日本",
+                    "東京駅",
+                    "千代田区丸の内一丁目",
                 ),
-                common::place(
+                common::place_with_detail(
                     35.680_0,
                     139.768_9,
-                    "東京駅八重洲口, 八重洲一丁目, 中央区, 東京都, 日本",
+                    "東京駅(改札外)",
+                    "千代田区丸の内一丁目",
                 ),
-                common::place(34.985_8, 135.758_8, "東京駅前バス停, 京都市, 京都府, 日本"),
+                common::place_with_detail(
+                    35.681_0,
+                    139.770_0,
+                    "東京駅(改札外)",
+                    "千代田区丸の内二丁目",
+                ),
+                common::place(35.681_5, 139.766_0, "東京都千代田区丸の内1-1"),
             ])]);
         }),
     ]
@@ -505,6 +513,6 @@ async fn c2_covers_every_error_code_and_weather_status() {
             .as_array()
             .unwrap()
             .len(),
-        3
+        4
     );
 }

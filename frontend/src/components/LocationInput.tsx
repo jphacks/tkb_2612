@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Check, LoaderCircle, MapPin, Search, X } from "lucide-react";
 import { isDemo, searchPlaces } from "../api/client";
 import { describeError } from "../api/errorMessage";
+import { visibleDetail } from "../lib/placeDisplay";
 import type { GeocodeResponse, Place, Scenario } from "../lib/types";
 
 export type LocationValue = { text: string; place: Place | null };
@@ -226,7 +227,7 @@ export default function LocationInput({
         <div className="suggestions">
           {variant !== "map" && (
             <div className="suggestion-heading">
-              {isDemo ? "デモ候補" : "住所候補"}
+              {isDemo ? "デモ候補" : "地点の候補"}
             </div>
           )}
           {busy && (
@@ -236,20 +237,31 @@ export default function LocationInput({
             </div>
           )}
           <ul id={`${id}-list`} role="listbox" aria-label={`${label}の候補`}>
-            {items.map((place, index) => (
-              <li
-                id={`${id}-${index}`}
-                key={`${place.lat},${place.lon}`}
-                role="option"
-                aria-selected={index === active}
-                onPointerDown={(event) => event.preventDefault()}
-                onClick={() => choose(place)}
-                onPointerMove={() => setActive(index)}
-              >
-                <MapPin size={17} aria-hidden="true" />
-                <span>{place.label}</span>
-              </li>
-            ))}
+            {items.map((place, index) => {
+              const detail = visibleDetail(place, items, value.text);
+              return (
+                <li
+                  id={`${id}-${index}`}
+                  key={`${place.lat},${place.lon}`}
+                  role="option"
+                  aria-selected={index === active}
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={() => choose(place)}
+                  onPointerMove={() => setActive(index)}
+                >
+                  <MapPin size={17} aria-hidden="true" />
+                  <span className="suggestion-text">
+                    <span>{place.label}</span>
+                    {detail && (
+                      <>
+                        {" "}
+                        <small className="suggestion-detail">{detail}</small>
+                      </>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
           {message && (
             <p className="suggestion-status" role="status">

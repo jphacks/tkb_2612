@@ -900,7 +900,8 @@
       "required": [
         "lat",
         "lon",
-        "label"
+        "label",
+        "detail"
       ],
       "additionalProperties": false,
       "properties": {
@@ -912,7 +913,14 @@
         },
         "label": {
           "type": "string",
-          "description": "提供元の表示名。HTMLとして解釈しない。"
+          "description": "施設名・地点名。名前が無い候補は提供元の住所全体。HTMLとして解釈しない。"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "都道府県・市区町村・地区からなる短い所在地。無ければnull。HTMLとして解釈しない。"
         }
       }
     },
