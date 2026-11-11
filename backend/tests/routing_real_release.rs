@@ -34,8 +34,7 @@ use accident_route_backend::api::route_response::{
 };
 use accident_route_backend::contract::{
     Attribution, CancelToken, ConditionFilter, DayType, EngineError, LatLon, LonLat, Maneuver,
-    Mode, Period,
-    RouteEngine, RouteOutcome, RouteQuery, Router, Weather,
+    Mode, Period, RouteEngine, RouteOutcome, RouteQuery, Router, Weather,
 };
 use accident_route_backend::data;
 use accident_route_backend::testing::fixtures::check_outcome_invariants;

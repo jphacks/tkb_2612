@@ -12,8 +12,7 @@ use accident_route_backend::contract::geo::METERS_PER_DEGREE;
 use accident_route_backend::contract::{
     Attribution, BoxFuture, CancelToken, CandidateSet, ConditionFilter, DatasetInfo, DayType,
     EngineError, Interrupt, LatLon, Maneuver, Mode, Period, ProviderRoute, RouteEngine, RouteQuery,
-    Router,
-    RoutingError, RoutingRequest, Weather,
+    Router, RoutingError, RoutingRequest, Weather,
 };
 use accident_route_backend::domain::routing::accident::{
     AssignTarget, Assignment, UnassignedReason, UnassignedRecord,

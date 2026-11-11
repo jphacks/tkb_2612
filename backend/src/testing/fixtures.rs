@@ -12,8 +12,8 @@ use serde_json::Value;
 
 use crate::contract::{
     AccidentPoint, AccidentTotals, Attribution, ConditionFilter, DatasetInfo, DayType,
-    EvaluatedRoute, GuidanceStep, HighRiskSegment, LatLon, LonLat, Maneuver, Mode,
-    NavigationData, NavigationSection, Period, RouteOutcome, RouteQuery, RoutedPath, Weather,
+    EvaluatedRoute, GuidanceStep, HighRiskSegment, LatLon, LonLat, Maneuver, Mode, NavigationData,
+    NavigationSection, Period, RouteOutcome, RouteQuery, RoutedPath, Weather,
 };
 
 /// 応答の相関制約の検査。実装は評価モジュールに置き、テストと評価コマンドで共有する。

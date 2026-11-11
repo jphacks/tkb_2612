@@ -13,8 +13,7 @@ use accident_route_backend::api::route_response::{
 };
 use accident_route_backend::contract::{
     AccidentPoint, AccidentTotals, Attribution, EvaluatedRoute, GuidanceStep, HighRiskSegment,
-    LonLat, Maneuver,
-    NavigationData, NavigationSection, RouteOutcome,
+    LonLat, Maneuver, NavigationData, NavigationSection, RouteOutcome,
 };
 use accident_route_backend::testing::fixtures::{
     check_outcome_invariants, expected_route_outcome, fixture_dataset_info, route_example,
