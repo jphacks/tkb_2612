@@ -326,6 +326,53 @@ fn t4_07_y_junction_right_branch_is_slight_right() {
 }
 
 #[test]
+fn t4_07_y_junction_both_exits_to_the_right_inner_branch_is_slight_left() {
+    let mut b = GraphBuilder::new();
+    let w = add(&mut b, -100.0, 0.0);
+    let c = add(&mut b, 0.0, 0.0);
+    let inner = add_polar(&mut b, 20.0, 100.0);
+    let outer = add_polar(&mut b, 40.0, 100.0);
+    edge(&mut b, w, c);
+    edge(&mut b, c, inner);
+    edge(&mut b, c, outer);
+    let (_, steps) = guidance(&b, &[w, c, inner], Mode::Car, &[]);
+    assert_eq!(steps.len(), 2, "{steps:?}");
+    assert_eq!(steps[0].maneuver, Maneuver::SlightLeft);
+}
+
+#[test]
+fn t4_07_y_junction_both_exits_to_the_left_inner_branch_is_slight_right() {
+    let mut b = GraphBuilder::new();
+    let w = add(&mut b, -100.0, 0.0);
+    let c = add(&mut b, 0.0, 0.0);
+    let inner = add_polar(&mut b, -20.0, 100.0);
+    let outer = add_polar(&mut b, -40.0, 100.0);
+    edge(&mut b, w, c);
+    edge(&mut b, c, inner);
+    edge(&mut b, c, outer);
+    let (_, steps) = guidance(&b, &[w, c, inner], Mode::Car, &[]);
+    assert_eq!(steps.len(), 2, "{steps:?}");
+    assert_eq!(steps[0].maneuver, Maneuver::SlightRight);
+}
+
+#[test]
+fn t4_07_three_way_fork_middle_branch_follows_the_run_angle() {
+    let mut b = GraphBuilder::new();
+    let w = add(&mut b, -100.0, 0.0);
+    let c = add(&mut b, 0.0, 0.0);
+    let middle = add_polar(&mut b, 20.0, 100.0);
+    let outer = add_polar(&mut b, 40.0, 100.0);
+    let left = add_polar(&mut b, -15.0, 100.0);
+    edge(&mut b, w, c);
+    edge(&mut b, c, middle);
+    edge(&mut b, c, outer);
+    edge(&mut b, c, left);
+    let (_, steps) = guidance(&b, &[w, c, middle], Mode::Car, &[]);
+    assert_eq!(steps.len(), 2, "{steps:?}");
+    assert_eq!(steps[0].maneuver, Maneuver::SlightRight);
+}
+
+#[test]
 fn t4_08_footway_branch_is_ignored_for_car_but_right_for_walk() {
     let mut b = GraphBuilder::new();
     let w = add(&mut b, -100.0, 0.0);

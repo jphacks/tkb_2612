@@ -454,8 +454,10 @@ const fn is_link(class: u8) -> bool {
     matches!(class, 1 | 3 | 5 | 7 | 9)
 }
 
-/// 斜めの分岐か（手順4の「分岐」）。向きは連の角度で決める。ほぼ直進なら角度が
-/// あてにならないので、出口が経路より右なら `slight_left`、左なら `slight_right` とする。
+/// 斜めの分岐か（手順4の「分岐」）。向きは、分岐の相手の出口と経路の位置関係で決める。
+/// 出口がすべて経路より右なら `slight_left`、すべて左なら `slight_right` とする。
+/// 両側にあれば（3叉の中央の枝など）、ほぼ直進でなければ連の角度の符号で決め、
+/// ほぼ直進なら最初に見つかった出口との位置関係で決める。
 fn fork_maneuver(
     graph: &Graph,
     dedges: &[DirEdge],
@@ -472,6 +474,9 @@ fn fork_maneuver(
     let last = &infos[*run.nodes.last().expect("連は空でない")];
     let out_class = graph.edge(dedges[last.index + 1].edge()).class;
     let out_rank = class_rank(out_class);
+    // 最初に見つかった出口の側と、両側に出口があるか。
+    let mut first_side: Option<Maneuver> = None;
+    let mut both_sides = false;
     for &i in &run.nodes {
         let info = &infos[i];
         let local =
@@ -488,22 +493,30 @@ fn fork_maneuver(
             {
                 continue;
             }
-            if !straight {
-                return Some(if angle > 0.0 {
-                    Maneuver::SlightRight
-                } else {
-                    Maneuver::SlightLeft
-                });
-            }
-            if other_angle > local {
-                return Some(Maneuver::SlightLeft);
-            }
-            if other_angle < local {
-                return Some(Maneuver::SlightRight);
+            // 出口が経路より右なら経路は左側の枝、左なら右側の枝。
+            let side = if other_angle > local {
+                Maneuver::SlightLeft
+            } else if other_angle < local {
+                Maneuver::SlightRight
+            } else {
+                continue;
+            };
+            match first_side {
+                None => first_side = Some(side),
+                Some(first) if first != side => both_sides = true,
+                Some(_) => {}
             }
         }
     }
-    None
+    let side = first_side?;
+    if both_sides && !straight {
+        return Some(if angle > 0.0 {
+            Maneuver::SlightRight
+        } else {
+            Maneuver::SlightLeft
+        });
+    }
+    Some(side)
 }
 
 /// 案内地点にするノード（手順5）。連の中で局所角の絶対値が最大のノード（同値なら先）。
