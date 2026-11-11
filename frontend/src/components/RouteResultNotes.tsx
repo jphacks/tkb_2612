@@ -22,12 +22,17 @@ function choiceSentence(
   return `安全ルートは最短ルートより${longer}長くかかりますが、推定リスクは${result.risk_reduction_percent.toFixed(1)}%低くなります。`;
 }
 
-/** 推定リスクの値を、大きさに応じた桁で切り捨てる（10以上は整数、1以上は小数1桁、1未満は小数2桁）。 */
-export function truncateRisk(value: number): string {
-  const digits = value >= 10 ? 0 : value >= 1 ? 1 : 2;
-  const scale = 10 ** digits;
-  // 浮動小数の誤差（0.29*100=28.999…）で1つ下に切り捨てないよう、わずかに足してから切り捨てる
-  return (Math.floor(value * scale + 1e-9) / scale).toFixed(digits);
+/**
+ * 推定リスクを、最短ルートを100とした相対値で表す（最短ルートは常に「100」、ほかは小数1桁）。
+ * 最短ルートの推定リスクが0以下で比べられないときは null を返す。
+ */
+export function relativeRisk(
+  route: RouteCandidate,
+  fastest: RouteCandidate,
+): string | null {
+  if (route.id === fastest.id) return "100";
+  if (!(fastest.weighted_risk > 0)) return null;
+  return ((100 * route.weighted_risk) / fastest.weighted_risk).toFixed(1);
 }
 
 export function RouteResultNotes({ result }: Props) {
@@ -81,7 +86,7 @@ export function RouteResultNotes({ result }: Props) {
           <thead>
             <tr>
               <th scope="col">経路</th>
-              <th scope="col">推定リスク</th>
+              <th scope="col">推定リスク（最短ルート=100）</th>
               <th scope="col">事故件数</th>
             </tr>
           </thead>
@@ -89,7 +94,9 @@ export function RouteResultNotes({ result }: Props) {
             {rows.map(({ label, route }) => (
               <tr key={route.id}>
                 <th scope="row">{label}</th>
-                <td>{truncateRisk(route.weighted_risk)}</td>
+                <td>
+                  {(fastest && relativeRisk(route, fastest)) || "—"}
+                </td>
                 <td>
                   {route.total_accident_count === null
                     ? "—"

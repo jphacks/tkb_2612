@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { createDemoRouteResponse, DEMO_PLACES } from "../api/demo";
 import type { RouteRequest, RouteResponse } from "../lib/types";
-import { RouteResultNotes, truncateRisk } from "./RouteResultNotes";
+import { RouteResultNotes, relativeRisk } from "./RouteResultNotes";
 
 const request: RouteRequest = {
   origin: DEMO_PLACES[0],
@@ -120,7 +120,7 @@ describe("RouteResultNotes", () => {
     expect(rows[1]).toHaveTextContent("最短ルート・安全ルート");
   });
 
-  it("shows the truncated estimated risk and the total accident count per route", () => {
+  it("shows the estimated risk relative to the fastest route (=100) and the total accident count per route", () => {
     const result = createDemoRouteResponse(request);
     const { safest, fastest } = routes(result);
     fastest.weighted_risk = 123.98;
@@ -138,25 +138,43 @@ describe("RouteResultNotes", () => {
       "最短ルート",
     );
     expect(within(fastestRow).getAllByRole("cell").map((c) => c.textContent))
-      .toEqual(["123", "56件"]);
+      .toEqual(["100", "56件"]);
     expect(within(safestRow).getByRole("rowheader")).toHaveTextContent(
       "安全ルート",
     );
     expect(within(safestRow).getAllByRole("cell").map((c) => c.textContent))
-      .toEqual(["28", "12件"]);
+      .toEqual(["22.6", "12件"]);
   });
 
   it.each([
-    [123.98, "123"],
-    [26.8, "26"],
-    [6.14, "6.1"],
-    [1, "1.0"],
-    [0.53, "0.53"],
-    [0.29, "0.29"],
-    [0.144, "0.14"],
-    [0, "0.00"],
-  ])("truncates the estimated risk %d to %s", (value, expected) => {
-    expect(truncateRisk(value)).toBe(expected);
+    [123.98, 28.01, "22.6"],
+    [50, 50, "100.0"],
+    [10, 0.144, "1.4"],
+    [10, 0, "0.0"],
+  ])(
+    "shows risk %d → %d as %s relative to the fastest route",
+    (base, value, expected) => {
+      const result = createDemoRouteResponse(request);
+      const { safest, fastest } = routes(result);
+      fastest.weighted_risk = base;
+      safest.weighted_risk = value;
+      expect(relativeRisk(fastest, fastest)).toBe("100");
+      expect(relativeRisk(safest, fastest)).toBe(expected);
+    },
+  );
+
+  it("shows a dash for the relative risk when the fastest route's risk is zero", () => {
+    const result = createDemoRouteResponse(request);
+    const { safest, fastest } = routes(result);
+    fastest.weighted_risk = 0;
+    safest.weighted_risk = 0;
+    expect(relativeRisk(safest, fastest)).toBeNull();
+    const section = renderNotes(result);
+    const [fastestRow, safestRow] = within(section)
+      .getAllByRole("row")
+      .slice(1);
+    expect(within(fastestRow).getAllByRole("cell")[0]).toHaveTextContent("100");
+    expect(within(safestRow).getAllByRole("cell")[0]).toHaveTextContent("—");
   });
 
   it("shows a dash when the total accident count is not available", () => {
