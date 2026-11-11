@@ -2,6 +2,11 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { createDemoRouteResponse, DEMO_PLACES } from "../api/demo";
 import type { RouteRequest, RouteResponse } from "../lib/types";
+import {
+  FASTEST_LABEL,
+  MIDDLE_LABEL,
+  SAFE_LABEL,
+} from "./RouteCallouts";
 import { RouteResultNotes, relativeRisk } from "./RouteResultNotes";
 
 const request: RouteRequest = {
@@ -118,6 +123,15 @@ describe("RouteResultNotes", () => {
     const rows = within(section).getAllByRole("row");
     expect(rows).toHaveLength(2);
     expect(rows[1]).toHaveTextContent("最短ルート・安全ルート");
+  });
+
+  it("lists the middle route in time order in the comparison table", () => {
+    const result = createDemoRouteResponse(request, "middle");
+    const section = renderNotes(result);
+    const rows = within(section).getAllByRole("row").slice(1);
+    expect(
+      rows.map((row) => within(row).getByRole("rowheader").textContent),
+    ).toEqual([FASTEST_LABEL, MIDDLE_LABEL, SAFE_LABEL]);
   });
 
   it("shows the estimated risk relative to the fastest route (=100) and the total accident count per route", () => {

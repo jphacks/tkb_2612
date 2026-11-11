@@ -4,27 +4,46 @@ import { formatMinutes } from "../lib/format";
 
 export const SAFE_LABEL = "安全ルート";
 export const FASTEST_LABEL = "最短ルート";
+export const MIDDLE_LABEL = "中間案";
 
 export type MapPoint = { x: number; y: number };
 export type MapSize = { width: number; height: number };
-export type RouteTone = "considered" | "fastest" | "alternative";
+export type RouteTone = "considered" | "fastest" | "middle" | "alternative";
 
 export function routeTone(id: string, result: RouteResponse): RouteTone {
   if (id === result.safest_id) return "considered";
+  if (id === result.middle_id) return "middle";
   return id === result.fastest_id ? "fastest" : "alternative";
 }
 
 export const routeColors: Record<RouteTone, string> = {
   considered: "#16a34a",
   fastest: "#2563eb",
+  // 注意区間（--caution の橙）と区別できる色にする。
+  middle: "#7c3aed",
   alternative: "#94a3b8",
 };
 
 export function featuredRoutes(result: RouteResponse): RouteCandidate[] {
-  const ids = [...new Set([result.safest_id, result.fastest_id])];
+  const ids = [...new Set([result.fastest_id, result.middle_id, result.safest_id])];
   return ids.flatMap((id) =>
-    result.candidates.filter((route) => route.id === id),
+    id === null
+      ? []
+      : result.candidates.filter((route) => route.id === id),
   );
+}
+
+/** 表示順の位置を A・B・C の記号にする。 */
+export function routeSymbol(index: number): string {
+  return String.fromCharCode("A".charCodeAt(0) + index);
+}
+
+export function featuredSymbol(
+  result: RouteResponse,
+  id: string,
+): string | null {
+  const index = featuredRoutes(result).findIndex((route) => route.id === id);
+  return index < 0 ? null : routeSymbol(index);
 }
 
 // Follow the route itself so labels stay attached when the map moves or resizes.
@@ -79,18 +98,29 @@ export function RouteCallouts({
   detached = false,
 }: Props) {
   const routes = featuredRoutes(result);
-  const cardWidth =
-    size.width < 480 && routes.length > 1
-      ? Math.max(136, (size.width - 36) / 2)
-      : Math.min(208, size.width - 24);
-  // Narrow maps use smaller text and padding (.is-compact).
   const compact = size.width < 480;
+  // 幅が狭い地図で3枚のときは、吹き出しではなく地図下端の縦一覧にする。
+  const list = compact && routes.length === 3;
+  let cardWidth = compact && routes.length > 1
+    ? Math.max(136, (size.width - 36) / 2)
+    : Math.min(208, size.width - 24);
+  // Narrow maps use smaller text and padding (.is-compact).
   const cardHeight = compact ? 130 : size.height < 480 ? 134 : 146;
   const topInset = size.height < 480 ? 56 : 72;
   // 地図が低いと（説明の欄を開いたときなど）縦に積めないので、横に並べる。
   // ナビ開始のボタンが切れたり隠れたりしないように、カードを手前に出す（.is-tight）。
   const tight =
+    !list &&
     size.height < topInset + (cardHeight + 16) * routes.length + 88;
+  if (tight) {
+    cardWidth = Math.max(
+      120,
+      Math.min(
+        cardWidth,
+        (size.width - 24 - 12 * (routes.length - 1)) / routes.length,
+      ),
+    );
+  }
   const cards = routes.map((route) => {
     const tone = routeTone(route.id, result);
     const anchor = positions[route.id] ?? {
@@ -119,29 +149,140 @@ export function RouteCallouts({
       card.x = routes.length > 1 ? 12 + index * (cardWidth + 12) : card.x;
       card.y = y;
     });
-  } else if (cards.length === 2) {
-    const [first, second] = cards;
-    const overlaps =
-      Math.abs(first.x - second.x) < cardWidth + 12 &&
-      Math.abs(first.y - second.y) < cardHeight + 12;
+  } else if (!list && cards.length > 1) {
+    // 重なりがあれば、時間の順に上から縦に積む。
+    const overlaps = cards.some((first, index) =>
+      cards
+        .slice(index + 1)
+        .some(
+          (second) =>
+            Math.abs(first.x - second.x) < cardWidth + 12 &&
+            Math.abs(first.y - second.y) < cardHeight + 12,
+        ),
+    );
     if (overlaps) {
       const upper = clamp(
-        Math.min(first.y, second.y) - cardHeight / 2,
+        Math.min(...cards.map((card) => card.y)) - cardHeight / 2,
         topInset,
-        size.height - cardHeight * 2 - 104,
+        size.height -
+          cardHeight * cards.length -
+          16 * (cards.length - 1) -
+          88,
       );
-      first.y = upper;
-      second.y = upper + cardHeight + 16;
+      cards.forEach((card, index) => {
+        card.y = upper + index * (cardHeight + 16);
+      });
     }
   }
 
+  const fastest = result.candidates.find(
+    (route) => route.id === result.fastest_id,
+  );
+  const baseDuration = fastest?.duration ?? routes[0]?.duration ?? 0;
+  const cardContent = (
+    route: RouteCandidate,
+    tone: RouteTone,
+    index: number,
+    listRow = false,
+  ) => {
+    const same = route.id === result.fastest_id && route.id === result.safest_id;
+    // APIのdurationは秒。最短ルートとの差を分にして小数1桁で示す。
+    const extra = ((route.duration - baseDuration) / 60).toFixed(1);
+    const label = same
+      ? `${SAFE_LABEL}・${FASTEST_LABEL}`
+      : tone === "middle"
+        ? MIDDLE_LABEL
+        : tone === "considered"
+          ? SAFE_LABEL
+          : FASTEST_LABEL;
+    const title =
+      same || tone === "fastest" ? label : `${label}（+${extra}分）`;
+    const reduction =
+      route.id === result.fastest_id ? null : route.risk_reduction_percent;
+    const risk =
+      reduction === null
+        ? null
+        : `推定リスク ${Math.abs(reduction).toFixed(1)}%${reduction < 0 ? "増" : "減"}`;
+    // 一覧の行は2段組み。記号・見出し・所要時間を1段目、事故・削減率を2段目に置く。
+    const content = listRow ? (
+      <>
+        <span
+          className="map-card-symbol map-route-list-symbol"
+          aria-hidden="true"
+        >
+          {routeSymbol(index)}
+        </span>
+        <span className="map-card-title map-route-list-title">
+          <span>{title}</span>
+        </span>
+        <strong className="map-card-duration map-route-list-duration">
+          {formatMinutes(route.duration)}
+        </strong>
+        <span className="map-card-accidents map-route-list-accidents">
+          過去事故 <b>{route.accident_count}</b> 件
+          {same && <span className="map-card-same">同一経路</span>}
+        </span>
+        {risk !== null ? (
+          <span className="map-card-risk map-route-list-risk">{risk}</span>
+        ) : (
+          <span
+            className="map-card-risk-placeholder map-route-list-risk"
+            aria-hidden="true"
+          />
+        )}
+      </>
+    ) : (
+      <>
+        <span className="map-card-title">
+          <span className="map-card-symbol" aria-hidden="true">
+            {routeSymbol(index)}
+          </span>
+          <i aria-hidden="true" />
+          <span>{title}</span>
+        </span>
+        <strong className="map-card-duration">
+          {formatMinutes(route.duration)}
+        </strong>
+        <span className="map-card-accidents">
+          過去事故 <b>{route.accident_count}</b> 件
+          {same && <span className="map-card-same">同一経路</span>}
+        </span>
+        {risk !== null && <span className="map-card-risk">{risk}</span>}
+      </>
+    );
+    return (
+      <>
+        <button
+          type="button"
+          className="map-card-select"
+          aria-pressed={selectedRouteId === route.id}
+          onClick={() => onSelectRoute(route.id)}
+          onFocus={() => onHoverRoute(route.id)}
+          onBlur={() => onHoverRoute(null)}
+        >
+          {content}
+        </button>
+        <button
+          type="button"
+          className="map-card-navigate"
+          aria-label={`${label}でナビを開始`}
+          onClick={() => onNavigate(route.id)}
+          onFocus={() => onHoverRoute(route.id)}
+          onBlur={() => onHoverRoute(null)}
+        >
+          <Send size={18} aria-hidden="true" />
+        </button>
+      </>
+    );
+  };
+
   return (
     <div
-      className={`map-route-callouts${compact ? " is-compact" : ""}${tight ? " is-tight" : ""}`}
+      className={`map-route-callouts${compact ? " is-compact" : ""}${tight ? " is-tight" : ""}${list ? " is-list" : ""}`}
       role="group"
       aria-label="表示する経路"
     >
-      {!detached && (
+      {!detached && !list && (
         <svg
           className="map-callout-connectors"
           width={size.width}
@@ -168,15 +309,22 @@ export function RouteCallouts({
           ))}
         </svg>
       )}
-      {cards.map(({ route, tone, x, y }) => {
-        const same =
-          route.id === result.fastest_id && route.id === result.safest_id;
-        const title = same
-          ? `${SAFE_LABEL}・${FASTEST_LABEL}`
-          : tone === "considered"
-            ? SAFE_LABEL
-            : FASTEST_LABEL;
-        return (
+      {list ? (
+        <div className="map-route-list" role="list">
+          {cards.map(({ route, tone }, index) => (
+            <div
+              key={route.id}
+              role="listitem"
+              className={`map-route-card map-route-list-row route-${tone}${selectedRouteId === route.id ? " is-selected" : ""}${hoveredRouteId === route.id ? " is-hovered" : ""}`}
+              onPointerEnter={() => onHoverRoute(route.id)}
+              onPointerLeave={() => onHoverRoute(null)}
+            >
+              {cardContent(route, tone, index, true)}
+            </div>
+          ))}
+        </div>
+      ) : (
+        cards.map(({ route, tone, x, y }, index) => (
           <div
             key={route.id}
             className={`map-route-card route-${tone}${selectedRouteId === route.id ? " is-selected" : ""}${hoveredRouteId === route.id ? " is-hovered" : ""}`}
@@ -184,46 +332,10 @@ export function RouteCallouts({
             onPointerEnter={() => onHoverRoute(route.id)}
             onPointerLeave={() => onHoverRoute(null)}
           >
-            <button
-              type="button"
-              className="map-card-select"
-              aria-pressed={selectedRouteId === route.id}
-              onClick={() => onSelectRoute(route.id)}
-              onFocus={() => onHoverRoute(route.id)}
-              onBlur={() => onHoverRoute(null)}
-            >
-              <span className="map-card-title">
-                <i aria-hidden="true" />
-                <span>{title}</span>
-              </span>
-              <strong className="map-card-duration">
-                {formatMinutes(route.duration)}
-              </strong>
-              <span className="map-card-accidents">
-                過去事故 <b>{route.accident_count}</b> 件
-                {same && <span className="map-card-same">同一経路</span>}
-              </span>
-              {route.id === result.safest_id &&
-                result.safest_id !== result.fastest_id &&
-                result.risk_reduction_percent !== null && (
-                  <span className="map-card-risk">
-                    推定リスク {result.risk_reduction_percent.toFixed(1)}%減
-                  </span>
-                )}
-            </button>
-            <button
-              type="button"
-              className="map-card-navigate"
-              aria-label={`${title}でナビを開始`}
-              onClick={() => onNavigate(route.id)}
-              onFocus={() => onHoverRoute(route.id)}
-              onBlur={() => onHoverRoute(null)}
-            >
-              <Send size={18} aria-hidden="true" />
-            </button>
+            {cardContent(route, tone, index)}
           </div>
-        );
-      })}
+        ))
+      )}
     </div>
   );
 }

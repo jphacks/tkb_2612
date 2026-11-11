@@ -1,5 +1,5 @@
 import type { RouteCandidate, RouteResponse } from "../lib/types";
-import { FASTEST_LABEL, SAFE_LABEL } from "./RouteCallouts";
+import { FASTEST_LABEL, MIDDLE_LABEL, SAFE_LABEL } from "./RouteCallouts";
 
 type Props = {
   result: RouteResponse;
@@ -42,6 +42,9 @@ export function RouteResultNotes({ result }: Props) {
   const fastest = result.candidates.find(
     (route) => route.id === result.fastest_id,
   );
+  const middle = result.candidates.find(
+    (route) => route.id === result.middle_id,
+  );
   const accidentCountReversed =
     safest !== undefined &&
     fastest !== undefined &&
@@ -56,6 +59,13 @@ export function RouteResultNotes({ result }: Props) {
           : FASTEST_LABEL,
       route: fastest,
     });
+  }
+  if (
+    middle !== undefined &&
+    middle.id !== result.fastest_id &&
+    middle.id !== result.safest_id
+  ) {
+    rows.push({ label: MIDDLE_LABEL, route: middle });
   }
   if (safest !== undefined && safest.id !== result.fastest_id) {
     rows.push({ label: SAFE_LABEL, route: safest });

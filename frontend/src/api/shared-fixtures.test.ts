@@ -28,7 +28,9 @@ describe("shared route fixtures (backend contract) pass frontend validation", ()
       // Only the selected routes carry navigation data.
       for (const route of response.candidates) {
         const selected =
-          route.id === response.fastest_id || route.id === response.safest_id;
+          route.id === response.fastest_id ||
+          route.id === response.middle_id ||
+          route.id === response.safest_id;
         expect(route.navigation !== null).toBe(selected);
       }
     });

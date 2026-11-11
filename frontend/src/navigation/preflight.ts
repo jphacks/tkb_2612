@@ -1,10 +1,11 @@
 import type { RouteCandidate } from "../lib/types";
 import { createRouteGeometry } from "./geometry";
-export type NavigationSelection = "fastest" | "safest";
+export type NavigationSelection = "fastest" | "middle" | "safest";
 export interface NavigationStartInput {
   route: RouteCandidate;
   selection: NavigationSelection;
   fastestId: string;
+  middleId: string | null;
   safestId: string | null;
   responseGeneration: number;
   currentGeneration: number;
@@ -15,7 +16,8 @@ export function checkNavigationStart(input: NavigationStartInput): NavigationSta
   const fail = (reason: string): NavigationStartResult => ({ ok: false, reason });
   const { route, selection } = input;
   if (input.responseGeneration !== input.currentGeneration) return fail("検索結果が古くなっています");
-  if (route.id !== (selection === "fastest" ? input.fastestId : input.safestId)) return fail("選定された経路から開始してください");
+  const selectedId = selection === "fastest" ? input.fastestId : selection === "middle" ? input.middleId : input.safestId;
+  if (route.id !== selectedId) return fail("選定された経路から開始してください");
   if (!input.mapAvailable) return fail("地図を利用できません");
   const n = route.navigation;
   if (!n) return fail("ナビ用データがありません");

@@ -89,9 +89,13 @@ export function useNavigation({ result, mapAvailable }: Options): NavigationCont
       const current = latest.current;
       setStartError("");
       if (!current || session.current) return;
-      const candidate = current.candidates.find(
-        (item) => item.id === (selection === "fastest" ? current.fastest_id : current.safest_id),
-      );
+      const selectedId =
+        selection === "fastest"
+          ? current.fastest_id
+          : selection === "middle"
+            ? current.middle_id
+            : current.safest_id;
+      const candidate = current.candidates.find((item) => item.id === selectedId);
       if (!candidate) {
         setStartError("選定された経路から開始してください");
         return;
@@ -100,6 +104,7 @@ export function useNavigation({ result, mapAvailable }: Options): NavigationCont
         route: candidate,
         selection,
         fastestId: current.fastest_id,
+        middleId: current.middle_id,
         safestId: current.safest_id,
         responseGeneration: generations.current.get(forResult) ?? -1,
         currentGeneration: generations.current.get(current) ?? -2,

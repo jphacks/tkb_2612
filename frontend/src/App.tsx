@@ -31,6 +31,7 @@ import { NavigationStart } from "./components/NavigationStart";
 import { SELECTION_LABEL } from "./components/navigationLabels";
 import { SimulationBanner } from "./components/SimulationBanner";
 import { RouteMap } from "./components/RouteMap";
+import { MIDDLE_LABEL } from "./components/RouteCallouts";
 import { RouteResultNotes } from "./components/RouteResultNotes";
 import { buildNavigationLayers } from "./map/navigationData";
 import { useConditions } from "./state/useConditions";
@@ -63,6 +64,7 @@ const scenarios: { id: Scenario; label: string }[] = [
   { id: "loading", label: "検索中" },
   { id: "error", label: "エラー" },
   { id: "same", label: "同一経路" },
+  { id: "middle", label: MIDDLE_LABEL },
   { id: "zero", label: "事故0件" },
   { id: "conditions-error", label: "条件取得不可" },
   { id: "map-error", label: "地図利用不可" },
@@ -197,6 +199,7 @@ function NavigationApp({
       ...result,
       candidates: [navigation.route],
       fastest_id: navigation.route.id,
+      middle_id: navigationSelection === "middle" ? navigation.route.id : null,
       safest_id: navigationSelection === "safest" ? navigation.route.id : null,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -489,7 +492,12 @@ function NavigationApp({
                   } else if (result) {
                     setPendingStart({
                       forResult: result,
-                      selection: routeId === result.safest_id ? "safest" : "fastest",
+                      selection:
+                        routeId === result.safest_id
+                          ? "safest"
+                          : routeId === result.middle_id
+                            ? "middle"
+                            : "fastest",
                       kind: "device",
                     });
                   }

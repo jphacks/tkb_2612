@@ -270,7 +270,9 @@ export async function searchRoutes(
     return validateRouteResponse(
       createDemoRouteResponse(
         request,
-        scenario === "same" || scenario === "zero" ? scenario : "normal",
+        scenario === "same" || scenario === "middle" || scenario === "zero"
+          ? scenario
+          : "normal",
       ),
       request,
     );

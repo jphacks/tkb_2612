@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDemoRouteResponse, DEMO_PLACES } from "../api/demo";
 import { ApiError } from "../api/errors";
 import type { ConditionValues, RouteResponse } from "../lib/types";
-import { RESEARCH_INTERRUPTED, NO_SAFEST, TOO_CLOSE, useReSearch } from "./useReSearch";
+import { RESEARCH_INTERRUPTED, NO_MIDDLE, NO_SAFEST, TOO_CLOSE, useReSearch } from "./useReSearch";
 import type { NavigationControl, ReSearchSource } from "./useNavigation";
 import type { useConditions } from "./useConditions";
 import { useRouteSearch } from "./useRouteSearch";
@@ -261,6 +261,32 @@ describe("useReSearch: 現在地からの明示的再検索（7.6）", () => {
     await waitFor(() => expect(view.result.current.reSearch.notice).toBe(NO_SAFEST));
     expect(view.navigation.start).not.toHaveBeenCalled();
     expect(view.result.current.route.result?.safest_id).toBeNull();
+  });
+
+  it("中間案がなければ自動で別の経路へ切り替えず、ナビを再開しないで案内する", async () => {
+    client.searchRoutes.mockImplementation((req: typeof request) =>
+      Promise.resolve(createDemoRouteResponse(req, "normal")),
+    );
+    const view = setup({ selection: "middle" });
+    await act(async () => view.result.current.reSearch.start());
+    await waitFor(() => expect(view.result.current.reSearch.notice).toBe(NO_MIDDLE));
+    expect(view.navigation.start).not.toHaveBeenCalled();
+    expect(view.result.current.route.result?.middle_id).toBeNull();
+    expect(view.result.current.route.result?.candidates.length).toBeGreaterThan(0);
+  });
+
+  it("新しい応答にも中間案があれば中間案のまま再開する", async () => {
+    client.searchRoutes.mockImplementation((req: typeof request) =>
+      Promise.resolve(createDemoRouteResponse(req, "middle")),
+    );
+    const view = setup({ selection: "middle" });
+    await act(async () => view.result.current.reSearch.start());
+    await waitFor(() => expect(view.navigation.start).toHaveBeenCalledTimes(1));
+    expect(view.navigation.start).toHaveBeenCalledWith(
+      expect.objectContaining({ selection: "middle" }),
+    );
+    expect(view.result.current.reSearch.notice).toBe("");
+    expect(view.result.current.route.result?.middle_id).not.toBeNull();
   });
 
   it("503では停止したまま手動再試行を提示し、自動再送しない。再試行は条件取得から1回ずつやり直す", async () => {

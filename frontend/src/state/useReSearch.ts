@@ -22,6 +22,8 @@ export const TOO_CLOSE =
   "現在地と目的地の直線距離が20m未満のため、再検索できません";
 export const NO_SAFEST =
   "安全ルートがありません。最短ルートから開始する場合は、開始操作を行ってください";
+export const NO_MIDDLE =
+  "中間案がありません。表示した経路から選び直してください";
 export const STAGE_TEXT: Record<ReSearchStage, string> = {
   locating: "現在地を取得しています",
   conditions: "条件を取得しています",
@@ -216,6 +218,12 @@ export function useReSearch(params: Params) {
         snapshot.current = null;
         finish({ status: "idle" });
         setNotice(NO_SAFEST);
+        return;
+      }
+      if (snap.selection === "middle" && outcome.response.middle_id === null) {
+        snapshot.current = null;
+        finish({ status: "idle" });
+        setNotice(NO_MIDDLE);
         return;
       }
       setResume({

@@ -73,7 +73,7 @@ pointAtProgress(g: RouteGeometry, p: number): RouteProjection
 // preflight.ts
 // NavigationSelection、NavigationStartInput、NavigationStartResultをexport。
 checkNavigationStart(input: NavigationStartInput): NavigationStartResult
-// input: route/selection/fastestId/safestId/responseGeneration/currentGeneration/mapAvailable
+// input: route/selection/fastestId/middleId/safestId/responseGeneration/currentGeneration/mapAvailable
 // result: {ok:true,route,selection} | {ok:false,reason}
 
 // remaining.ts

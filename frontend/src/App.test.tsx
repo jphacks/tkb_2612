@@ -247,14 +247,14 @@ describe("App search flow and condition ownership", () => {
   it("clears old routes immediately on condition edits and sends the new values only on re-search", async () => {
     const user = await openResults();
     expect(
-      screen.getByRole("button", { name: "最短ルートを選択" }),
+      screen.getByRole("button", { name: "A 最短ルートを選択" }),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: "雨" }));
     expect(
       screen.queryByRole("group", { name: "表示する経路" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "最短ルートを選択" }),
+      screen.queryByRole("button", { name: "A 最短ルートを選択" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText("変更した条件で再検索してください。"),

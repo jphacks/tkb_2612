@@ -334,6 +334,10 @@
   --route-color: #2563eb;
   --route-hover: #38bdf8;
 }
+.route-middle {
+  --route-color: #7c3aed;
+  --route-hover: #a78bfa;
+}
 .route-alternative {
   --route-color: #94a3b8;
   --route-hover: #cbd5e1;
@@ -347,7 +351,8 @@
   z-index: 2;
   pointer-events: none;
 }
-.map-route-callouts.is-tight {
+.map-route-callouts.is-tight,
+.map-route-callouts.is-list {
   z-index: 4;
 }
 .map-callout-connectors {
@@ -438,6 +443,13 @@
   font-weight: 600;
   line-height: 1.5;
 }
+.map-card-symbol {
+  color: var(--route-color);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
 .map-card-title i {
   display: inline-block;
   width: 7px;
@@ -477,6 +489,105 @@
   color: #15803d;
   font-size: 11px;
 }
+.map-card-risk-placeholder {
+  min-width: 0;
+}
+/* 狭い地図で3枚のときは、地図下端に縦3行の一覧を重ねる。 */
+.map-route-list {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: auto;
+}
+.map-route-list-row {
+  position: relative;
+  width: 100%;
+  height: 56px;
+  box-sizing: border-box;
+}
+/* 一覧の行は2段組み。カード用の .is-compact 指定より詳細度を上げて上書きする。 */
+.map-route-callouts.is-list .map-route-list-row .map-card-select {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "symbol title duration"
+    "accidents accidents risk";
+  grid-template-rows: 1fr 1fr;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 2px;
+  width: 100%;
+  height: 100%;
+  padding: 5px 56px 5px 10px;
+  box-sizing: border-box;
+}
+.map-route-callouts.is-list .map-route-list-row .map-card-symbol {
+  grid-area: symbol;
+  font-size: 12px;
+  line-height: 1;
+}
+.map-route-callouts.is-list .map-route-list-row .map-card-title {
+  display: block;
+  grid-area: title;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.map-route-callouts.is-list .map-route-list-row .map-card-title > span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-route-callouts.is-list .map-route-list-row .map-card-duration {
+  grid-area: duration;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: right;
+  white-space: nowrap;
+}
+.map-route-callouts.is-list .map-route-list-row .map-card-accidents {
+  grid-area: accidents;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding-right: 0;
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.map-route-callouts.is-list .map-route-list-row .map-card-accidents b {
+  font-size: 11px;
+}
+.map-route-callouts.is-list .map-route-list-row .map-card-same {
+  display: none;
+}
+.map-route-callouts.is-list .map-route-list-row .map-route-list-risk {
+  grid-area: risk;
+  padding-right: 0;
+  font-size: 11px;
+  line-height: 1.3;
+  text-align: right;
+  white-space: nowrap;
+}
+.map-route-callouts.is-list .map-route-list-row .map-card-navigate {
+  top: 50%;
+  right: 8px;
+  bottom: auto;
+  width: 40px;
+  height: 40px;
+  transform: translateY(-50%);
+}
 .map-controls,
 .map-preview-label,
 .map-legend {
@@ -490,6 +601,9 @@
 }
 .map-legend .legend-fastest {
   background: var(--blue);
+}
+.map-legend .legend-middle {
+  background: #7c3aed;
 }
 .map-unavailable {
   justify-content: flex-start;

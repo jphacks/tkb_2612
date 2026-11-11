@@ -64,7 +64,7 @@ describe("RouteMap", () => {
       expect(
         within(fastest).getByRole("button", { name: "最短ルートでナビを開始" }),
       ).toBeInTheDocument();
-      const line = screen.getByRole("button", { name: "最短ルートを選択" });
+      const line = screen.getByRole("button", { name: "A 最短ルートを選択" });
       expect(line).toHaveClass("route-fastest");
       fireEvent.pointerEnter(fastest);
       expect(line).toHaveClass("is-hovered");
@@ -100,7 +100,7 @@ describe("RouteMap", () => {
   it("connects route and section selection, and only shows factual accident fields", () => {
     const props = mapProps(createDemoRouteResponse(request));
     render(<RouteMap {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "最短ルートを選択" }));
+    fireEvent.click(screen.getByRole("button", { name: "A 最短ルートを選択" }));
     expect(props.onSelectRoute).toHaveBeenCalledWith(props.result?.fastest_id);
     const selected = props.result!.candidates.find(
       (route) => route.id === props.selectedRouteId,
@@ -255,7 +255,7 @@ describe("RouteMap", () => {
     const { rerender } = render(<RouteMap {...props} />);
     expect(
       screen.getAllByRole("button", {
-        name: "最短ルート・安全ルート（同一経路）を選択",
+        name: "A 最短ルート・安全ルート（同一経路）を選択",
       }),
     ).toHaveLength(1);
     rerender(<RouteMap {...props} unavailable />);
