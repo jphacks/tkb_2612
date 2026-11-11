@@ -4,7 +4,10 @@
 //! `navigation-cases.json` の入力（geometryとsid別の重み）をそのまま使える。
 
 use crate::contract::engine::MAX_HIGH_RISK_SECTIONS;
-use crate::contract::{CancelToken, HighRiskSegment, Interrupt, NavigationData, NavigationSection};
+use crate::contract::{
+    CancelToken, GuidanceStep, HighRiskSegment, Interrupt, Maneuver, NavigationData,
+    NavigationSection,
+};
 
 use super::corridor::{CANCEL_CHECK_INTERVAL, Subdivision};
 
@@ -134,5 +137,9 @@ pub fn navigation_data_checked(
         length_m,
         vertex_distances_m,
         sections,
+        guidance: vec![GuidanceStep {
+            maneuver: Maneuver::Arrive,
+            at_m: length_m,
+        }],
     })
 }

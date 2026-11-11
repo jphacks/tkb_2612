@@ -5,7 +5,7 @@
 //! 数値・件数・順序・選定・文言は②の値をそのまま使う（再計算しない）。
 //!
 //! 変換の前に相関制約・OpenAPIの値の範囲・JSONの安全整数範囲・有限値・navigationのサイズ
-//! （5,000,000バイト）を検査し、違反は内部契約違反（500）にする。間引いた200は返さない。
+//! （6,800,000バイト）を検査し、違反は内部契約違反（500）にする。間引いた200は返さない。
 
 use std::collections::HashSet;
 use std::io;
@@ -17,19 +17,20 @@ use crate::contract::engine::{
 };
 use crate::contract::geo::{LAT_RANGE, LON_RANGE};
 use crate::contract::{
-    AccidentPoint, AccidentTotals, EvaluatedRoute, HighRiskSegment, LonLat, NavigationData,
-    RouteOutcome,
+    AccidentPoint, AccidentTotals, EvaluatedRoute, HighRiskSegment, LonLat, Maneuver,
+    NavigationData, RouteOutcome,
 };
 
 /// JSONの安全整数の上限（2^53−1）。
 pub const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 /// 選定経路分のnavigationの合計（空白なしUTF-8 JSON）の上限。
-pub const MAX_NAVIGATION_BYTES: u64 = 5_000_000;
+pub const MAX_NAVIGATION_BYTES: u64 = 6_800_000;
 /// OpenAPIの `NavigationData`・`NavigationSection` の範囲。
 pub const NAV_PROJECTION_LAT_RANGE: std::ops::RangeInclusive<f64> = 20.0..=46.0;
 pub const NAV_MAX_LENGTH_M: f64 = 110_000.0;
 pub const NAV_MAX_VERTICES: usize = 15_000;
 pub const NAV_MAX_SECTIONS: usize = 8_233;
+pub const NAV_MAX_GUIDANCE_STEPS: usize = 14_999;
 pub const NAV_MAX_SEGMENT_INDEX: u32 = 16_465;
 /// OpenAPIの `LineString`（頂点数）・`RouteCandidate`（`distance`）の範囲。
 pub const ROUTE_VERTICES_RANGE: std::ops::RangeInclusive<usize> = 2..=15_000;
@@ -396,6 +397,30 @@ fn check_navigation(
     if d.windows(2).any(|w| w[0] > w[1]) {
         return violation(format!("{id}: vertex_distances_mが非減少でない"));
     }
+    if nav.guidance.is_empty() {
+        return violation(format!("{id}: guidanceが空"));
+    }
+    if nav.guidance.len() > NAV_MAX_GUIDANCE_STEPS {
+        return violation(format!("{id}: 案内地点数が範囲外"));
+    }
+    let mut previous_at_m = 0.0;
+    for (i, g) in nav.guidance.iter().enumerate() {
+        finite_non_negative(g.at_m, id)?;
+        if g.at_m > nav.length_m {
+            return violation(format!("{id}: 案内地点がlength_mを超えた"));
+        }
+        if g.at_m < previous_at_m {
+            return violation(format!("{id}: 案内地点が逆行している"));
+        }
+        if g.maneuver == Maneuver::Arrive && i + 1 != nav.guidance.len() {
+            return violation(format!("{id}: arriveが末尾以外にある"));
+        }
+        previous_at_m = g.at_m;
+    }
+    let last = nav.guidance.last().expect("空でない");
+    if last.maneuver != Maneuver::Arrive || last.at_m != nav.length_m {
+        return violation(format!("{id}: 末尾のarriveがlength_mと一致しない"));
+    }
     let mut covered = 0u64;
     let mut previous_end: Option<u32> = None;
     let mut previous_end_m = 0.0;
@@ -576,11 +601,18 @@ struct NavigationSectionDto {
 }
 
 #[derive(serde::Serialize)]
+struct GuidanceStepDto {
+    maneuver: &'static str,
+    at_m: f64,
+}
+
+#[derive(serde::Serialize)]
 struct NavigationDto<'a> {
     projection_lat_deg: f64,
     length_m: f64,
     vertex_distances_m: &'a [f64],
     sections: Vec<NavigationSectionDto>,
+    guidance: Vec<GuidanceStepDto>,
 }
 
 impl<'a> NavigationDto<'a> {
@@ -602,6 +634,14 @@ impl<'a> NavigationDto<'a> {
                     start_m: s.start_m,
                     end_m: s.end_m,
                     severity_weight: s.severity_weight,
+                })
+                .collect(),
+            guidance: nav
+                .guidance
+                .iter()
+                .map(|g| GuidanceStepDto {
+                    maneuver: g.maneuver.as_str(),
+                    at_m: g.at_m,
                 })
                 .collect(),
         }

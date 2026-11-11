@@ -31,6 +31,9 @@ pub struct RouteShape {
     pub projection: Projection,
     /// 表示用の形状を間引いたか。
     pub simplified: bool,
+    /// 間引いたときの、`display` の各頂点に対応する `full` の頂点番号。
+    /// 間引いていなければ `None`。
+    pub display_source: Option<Vec<usize>>,
 }
 
 impl RouteShape {
@@ -159,7 +162,7 @@ pub fn build_shape(
     }
     let full_latlon: Vec<LonLat> = full.iter().map(|c| LonLat::from(c.to_latlon())).collect();
     let projection = Projection::for_path(&full_latlon);
-    let (display, simplified) = display_coordinates(&full, &projection, cancel)?;
+    let (display, display_source) = display_coordinates_with_source(&full, &projection, cancel)?;
     if display.len() < 2 {
         return Err(EngineError::ContractViolation(
             "間引いた経路の形状が2頂点未満です".to_owned(),
@@ -171,7 +174,8 @@ pub fn build_shape(
         display,
         ranges,
         projection,
-        simplified,
+        simplified: display_source.is_some(),
+        display_source,
     })
 }
 
@@ -182,31 +186,52 @@ pub fn display_coordinates(
     projection: &Projection,
     cancel: &CancelToken,
 ) -> Result<(Vec<LonLat>, bool), Interrupt> {
+    let (display, source) = display_coordinates_with_source(full, projection, cancel)?;
+    Ok((display, source.is_some()))
+}
+
+/// [`display_coordinates`] と同じ結果に、間引いたときの元の頂点番号を添えて返す。
+fn display_coordinates_with_source(
+    full: &[Coord],
+    projection: &Projection,
+    cancel: &CancelToken,
+) -> Result<(Vec<LonLat>, Option<Vec<usize>>), Interrupt> {
     let full_latlon: Vec<LonLat> = full.iter().map(|c| LonLat::from(c.to_latlon())).collect();
     if full.len() <= MAX_DISPLAY_VERTICES {
-        return Ok((full_latlon, false));
+        return Ok((full_latlon, None));
     }
-    Ok((simplify_to_limit(full, projection, cancel)?, true))
+    let (display, source) = simplify_to_limit_with_source(full, projection, cancel)?;
+    Ok((display, Some(source)))
 }
 
 /// 両端を残すDouglas–Peucker法。許容誤差0.5mから2倍ずつ大きくし、15,000頂点以下になった
-/// 最初の結果を返す。距離は `projection` の局所平面で測る。
+/// 最初の結果と、残した頂点の番号を返す。距離は `projection` の局所平面で測る。
+fn simplify_to_limit_with_source(
+    coordinates: &[Coord],
+    projection: &Projection,
+    cancel: &CancelToken,
+) -> Result<(Vec<LonLat>, Vec<usize>), Interrupt> {
+    let mut tolerance = INITIAL_SIMPLIFY_TOLERANCE_M;
+    loop {
+        let kept = douglas_peucker_indices(coordinates, projection, tolerance, cancel)?;
+        if kept.len() <= MAX_DISPLAY_VERTICES || kept.len() <= 2 {
+            let display = kept
+                .iter()
+                .map(|&i| LonLat::from(coordinates[i].to_latlon()))
+                .collect();
+            return Ok((display, kept));
+        }
+        tolerance *= 2.0;
+    }
+}
+
+#[cfg(test)]
 fn simplify_to_limit(
     coordinates: &[Coord],
     projection: &Projection,
     cancel: &CancelToken,
 ) -> Result<Vec<LonLat>, Interrupt> {
-    let mut tolerance = INITIAL_SIMPLIFY_TOLERANCE_M;
-    loop {
-        let simplified = douglas_peucker(coordinates, projection, tolerance, cancel)?;
-        if simplified.len() <= MAX_DISPLAY_VERTICES || simplified.len() <= 2 {
-            return Ok(simplified
-                .into_iter()
-                .map(|c| LonLat::from(c.to_latlon()))
-                .collect());
-        }
-        tolerance *= 2.0;
-    }
+    simplify_to_limit_with_source(coordinates, projection, cancel).map(|(display, _)| display)
 }
 
 /// 点 `p` から線分 `a`〜`b` までの距離（m）。
@@ -224,16 +249,16 @@ fn point_segment_distance(projection: &Projection, p: Coord, a: Coord, b: Coord)
     ((px - ax - t * dx).powi(2) + (py - ay - t * dy).powi(2)).sqrt()
 }
 
-/// 両端を残すDouglas–Peucker法。`keep` の立った頂点を元の順に返す。
-fn douglas_peucker(
+/// 両端を残すDouglas–Peucker法。`keep` の立った頂点の番号を元の順に返す。
+fn douglas_peucker_indices(
     coordinates: &[Coord],
     projection: &Projection,
     tolerance: f64,
     cancel: &CancelToken,
-) -> Result<Vec<Coord>, Interrupt> {
+) -> Result<Vec<usize>, Interrupt> {
     let n = coordinates.len();
     if n <= 2 {
-        return Ok(coordinates.to_vec());
+        return Ok((0..n).collect());
     }
     let mut keep = vec![false; n];
     keep[0] = true;
@@ -264,12 +289,18 @@ fn douglas_peucker(
             stack.push((best_index, b));
         }
     }
-    Ok(coordinates
-        .iter()
-        .enumerate()
-        .filter(|&(i, _)| keep[i])
-        .map(|(_, &c)| c)
-        .collect())
+    Ok((0..n).filter(|&i| keep[i]).collect())
+}
+
+#[cfg(test)]
+fn douglas_peucker(
+    coordinates: &[Coord],
+    projection: &Projection,
+    tolerance: f64,
+    cancel: &CancelToken,
+) -> Result<Vec<Coord>, Interrupt> {
+    let kept = douglas_peucker_indices(coordinates, projection, tolerance, cancel)?;
+    Ok(kept.into_iter().map(|i| coordinates[i]).collect())
 }
 
 /// 75m分割の、元の辺1本あたりの小線分数。

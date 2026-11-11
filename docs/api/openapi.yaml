@@ -176,6 +176,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.0
                         length_m: 910.8567728809412
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 910.8567728809412
                         vertex_distances_m:
                         - 0.0
                         - 910.8567728809412
@@ -249,6 +252,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.0
                         length_m: 910.8567728809412
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 910.8567728809412
                         vertex_distances_m:
                         - 0.0
                         - 910.8567728809412
@@ -377,6 +383,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.0
                         length_m: 910.8567728809412
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 910.8567728809412
                         vertex_distances_m:
                         - 0.0
                         - 910.8567728809412
@@ -477,6 +486,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.00033333333334
                         length_m: 937.6090254921936
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 937.6090254921936
                         vertex_distances_m:
                         - 0.0
                         - 468.8045127460968
@@ -687,6 +699,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.0
                         length_m: 910.8567728809412
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 910.8567728809412
                         vertex_distances_m:
                         - 0.0
                         - 910.8567728809412
@@ -782,6 +797,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.00033333333334
                         length_m: 937.6090254921936
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 937.6090254921936
                         vertex_distances_m:
                         - 0.0
                         - 468.8045127460968
@@ -992,6 +1010,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.0
                         length_m: 910.8567728809412
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 910.8567728809412
                         vertex_distances_m:
                         - 0.0
                         - 910.8567728809412
@@ -1092,6 +1113,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.00033333333334
                         length_m: 937.6090254921936
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 937.6090254921936
                         vertex_distances_m:
                         - 0.0
                         - 468.8045127460968
@@ -1677,6 +1701,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.01
                         length_m: 910.7454438680041
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 910.7454438680041
                         vertex_distances_m:
                         - 0.0
                         - 910.7454438680041
@@ -2446,9 +2473,22 @@ components:
       description: |
         高リスクの小線分（high_risk_totalで数えるもの）でsidが連続する最大列を結合した区間。元geometryは重複送信しない。
         元geometryとnavigation.vertex_distances_mから表示位置を補間する。区間の計算・順序はbackendだけで決める。
+    GuidanceStep:
+      type: object
+      required: [maneuver, at_m]
+      additionalProperties: false
+      properties:
+        maneuver:
+          type: string
+          enum: [left, right, slight_left, slight_right, uturn, arrive]
+        at_m:
+          type: number
+          minimum: 0
+          maximum: 110000
+          description: 経路始点から案内地点までの距離、m。vertex_distances_mと同じ軸で、丸めない。
     NavigationData:
       type: object
-      required: [projection_lat_deg, length_m, vertex_distances_m, sections]
+      required: [projection_lat_deg, length_m, vertex_distances_m, sections, guidance]
       additionalProperties: false
       properties:
         projection_lat_deg:
@@ -2475,11 +2515,19 @@ components:
             全対象区間をstart_segment_index昇順で返し、切り捨てない。対象なしは[]。
             区間のsid範囲は重複せず、隣接区間の間には対象外sidが1本以上ある。
             sum(end_segment_index-start_segment_index+1)=候補のhigh_risk_total。
+        guidance:
+          type: array
+          minItems: 1
+          maxItems: 14999
+          items: {$ref: '#/components/schemas/GuidanceStep'}
+          description: |
+            経路始点からの案内地点をat_m昇順で返す。最後の要素だけがarriveで、そのat_mはlength_mと完全に一致する。
+            at_mは有限で0以上length_m以下、非減少。旧方式はarrive 1件だけを返す。
       description: |
         移行追加。選定1〜2経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。
         距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。
         110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。
-        選定経路分のnavigation合計は空白なしUTF-8 JSONで5000000バイト以下を検証する。
+        選定経路分のnavigation合計は空白なしUTF-8 JSONで6800000バイト以下を検証する。
     WeatherMatch:
       type: object
       required: [accident_count, fatal_accidents, injury_accidents, deaths, injuries]

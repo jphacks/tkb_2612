@@ -49,7 +49,7 @@ providers ──> contract
 |---|---|---|
 | route入力 | — | JSON・Content-Type・型・列挙・互換入力（整数コード、null、`時間帯`、`hour`）の解釈。`RouteQuery::new` で座標・直線距離・許容時間を検証する（`validate_endpoints` を先に呼ぶと、behavior.md 4章の検証順を守れる） |
 | 経路取得 | 追加候補の要否、左右の経由点、呼出し順（初回→左→右）、値と頂点数の検証、80km判定、重複排除、並べ替え、警告 | URLの組立て、識別UA、上流ゲート、8秒の通信期限、サイズ上限、JSON構造の解釈、提供元のエラーの変換。先頭6本までを提供元の順で1本ずつ解釈して返す |
-| 計算 | 事故集計、選定、ナビ区間、説明文、計算中の中断 | `spawn_blocking` での実行、CPU同時数の上限、navigationのサイズ（5,000,000バイト）とJSONの安全整数範囲の検査 |
+| 計算 | 事故集計、選定、ナビ区間、説明文、計算中の中断 | `spawn_blocking` での実行、CPU同時数の上限、navigationのサイズ（6,800,000バイト）とJSONの安全整数範囲の検査 |
 | conditions | `Calendar` の実装（祝日表の読込、判定） | datetimeの検証とAsia/Tokyoへの換算、`TokyoMinute` の作成、天候の取得 |
 | health | `DatasetInfo` の提供 | 応答の組立て、未ready時の503 |
 

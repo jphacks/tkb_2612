@@ -226,8 +226,8 @@ export function validateRouteResponse(
   return response;
 }
 
-/** behavior.md 7: selected routes' navigation must be at most 5,000,000 bytes. */
-const MAX_NAVIGATION_BYTES = 5_000_000;
+/** behavior.md 7: selected routes' navigation must be at most 6,800,000 bytes. */
+const MAX_NAVIGATION_BYTES = 6_800_000;
 const encoder = new TextEncoder();
 const utf8Length = (text: string) => encoder.encode(text).length;
 
@@ -241,6 +241,23 @@ function validateNavigation(route: RouteResponse["candidates"][number]) {
     !ascending(distances) ||
     distances[distances.length - 1] !== length
   )
+    invalid();
+  const guidance = navigation.guidance;
+  if (guidance.length === 0) invalid();
+  let previousAtM = 0;
+  for (const [index, step] of guidance.entries()) {
+    if (
+      !Number.isFinite(step.at_m) ||
+      step.at_m < 0 ||
+      step.at_m > length ||
+      step.at_m < previousAtM
+    )
+      invalid();
+    if (step.maneuver === "arrive" && index + 1 !== guidance.length) invalid();
+    previousAtM = step.at_m;
+  }
+  const lastGuidance = guidance[guidance.length - 1];
+  if (lastGuidance.maneuver !== "arrive" || lastGuidance.at_m !== length)
     invalid();
   let previousEnd = -2;
   let previousEndM = 0;

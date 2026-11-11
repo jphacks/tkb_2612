@@ -187,6 +187,42 @@ function localPlane(coords: Coordinate[]) {
   return { phi, edges, vertexDistances };
 }
 
+/** デモの模式図の折れ曲がりから作る表示確認用の案内。実道路の交差点情報ではない。 */
+function demoGuidance(
+  coordinates: readonly Coordinate[],
+  projectionLatDeg: number,
+  vertexDistances: readonly number[],
+  length: number,
+): NavigationData["guidance"] {
+  const cos = Math.cos((projectionLatDeg * Math.PI) / 180);
+  const guidance: NavigationData["guidance"] = [];
+  for (let i = 1; i < coordinates.length - 1; i++) {
+    const incoming = [
+      (coordinates[i][0] - coordinates[i - 1][0]) * cos,
+      coordinates[i][1] - coordinates[i - 1][1],
+    ];
+    const outgoing = [
+      (coordinates[i + 1][0] - coordinates[i][0]) * cos,
+      coordinates[i + 1][1] - coordinates[i][1],
+    ];
+    if (!Math.hypot(...incoming) || !Math.hypot(...outgoing)) continue;
+    const angle =
+      (Math.atan2(
+        incoming[0] * outgoing[1] - incoming[1] * outgoing[0],
+        incoming[0] * outgoing[0] + incoming[1] * outgoing[1],
+      ) *
+        180) /
+      Math.PI;
+    if (Math.abs(angle) < 10) continue;
+    guidance.push({
+      maneuver: angle > 0 ? "left" : "right",
+      at_m: vertexDistances[i],
+    });
+  }
+  guidance.push({ maneuver: "arrive", at_m: length });
+  return guidance;
+}
+
 function periodOf(request: RouteRequest): Period | "all" {
   const value = request.period ?? request.時間帯 ?? "all";
   const canonical =
@@ -260,6 +296,12 @@ export function createDemoRouteResponse(
       projection_lat_deg: plane.phi,
       length_m: plane.vertexDistances[plane.vertexDistances.length - 1],
       vertex_distances_m: plane.vertexDistances,
+      guidance: demoGuidance(
+        coords,
+        plane.phi,
+        plane.vertexDistances,
+        plane.vertexDistances[plane.vertexDistances.length - 1],
+      ),
       sections: count
         ? [
             {

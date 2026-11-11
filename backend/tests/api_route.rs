@@ -385,7 +385,8 @@ async fn large_response_measurement() {
 
 mod common_large {
     use accident_route_backend::contract::{
-        HighRiskSegment, LonLat, NavigationData, NavigationSection, RouteOutcome,
+        GuidanceStep, HighRiskSegment, LonLat, Maneuver, NavigationData, NavigationSection,
+        RouteOutcome,
     };
     use accident_route_backend::testing::fixtures::expected_route_outcome;
 
@@ -435,6 +436,10 @@ mod common_large {
                                 severity_weight: 3,
                             })
                             .collect(),
+                        guidance: vec![GuidanceStep {
+                            maneuver: Maneuver::Arrive,
+                            at_m: length,
+                        }],
                     }
                 });
                 c

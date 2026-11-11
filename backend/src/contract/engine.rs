@@ -231,6 +231,50 @@ pub struct NavigationSection {
     pub severity_weight: u64,
 }
 
+/// 進行方向案内の種類（behavior.md 7章）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Maneuver {
+    Left,
+    Right,
+    SlightLeft,
+    SlightRight,
+    Uturn,
+    Arrive,
+}
+
+impl Maneuver {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Maneuver::Left => "left",
+            Maneuver::Right => "right",
+            Maneuver::SlightLeft => "slight_left",
+            Maneuver::SlightRight => "slight_right",
+            Maneuver::Uturn => "uturn",
+            Maneuver::Arrive => "arrive",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        [
+            Maneuver::Left,
+            Maneuver::Right,
+            Maneuver::SlightLeft,
+            Maneuver::SlightRight,
+            Maneuver::Uturn,
+            Maneuver::Arrive,
+        ]
+        .into_iter()
+        .find(|m| m.as_str() == s)
+    }
+}
+
+/// 経路始点から案内地点までの距離（m）。`vertex_distances_m` と同じ軸で、丸めない。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GuidanceStep {
+    pub maneuver: Maneuver,
+    pub at_m: f64,
+}
+
 /// 選定経路のナビ用データ（behavior.md 7章）。距離は丸めない。
 #[derive(Debug, Clone, PartialEq)]
 pub struct NavigationData {
@@ -238,6 +282,7 @@ pub struct NavigationData {
     pub length_m: f64,
     pub vertex_distances_m: Vec<f64>,
     pub sections: Vec<NavigationSection>,
+    pub guidance: Vec<GuidanceStep>,
 }
 
 /// 評価済みの1候補。添字iの候補のIDは `route-(i+1)`。
