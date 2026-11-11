@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createDemoRouteResponse } from "../api/demo";
 import type { RouteRequest } from "../lib/types";
-import { createDemoGuidance } from "./demoGuidance";
 import {
   createGuidanceHistory,
   GUIDANCE_BACKTRACK_M,
+  guidanceStepsFromRoute,
   nextGuidance,
   updateGuidanceHistory,
   type GuidanceStep,
@@ -33,20 +33,26 @@ describe("案内地点と確定進捗", () => {
     expect(nextGuidance([], 20)).toBeNull();
   });
 
-  it("デモの折れ曲がりと到着を既存の距離軸に合わせる", () => {
+  it("デモ応答の案内地点を既存の距離軸に合わせる", () => {
     const request: RouteRequest = { origin: { lat: 35.68, lon: 139.76 }, dest: { lat: 35.72, lon: 139.76 }, mode: "walk", period: "all", weather: "all", day_type: "all", max_detour_min: 10 };
     const result = createDemoRouteResponse(request);
     const [fastest, safest] = result.candidates;
-    const right = createDemoGuidance(fastest);
-    const left = createDemoGuidance(safest);
+    const right = fastest.navigation!.guidance;
+    const left = safest.navigation!.guidance;
     expect(right.map(step => step.maneuver)).toEqual(["right", "right", "arrive"]);
     expect(left.map(step => step.maneuver)).toEqual(["left", "left", "arrive"]);
-    expect(right.map(step => step.atM)).toEqual(fastest.navigation!.vertex_distances_m.slice(1));
-    const straight = structuredClone(fastest);
-    straight.geometry.coordinates = [[139.76, 35.68], [139.76, 35.69], [139.76, 35.70], [139.76, 35.72]];
-    expect(createDemoGuidance(straight).map(step => step.maneuver)).toEqual(["arrive"]);
-    straight.navigation = null;
-    expect(createDemoGuidance(straight)).toEqual([]);
+    expect(right.map(step => step.at_m)).toEqual(fastest.navigation!.vertex_distances_m.slice(1));
+    expect(left.map(step => step.at_m)).toEqual(safest.navigation!.vertex_distances_m.slice(1));
+    expect(right.at(-1)?.at_m).toBe(fastest.navigation!.length_m);
+    expect(left.at(-1)?.at_m).toBe(safest.navigation!.length_m);
+    expect(guidanceStepsFromRoute(fastest).map(step => step.maneuver)).toEqual(["right", "right", "arrive"]);
+    expect(guidanceStepsFromRoute(fastest).map(step => step.atM)).toEqual(fastest.navigation!.vertex_distances_m.slice(1));
+    expect(guidanceStepsFromRoute(fastest).map(step => step.id)).toEqual(["route-1:guide-0", "route-1:guide-1", "route-1:guide-2"]);
+    const arriveOnly = structuredClone(fastest);
+    arriveOnly.navigation!.guidance = [{ maneuver: "arrive", at_m: arriveOnly.navigation!.length_m }];
+    expect(guidanceStepsFromRoute(arriveOnly).map(step => step.maneuver)).toEqual(["arrive"]);
+    arriveOnly.navigation = null;
+    expect(guidanceStepsFromRoute(arriveOnly)).toEqual([]);
   });
 });
 

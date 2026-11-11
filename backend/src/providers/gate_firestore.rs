@@ -34,7 +34,7 @@ pub const START_RESERVE: Duration = Duration::from_millis(500);
 /// メタデータサーバのアクセストークンを、期限のこの時間前に取り直す（暫定。未決）。
 pub const TOKEN_REFRESH_MARGIN: Duration = Duration::from_secs(60);
 
-const API_ROOT: &str = "https://firestore.googleapis.com/v1/";
+pub const API_ROOT: &str = "https://firestore.googleapis.com/v1/";
 const METADATA_ROOT: &str = "http://metadata.google.internal/computeMetadata/v1/";
 
 /// アクセストークンの取得元。
@@ -190,23 +190,7 @@ impl FirestoreGateStore {
     }
 
     async fn call(&self, token: &str, method: &str, body: Value) -> Result<Value, CallError> {
-        let response = self
-            .client
-            .post(format!("{}:{method}", self.documents_url))
-            .bearer_auth(token)
-            .json(&body)
-            .timeout(CALL_TIMEOUT)
-            .send()
-            .await
-            .map_err(|_| CallError::Failed)?;
-        let status = response.status();
-        if status == reqwest::StatusCode::CONFLICT {
-            return Err(CallError::Conflict);
-        }
-        if !status.is_success() {
-            return Err(CallError::Failed);
-        }
-        response.json().await.map_err(|_| CallError::Failed)
+        call_documents(&self.client, &self.documents_url, token, method, body).await
     }
 
     async fn attempt(
@@ -288,10 +272,37 @@ impl FirestoreGateStore {
     }
 }
 
-enum CallError {
+pub(crate) enum CallError {
     /// 競合（HTTP 409 / ABORTED）。読み直して再試行する。
     Conflict,
     Failed,
+}
+
+/// `{documents_url}:{method}`（`beginTransaction`・`batchGet`・`commit`・`rollback`・`runQuery`）を呼ぶ。
+/// 上流ゲートと口コミの保存（`community_firestore`）で共有する。
+pub(crate) async fn call_documents(
+    client: &reqwest::Client,
+    documents_url: &str,
+    token: &str,
+    method: &str,
+    body: Value,
+) -> Result<Value, CallError> {
+    let response = client
+        .post(format!("{documents_url}:{method}"))
+        .bearer_auth(token)
+        .json(&body)
+        .timeout(CALL_TIMEOUT)
+        .send()
+        .await
+        .map_err(|_| CallError::Failed)?;
+    let status = response.status();
+    if status == reqwest::StatusCode::CONFLICT {
+        return Err(CallError::Conflict);
+    }
+    if !status.is_success() {
+        return Err(CallError::Failed);
+    }
+    response.json().await.map_err(|_| CallError::Failed)
 }
 
 /// `batchGet` の応答（1文書）から状態を読む。文書が無ければ初期状態。

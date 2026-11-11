@@ -1,120 +1,119 @@
-import type { LatLon } from "../lib/types";
-import type { SafetyKind } from "../components/icons/SafetyIcon";
+import type { LatLon, SafetyKind, SafetyReport } from "../lib/types";
 
-export type SafetyComment = {
-  id: string;
-  text: string;
-  createdAt: string | null;
+export type { SafetyReport, SafetyComment } from "../lib/types";
+
+/** 地図の表示範囲（両端を含む、十進度）。 */
+export type SafetyBounds = {
+  minLat: number;
+  minLon: number;
+  maxLat: number;
+  maxLon: number;
 };
-export type SafetyReport = LatLon & {
-  id: string;
-  kind: SafetyKind;
-  text: string;
-  createdAt: string | null;
-  supportCount: number;
-  comments: SafetyComment[];
-};
-export const REPORTS_KEY = "accilessnavi.safety-reports.v1";
-export const SESSION_VOTES_KEY = "accilessnavi.safety-votes.v1";
+
+export const VOTER_KEY = "accilessnavi.voter-id.v1";
+const VOTER_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
+let sessionVoter: string | null = null;
+
+/**
+ * ブラウザーごとの匿名の投票者ID。サーバは同じ地点への2回目の投票をこのIDで拒否する。
+ * 保存できない環境（プライベートブラウズ等）ではタブを開いている間だけのIDになる。
+ */
+export function voterId(): string {
+  const saved = savedVoterId();
+  if (saved) return saved;
+  const id = sessionVoter ?? crypto.randomUUID();
+  try {
+    localStorage.setItem(VOTER_KEY, id);
+  } catch {
+    // 保存できなくてもタブを開いている間は同じIDを使う
+  }
+  sessionVoter = id;
+  return id;
+}
+
+/**
+ * 作らずに読むだけの投票者ID（一覧で自分の票を知るため）。まだ投票していなければnull。
+ * 閲覧だけ（ナビ等）ではストレージに何も書かない。
+ * 保存できなかった環境（プライベートブラウズ・容量切れ等）ではタブ内のIDを使う。
+ */
+export function storedVoterId(): string | null {
+  return savedVoterId() ?? sessionVoter;
+}
+
+/** ストレージに保存済みの有効な投票者ID。 */
+function savedVoterId(): string | null {
+  try {
+    const saved = localStorage.getItem(VOTER_KEY);
+    return saved && VOTER_PATTERN.test(saved) ? saved : null;
+  } catch {
+    return null;
+  }
+}
 
 export function pointKey(point: LatLon) {
   return `${point.lat.toFixed(6)},${point.lon.toFixed(6)}`;
 }
 
-export function readSessionVotes(): Set<string> {
-  try {
-    const saved: unknown = JSON.parse(
-      sessionStorage.getItem(SESSION_VOTES_KEY) ?? "[]",
-    );
-    return new Set(
-      Array.isArray(saved)
-        ? saved.filter((key): key is string => typeof key === "string")
-        : [],
-    );
-  } catch {
-    return new Set();
-  }
+/** 地図の色に使う種類。同数なら注意を優先して「危険」。 */
+export function dominantKind(report: SafetyReport): SafetyKind {
+  return report.danger_count >= report.safe_count ? "danger" : "safe";
 }
 
-/** Store the session marker first; restore it if saving the report fails. */
-export function saveReportsWithVote(
-  reports: SafetyReport[],
-  point: LatLon,
-): Set<string> {
-  const votes = readSessionVotes();
-  const key = pointKey(point);
-  if (votes.has(key)) throw new Error("この地点には投票済みです。");
-  const previous = sessionStorage.getItem(SESSION_VOTES_KEY);
-  votes.add(key);
-  sessionStorage.setItem(SESSION_VOTES_KEY, JSON.stringify([...votes]));
-  try {
-    saveReports(reports);
-  } catch (error) {
-    if (previous === null) sessionStorage.removeItem(SESSION_VOTES_KEY);
-    else sessionStorage.setItem(SESSION_VOTES_KEY, previous);
-    throw error;
-  }
-  return votes;
+export function totalVotes(report: SafetyReport) {
+  return report.safe_count + report.danger_count;
 }
 
-export function readReports(): SafetyReport[] {
-  try {
-    const saved: unknown = JSON.parse(
-      localStorage.getItem(REPORTS_KEY) ?? "[]",
-    );
-    if (!Array.isArray(saved)) return [];
-    return saved
-      .filter(
-        (report): report is SafetyReport =>
-          !!report &&
-          typeof report === "object" &&
-          typeof report.id === "string" &&
-          (report.kind === "safe" || report.kind === "danger") &&
-          typeof report.text === "string" &&
-          report.text.length <= 2000 &&
-          Number.isFinite(report.lat) &&
-          Math.abs(report.lat) <= 90 &&
-          Number.isFinite(report.lon) &&
-          Math.abs(report.lon) <= 180,
-      )
-      .map((report) => ({
-        ...report,
-        createdAt:
-          typeof report.createdAt === "string" &&
-          Number.isFinite(Date.parse(report.createdAt))
-            ? report.createdAt
-            : null,
-        supportCount:
-          Number.isSafeInteger(report.supportCount) && report.supportCount >= 1
-            ? report.supportCount
-            : 1,
-        comments: Array.isArray(report.comments)
-          ? report.comments
-              .filter(
-                (comment) =>
-                  !!comment &&
-                  typeof comment === "object" &&
-                  typeof comment.id === "string" &&
-                  typeof comment.text === "string" &&
-                  comment.text.length > 0 &&
-                  comment.text.length <= 2000,
-              )
-              .map((comment) => ({
-                id: comment.id,
-                text: comment.text,
-                createdAt:
-                  typeof comment.createdAt === "string" &&
-                  Number.isFinite(Date.parse(comment.createdAt))
-                    ? comment.createdAt
-                    : null,
-              }))
-          : [],
-      }));
-  } catch {
-    return [];
-  }
+/** 読み上げ・ツールチップ用の票の内訳。 */
+export function tallyLabel(report: SafetyReport) {
+  return `安全${report.safe_count}票・危険${report.danger_count}票`;
 }
 
-export function saveReports(reports: SafetyReport[]) {
-  localStorage.setItem(REPORTS_KEY, JSON.stringify(reports));
+/** 点の集まりを `margin` 度だけ広げた範囲。 */
+export function boundsAround(
+  points: readonly (readonly number[])[],
+  margin: number,
+): SafetyBounds | null {
+  if (!points.length) return null;
+  const lons = points.map((point) => point[0]);
+  const lats = points.map((point) => point[1]);
+  return clampBounds({
+    minLon: Math.min(...lons) - margin,
+    minLat: Math.min(...lats) - margin,
+    maxLon: Math.max(...lons) + margin,
+    maxLat: Math.max(...lats) + margin,
+  });
+}
+
+export function clampBounds(bounds: SafetyBounds): SafetyBounds {
+  const lat = (value: number) => Math.max(-90, Math.min(90, value));
+  const lon = (value: number) => Math.max(-180, Math.min(180, value));
+  return {
+    minLat: lat(bounds.minLat),
+    minLon: lon(bounds.minLon),
+    maxLat: lat(bounds.maxLat),
+    maxLon: lon(bounds.maxLon),
+  };
+}
+
+/** 一覧を読める範囲の幅の上限（緯度・経度とも、十進度。サーバと同じ）。 */
+export const MAX_BOUNDS_SPAN_DEG = 1;
+
+/**
+ * サーバが受け付けない広さの範囲か。送るときの丸め（小数5桁）で上限を越えないよう、
+ * 少しだけ手前で打ち切る。
+ */
+export function isTooWide(bounds: SafetyBounds) {
+  const limit = MAX_BOUNDS_SPAN_DEG - 0.0001;
+  return (
+    bounds.maxLat - bounds.minLat > limit || bounds.maxLon - bounds.minLon > limit
+  );
+}
+
+export function containsPoint(bounds: SafetyBounds, point: LatLon) {
+  return (
+    point.lat >= bounds.minLat &&
+    point.lat <= bounds.maxLat &&
+    point.lon >= bounds.minLon &&
+    point.lon <= bounds.maxLon
+  );
 }

@@ -46,7 +46,9 @@ const DISTANCE_TOLERANCE_M: f64 = 1e-6;
 fn tolerance_for(key: &str) -> Option<f64> {
     match key {
         "coordinates" | "projection_lat_deg" => Some(COORDINATE_TOLERANCE_DEG),
-        "length_m" | "vertex_distances_m" | "start_m" | "end_m" => Some(DISTANCE_TOLERANCE_M),
+        "length_m" | "vertex_distances_m" | "start_m" | "end_m" | "at_m" => {
+            Some(DISTANCE_TOLERANCE_M)
+        }
         _ => None,
     }
 }

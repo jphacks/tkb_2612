@@ -24,8 +24,8 @@ pub use cancel::{CancelGuard, CancelToken, Interrupt};
 pub use conditions::{ConditionFilter, DayType, Mode, Period, Weather};
 pub use engine::{
     AccidentPoint, AccidentTotals, Attribution, CandidateSet, DatasetInfo, EngineError,
-    EvaluatedRoute, HighRiskSegment, NavigationData, NavigationSection, QueryError, RouteEngine,
-    RouteOutcome, RouteQuery,
+    EvaluatedRoute, GuidanceStep, HighRiskSegment, Maneuver, NavigationData, NavigationSection,
+    QueryError, RouteEngine, RouteOutcome, RouteQuery,
 };
 pub use geo::{LatLon, LonLat};
 pub use routing::{

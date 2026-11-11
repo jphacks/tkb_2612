@@ -11,14 +11,21 @@ import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { isDemo } from "../api/client";
 import { isFatalMapError } from "../map/errors";
 import type { LatLon } from "../lib/types";
-import type { SafetyReport } from "../community/reports";
+import {
+  clampBounds,
+  dominantKind,
+  tallyLabel,
+  totalVotes,
+  type SafetyBounds,
+  type SafetyReport,
+} from "../community/reports";
 import {
   mapLocation,
   mapPoint,
   type MapSize,
   type MapView,
 } from "../community/coordinates";
-import { SAFETY_COLORS, SAFETY_LABELS } from "./icons/SafetyIcon";
+import { SAFETY_COLORS } from "./icons/SafetyIcon";
 import "./map.css";
 
 type Props = {
@@ -29,6 +36,8 @@ type Props = {
   onPick: (point: LatLon) => void;
   onReport: (report: SafetyReport) => void;
   onLocate: () => void;
+  /** 表示範囲が変わるたびに呼ぶ（範囲内の口コミを読み直すため）。 */
+  onBoundsChange?: (bounds: SafetyBounds) => void;
   children?: ReactNode;
   popupWidth: number;
   popupHeight: number;
@@ -121,6 +130,29 @@ export function CommunityMap(props: Props) {
     setView((previous) => ({ ...previous, ...props.center }));
     map.current?.jumpTo({ center: [props.center.lon, props.center.lat] });
   }, [props.center]);
+
+  useEffect(() => {
+    const live = map.current?.getBounds();
+    const topLeft = mapLocation(0, 0, view, size);
+    const bottomRight = mapLocation(size.width, size.height, view, size);
+    current.current.onBoundsChange?.(
+      clampBounds(
+        live
+          ? {
+              minLat: live.getSouth(),
+              minLon: live.getWest(),
+              maxLat: live.getNorth(),
+              maxLon: live.getEast(),
+            }
+          : {
+              minLat: bottomRight.lat,
+              minLon: topLeft.lon,
+              maxLat: topLeft.lat,
+              maxLon: bottomRight.lon,
+            },
+      ),
+    );
+  }, [view, size]);
 
   useLayoutEffect(() => {
     const element = popupElement.current;
@@ -282,6 +314,7 @@ export function CommunityMap(props: Props) {
           point.y > size.height + 22
         )
           return null;
+        const votes = totalVotes(report);
         return (
           <button
             key={report.id}
@@ -290,15 +323,15 @@ export function CommunityMap(props: Props) {
             style={{
               left: point.x,
               top: point.y,
-              color: SAFETY_COLORS[report.kind],
+              color: SAFETY_COLORS[dominantKind(report)],
             }}
-            aria-label={`${SAFETY_LABELS[report.kind]}の口コミ${report.text ? `：${report.text}` : ""}`}
+            aria-label={`${tallyLabel(report)}の地点${report.comments.length ? `：${report.comments.at(-1)!.text}` : ""}`}
             onClick={() => props.onReport(report)}
           >
             <span />
-            {report.supportCount > 1 && (
+            {votes > 1 && (
               <span className="community-marker-count" aria-hidden="true">
-                {report.supportCount}
+                {votes}
               </span>
             )}
           </button>

@@ -70,7 +70,7 @@ async fn japanese_query_is_trimmed_and_not_cached() {
         assert_eq!(
             response.json(),
             json!({
-                "results": [{"lat": 35.681_236_8, "lon": 139.767_125, "label": "東京駅, 丸の内一丁目, 千代田区, 東京都, 日本"}],
+                "results": [{"lat": 35.681_236_8, "lon": 139.767_125, "label": "東京駅, 丸の内一丁目, 千代田区, 東京都, 日本", "detail": null}],
                 "attribution": [
                     {"text": "Powered by Geoapify", "url": "https://www.geoapify.com/"},
                     {"text": "© OpenStreetMap contributors", "url": "https://www.openstreetmap.org/copyright"},
@@ -88,6 +88,61 @@ async fn japanese_query_is_trimmed_and_not_cached() {
             .into_owned();
         assert_eq!(text, "東京駅");
     }
+}
+
+/// name、county、city、district を含む上流応答が label と detail に分かれて返る。
+#[tokio::test]
+async fn upstream_name_and_address_fields_are_split_into_label_and_detail() {
+    let upstream = FakeUpstream::fixed(Reply::json(&json!({"results": [
+        {
+            "lat": 35.861_3,
+            "lon": 139.970_7,
+            "formatted": "柏駅, 旭町一丁目, 柏市, 千葉県, 日本",
+            "name": "柏",
+            "other_names": {"name": "柏駅"},
+            "county": "千葉県",
+            "city": "柏市",
+            "district": "旭町一丁目"
+        }
+    ]})))
+    .await;
+    let geocoder = GeoapifyGeocoder::new(
+        upstream.base_url(),
+        "dummy-key".to_owned(),
+        UpstreamClient::new("accident-route-test/0.1").unwrap(),
+        Gate::new(
+            "geoapify",
+            GatePolicy {
+                min_interval: Duration::ZERO,
+                max_concurrent: 1,
+                queue_capacity: 16,
+                lease_ttl: Duration::from_secs(10),
+                quotas: Vec::new(),
+            },
+            Arc::new(LocalGateStore::new()),
+            ManualClock::new(common::fixed_now()),
+        ),
+        Duration::from_secs(8),
+        1_000_000,
+    );
+    let app = TestAppBuilder {
+        geocoder: Arc::new(geocoder),
+        engine: None,
+        ..Default::default()
+    }
+    .build();
+    let response = app.get("/api/geocode?q=%E6%9F%8F%E9%A7%85").await;
+    assert_eq!(response.status, StatusCode::OK);
+    common::assert_api_headers(&response);
+    assert_eq!(
+        response.json()["results"],
+        json!([{
+            "lat": 35.861_3,
+            "lon": 139.970_7,
+            "label": "柏駅",
+            "detail": "千葉県柏市旭町一丁目",
+        }])
+    );
 }
 
 #[tokio::test]
@@ -237,6 +292,7 @@ impl Geocoder for ReturnsJustBeforeDeadline {
             .map(|_| Place {
                 position: LatLon::new(35.681, 139.767),
                 label: label.clone(),
+                detail: None,
             })
             .collect();
         Box::pin(async move {

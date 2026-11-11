@@ -96,6 +96,12 @@
           "navigation": {
             "projection_lat_deg": 35.0,
             "length_m": 910.8567728809412,
+            "guidance": [
+              {
+                "maneuver": "arrive",
+                "at_m": 910.8567728809412
+              }
+            ],
             "vertex_distances_m": [
               0.0,
               910.8567728809412
@@ -187,6 +193,12 @@
           "navigation": {
             "projection_lat_deg": 35.0,
             "length_m": 910.8567728809412,
+            "guidance": [
+              {
+                "maneuver": "arrive",
+                "at_m": 910.8567728809412
+              }
+            ],
             "vertex_distances_m": [
               0.0,
               910.8567728809412
@@ -362,6 +374,12 @@
           "navigation": {
             "projection_lat_deg": 35.0,
             "length_m": 910.8567728809412,
+            "guidance": [
+              {
+                "maneuver": "arrive",
+                "at_m": 910.8567728809412
+              }
+            ],
             "vertex_distances_m": [
               0.0,
               910.8567728809412
@@ -506,6 +524,12 @@
           "navigation": {
             "projection_lat_deg": 35.00033333333334,
             "length_m": 937.6090254921936,
+            "guidance": [
+              {
+                "maneuver": "arrive",
+                "at_m": 937.6090254921936
+              }
+            ],
             "vertex_distances_m": [
               0.0,
               468.8045127460968,
@@ -801,6 +825,12 @@
           "navigation": {
             "projection_lat_deg": 35.0,
             "length_m": 910.8567728809412,
+            "guidance": [
+              {
+                "maneuver": "arrive",
+                "at_m": 910.8567728809412
+              }
+            ],
             "vertex_distances_m": [
               0.0,
               910.8567728809412
@@ -939,6 +969,12 @@
           "navigation": {
             "projection_lat_deg": 35.00033333333334,
             "length_m": 937.6090254921936,
+            "guidance": [
+              {
+                "maneuver": "arrive",
+                "at_m": 937.6090254921936
+              }
+            ],
             "vertex_distances_m": [
               0.0,
               468.8045127460968,
@@ -1234,6 +1270,12 @@
           "navigation": {
             "projection_lat_deg": 35.0,
             "length_m": 910.8567728809412,
+            "guidance": [
+              {
+                "maneuver": "arrive",
+                "at_m": 910.8567728809412
+              }
+            ],
             "vertex_distances_m": [
               0.0,
               910.8567728809412
@@ -1378,6 +1420,12 @@
           "navigation": {
             "projection_lat_deg": 35.00033333333334,
             "length_m": 937.6090254921936,
+            "guidance": [
+              {
+                "maneuver": "arrive",
+                "at_m": 937.6090254921936
+              }
+            ],
             "vertex_distances_m": [
               0.0,
               468.8045127460968,
@@ -7127,6 +7175,12 @@
           "navigation": {
             "projection_lat_deg": 35.01,
             "length_m": 910.7454438680041,
+            "guidance": [
+              {
+                "maneuver": "arrive",
+                "at_m": 910.7454438680041
+              }
+            ],
             "vertex_distances_m": [
               0.0,
               910.7454438680041

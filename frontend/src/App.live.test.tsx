@@ -114,8 +114,8 @@ const routeExample = openapi.paths["/api/route"].post.responses["200"].content[
 const c2 = JSON.parse(
   read("../../backend/tests/fixtures/api-responses.json"),
 ).responses;
-const origin = { label: "出発地点", lat: 35.01, lon: 139 };
-const dest = { label: "到着地点", lat: 35.01, lon: 139.01 };
+const origin = { label: "出発地点", detail: null, lat: 35.01, lon: 139 };
+const dest = { label: "到着地点", detail: null, lat: 35.01, lon: 139.01 };
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -165,6 +165,9 @@ beforeEach(() => {
             } satisfies GeocodeResponse);
       case "/api/route":
         return routeHandler ? routeHandler() : json(routeExample);
+      // 経路の周りの口コミ（Issue #23）。ナビの地図に重ねるだけ
+      case "/api/reports":
+        return json({ reports: [] });
       default:
         throw new Error(`想定外の通信: ${url.pathname}`);
     }
@@ -736,6 +739,7 @@ describe("live Appの地図初期化との競合", () => {
           "current-accuracy",
           "navigation-route",
           "navigation-alert",
+          "community-reports",
         ].sort(),
       );
       const selected = latest?.candidates[0];
@@ -770,6 +774,7 @@ describe("live Appの地図初期化との競合", () => {
         "current-accuracy",
         "navigation-route",
         "navigation-alert",
+        "community-reports",
       ])
         expect(map.sources.get(id)!.data).toEqual({
           type: "FeatureCollection",

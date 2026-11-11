@@ -138,6 +138,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 範囲内の安全・危険の投稿地点を取得する（Issue
+         * @description 利用者が地図上の地点に投稿した「安全」「危険」の票と口コミを、地点ごとに返す。
+         *     新しい順に最大500地点。X-Voter-Idを送ると、その投票者の票をmy_voteで返す（無い・形式違いはnull）。
+         *     地図の表示範囲ごとに呼ぶ。キャッシュしない。保存先の失敗・35秒超過は503 service_busy。
+         */
+        get: operations["listSafetyReports"];
+        put?: never;
+        /**
+         * 新しい地点に「安全」「危険」を投稿する（Issue
+         * @description 地点を作り、投稿者の1票と任意の口コミを入れる。投稿者は作った地点に投票済みになる。
+         *     本文は1〜8192バイトのJSONオブジェクトで、未知の項目は400。地点は日本国内の範囲。
+         */
+        post: operations["createSafetyReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reports/{id}/votes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 既存の地点に「安全」「危険」の1票と任意の口コミを入れる（Issue
+         * @description 1地点につき1投票者1票（X-Voter-Idで判定）。2回目は409 already_voted、票の上限（5000）は409 vote_limit。
+         *     地点が無いときは404 not_found。口コミは1地点につき新しい順に100件まで残す。
+         */
+        post: operations["voteSafetyReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/": {
         parameters: {
             query?: never;
@@ -420,11 +468,17 @@ export interface components {
             /** @description 結合した対象小線分の深刻度の和。距離減衰・天候倍率なし。通知頻度や安全度の順位に使わない。 */
             severity_weight: number;
         };
+        GuidanceStep: {
+            /** @enum {string} */
+            maneuver: "left" | "right" | "slight_left" | "slight_right" | "uturn" | "arrive";
+            /** @description 経路始点から案内地点までの距離、m。vertex_distances_mと同じ軸で、丸めない。 */
+            at_m: number;
+        };
         /**
          * @description 移行追加。選定1〜2経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。
          *     距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。
          *     110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。
-         *     選定経路分のnavigation合計は空白なしUTF-8 JSONで5000000バイト以下を検証する。
+         *     選定経路分のnavigation合計は空白なしUTF-8 JSONで6800000バイト以下を検証する。
          */
         NavigationData: {
             /** @description 元geometry全頂点の緯度の算術平均φ、度。behavior.md 6章の局所平面投影に使用。 */
@@ -439,6 +493,11 @@ export interface components {
              *     sum(end_segment_index-start_segment_index+1)=候補のhigh_risk_total。
              */
             sections: components["schemas"]["NavigationSection"][];
+            /**
+             * @description 経路始点からの案内地点をat_m昇順で返す。最後の要素だけがarriveで、そのat_mはlength_mと完全に一致する。
+             *     at_mは有限で0以上length_m以下、非減少。旧方式はarrive 1件だけを返す。
+             */
+            guidance: components["schemas"]["GuidanceStep"][];
         };
         /** @description 集合Bのうち事故の天候が指定天候と一致する事故の集計。該当なしは全項目0。 */
         WeatherMatch: {
@@ -547,8 +606,10 @@ export interface components {
         GeocodeResult: {
             lat: components["schemas"]["Latitude"];
             lon: components["schemas"]["Longitude"];
-            /** @description 提供元の表示名。HTMLとして解釈しない。 */
+            /** @description 施設名・地点名。名前が無い候補は提供元の住所全体。HTMLとして解釈しない。 */
             label: string;
+            /** @description 都道府県・市区町村・地区からなる短い所在地。無ければnull。HTMLとして解釈しない。 */
+            detail: string | null;
         };
         GeocodeResponse: {
             /** @description 提供元順の先頭5件。並べ替えない。 */
@@ -637,10 +698,61 @@ export interface components {
                  * @description HTTPとの対応はcomponents.responsesおよびbehavior.mdを参照。
                  * @enum {string}
                  */
-                code: "invalid_request" | "not_found" | "method_not_allowed" | "route_too_long" | "no_route" | "external_api_error" | "data_unavailable" | "service_busy" | "internal_error";
+                code: "invalid_request" | "not_found" | "method_not_allowed" | "route_too_long" | "no_route" | "external_api_error" | "data_unavailable" | "service_busy" | "internal_error" | "already_voted" | "vote_limit";
                 /** @description 日本語の利用者向け説明。位置・住所・秘密・スタックトレースを含めない。 */
                 message: string;
             };
+        };
+        /**
+         * @description safe=安全、danger=危険。
+         * @enum {string}
+         */
+        SafetyKind: "safe" | "danger";
+        SafetyReportId: string;
+        /** @description 口コミ。前後の空白を除いて500文字以内。空ならなし。HTMLとして解釈しない。 */
+        SafetyText: string;
+        SafetyComment: {
+            id: string;
+            kind: components["schemas"]["SafetyKind"];
+            text: string;
+            /**
+             * Format: date-time
+             * @description 書いた日時（UTC）
+             */
+            created_at: string;
+        };
+        SafetyReport: {
+            id: components["schemas"]["SafetyReportId"];
+            lat: components["schemas"]["Latitude"];
+            lon: components["schemas"]["Longitude"];
+            /**
+             * Format: date-time
+             * @description 地点を作った日時（UTC）
+             */
+            created_at: string;
+            safe_count: number;
+            danger_count: number;
+            /** @description X-Voter-Idの投票者の票。送らない・未投票はnull。 */
+            my_vote: components["schemas"]["SafetyKind"] | null;
+            /** @description 古い順。新しい100件だけを残す。 */
+            comments: components["schemas"]["SafetyComment"][];
+        };
+        SafetyReportList: {
+            /** @description 新しい順。 */
+            reports: components["schemas"]["SafetyReport"][];
+        };
+        SafetyReportResult: {
+            report: components["schemas"]["SafetyReport"];
+        };
+        SafetyVote: {
+            kind: components["schemas"]["SafetyKind"];
+            text?: components["schemas"]["SafetyText"] | null;
+        };
+        SafetyReportCreate: {
+            lat: components["schemas"]["Latitude"];
+            lon: components["schemas"]["Longitude"];
+            kind: components["schemas"]["SafetyKind"];
+            text?: components["schemas"]["SafetyText"] | null;
         };
     };
     responses: {
@@ -686,7 +798,7 @@ export interface components {
         MethodNotAllowed: {
             headers: {
                 /** @description 当該APIで定義するメソッド（GETまたはPOST）。APIの暗黙HEADは提供しない。 */
-                Allow?: "GET" | "POST";
+                Allow?: "GET" | "POST" | "GET, POST";
                 "Cache-Control": components["headers"]["NoStore"];
                 "X-Content-Type-Options": components["headers"]["NoSniff"];
                 [name: string]: unknown;
@@ -818,8 +930,35 @@ export interface components {
                 "text/plain": string;
             };
         };
+        /** @description 409 already_voted（この投票者はこの地点に投票済み）またはvote_limit（地点の票の上限）。 */
+        VoteConflict: {
+            headers: {
+                "Cache-Control": components["headers"]["NoStore"];
+                "X-Content-Type-Options": components["headers"]["NoSniff"];
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error": {
+                 *         "code": "already_voted",
+                 *         "message": "この地点には投票済みです。"
+                 *       }
+                 *     }
+                 */
+                "application/json": components["schemas"]["ErrorResponse"];
+            };
+        };
     };
-    parameters: never;
+    parameters: {
+        /**
+         * @description ブラウザーごとの匿名の投票者ID（16〜64文字の英数字・-・_）。重複投票の判定だけに使い、
+         *     サーバはハッシュだけを保存する。消せば再投票できるので本人確認ではない。無い・形式違いは400。
+         */
+        VoterId: string;
+        /** @description 送るとmy_voteにその投票者の票を返す。 */
+        VoterIdOptional: string;
+    };
     requestBodies: never;
     headers: {
         /** @description API成功・失敗とも保存禁止 */
@@ -989,6 +1128,118 @@ export interface operations {
             405: components["responses"]["MethodNotAllowed"];
             500: components["responses"]["InternalError"];
             503: components["responses"]["Unavailable"];
+        };
+    };
+    listSafetyReports: {
+        parameters: {
+            query: {
+                /**
+                 * @description 最小経度,最小緯度,最大経度,最大緯度（十進度、両端を含む）。1個のみ。
+                 *     幅は緯度・経度とも1度以内。超えたら400 invalid_request（地図を拡大して読み直す）。
+                 * @example 139.70,35.65,139.80,35.71
+                 */
+                bbox: string;
+            };
+            header?: {
+                /** @description 送るとmy_voteにその投票者の票を返す。 */
+                "X-Voter-Id"?: components["parameters"]["VoterIdOptional"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 範囲内の地点 */
+            200: {
+                headers: {
+                    "Cache-Control": components["headers"]["NoStore"];
+                    "X-Content-Type-Options": components["headers"]["NoSniff"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafetyReportList"];
+                };
+            };
+            400: components["responses"]["InvalidRequest"];
+            405: components["responses"]["MethodNotAllowed"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Busy"];
+        };
+    };
+    createSafetyReport: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description ブラウザーごとの匿名の投票者ID（16〜64文字の英数字・-・_）。重複投票の判定だけに使い、
+                 *     サーバはハッシュだけを保存する。消せば再投票できるので本人確認ではない。無い・形式違いは400。
+                 */
+                "X-Voter-Id": components["parameters"]["VoterId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SafetyReportCreate"];
+            };
+        };
+        responses: {
+            /** @description 作成した地点 */
+            201: {
+                headers: {
+                    "Cache-Control": components["headers"]["NoStore"];
+                    "X-Content-Type-Options": components["headers"]["NoSniff"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafetyReportResult"];
+                };
+            };
+            400: components["responses"]["InvalidRequest"];
+            405: components["responses"]["MethodNotAllowed"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Busy"];
+        };
+    };
+    voteSafetyReport: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description ブラウザーごとの匿名の投票者ID（16〜64文字の英数字・-・_）。重複投票の判定だけに使い、
+                 *     サーバはハッシュだけを保存する。消せば再投票できるので本人確認ではない。無い・形式違いは400。
+                 */
+                "X-Voter-Id": components["parameters"]["VoterId"];
+            };
+            path: {
+                id: components["schemas"]["SafetyReportId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SafetyVote"];
+            };
+        };
+        responses: {
+            /** @description 投票後の地点 */
+            200: {
+                headers: {
+                    "Cache-Control": components["headers"]["NoStore"];
+                    "X-Content-Type-Options": components["headers"]["NoSniff"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SafetyReportResult"];
+                };
+            };
+            400: components["responses"]["InvalidRequest"];
+            404: components["responses"]["NotFound"];
+            405: components["responses"]["MethodNotAllowed"];
+            409: components["responses"]["VoteConflict"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["Busy"];
         };
     };
     getAppShell: {
