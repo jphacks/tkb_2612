@@ -31,6 +31,7 @@ tags:
   - name: 住所
   - name: 条件
   - name: 稼働情報
+  - name: 安全情報
   - name: 静的配信
 paths:
   /api/route:
@@ -179,6 +180,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.0
                         length_m: 910.8567728809412
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 910.8567728809412
                         vertex_distances_m:
                         - 0.0
                         - 910.8567728809412
@@ -254,6 +258,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.0
                         length_m: 910.8567728809412
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 910.8567728809412
                         vertex_distances_m:
                         - 0.0
                         - 910.8567728809412
@@ -386,6 +393,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.0
                         length_m: 910.8567728809412
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 910.8567728809412
                         vertex_distances_m:
                         - 0.0
                         - 910.8567728809412
@@ -490,6 +500,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.00033333333334
                         length_m: 937.6090254921936
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 937.6090254921936
                         vertex_distances_m:
                         - 0.0
                         - 468.8045127460968
@@ -708,6 +721,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.0
                         length_m: 910.8567728809412
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 910.8567728809412
                         vertex_distances_m:
                         - 0.0
                         - 910.8567728809412
@@ -807,6 +823,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.00033333333334
                         length_m: 937.6090254921936
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 937.6090254921936
                         vertex_distances_m:
                         - 0.0
                         - 468.8045127460968
@@ -1025,6 +1044,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.0
                         length_m: 910.8567728809412
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 910.8567728809412
                         vertex_distances_m:
                         - 0.0
                         - 910.8567728809412
@@ -1129,6 +1151,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.00033333333334
                         length_m: 937.6090254921936
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 937.6090254921936
                         vertex_distances_m:
                         - 0.0
                         - 468.8045127460968
@@ -1720,6 +1745,9 @@ paths:
                       navigation:
                         projection_lat_deg: 35.01
                         length_m: 910.7454438680041
+                        guidance:
+                        - maneuver: arrive
+                          at_m: 910.7454438680041
                         vertex_distances_m:
                         - 0.0
                         - 910.7454438680041
@@ -1912,6 +1940,99 @@ paths:
         '405': {$ref: '#/components/responses/MethodNotAllowed'}
         '500': {$ref: '#/components/responses/InternalError'}
         '503': {$ref: '#/components/responses/Unavailable'}
+  /api/reports:
+    get:
+      operationId: listSafetyReports
+      tags: [安全情報]
+      summary: 範囲内の安全・危険の投稿地点を取得する（Issue #23）
+      description: |
+        利用者が地図上の地点に投稿した「安全」「危険」の票と口コミを、地点ごとに返す。
+        新しい順に最大500地点。X-Voter-Idを送ると、その投票者の票をmy_voteで返す（無い・形式違いはnull）。
+        地図の表示範囲ごとに呼ぶ。キャッシュしない。保存先の失敗・35秒超過は503 service_busy。
+      parameters:
+        - name: bbox
+          in: query
+          required: true
+          description: |
+            最小経度,最小緯度,最大経度,最大緯度（十進度、両端を含む）。1個のみ。
+            幅は緯度・経度とも1度以内。超えたら400 invalid_request（地図を拡大して読み直す）。
+          schema: {type: string}
+          example: '139.70,35.65,139.80,35.71'
+        - $ref: '#/components/parameters/VoterIdOptional'
+      responses:
+        '200':
+          description: 範囲内の地点
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SafetyReportList'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/Busy'}
+    post:
+      operationId: createSafetyReport
+      tags: [安全情報]
+      summary: 新しい地点に「安全」「危険」を投稿する（Issue #23）
+      description: |
+        地点を作り、投稿者の1票と任意の口コミを入れる。投稿者は作った地点に投票済みになる。
+        本文は1〜8192バイトのJSONオブジェクトで、未知の項目は400。地点は日本国内の範囲。
+      parameters:
+        - $ref: '#/components/parameters/VoterId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SafetyReportCreate'}
+      responses:
+        '201':
+          description: 作成した地点
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SafetyReportResult'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/Busy'}
+  /api/reports/{id}/votes:
+    post:
+      operationId: voteSafetyReport
+      tags: [安全情報]
+      summary: 既存の地点に「安全」「危険」の1票と任意の口コミを入れる（Issue #23）
+      description: |
+        1地点につき1投票者1票（X-Voter-Idで判定）。2回目は409 already_voted、票の上限（5000）は409 vote_limit。
+        地点が無いときは404 not_found。口コミは1地点につき新しい順に100件まで残す。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {$ref: '#/components/schemas/SafetyReportId'}
+        - $ref: '#/components/parameters/VoterId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SafetyVote'}
+      responses:
+        '200':
+          description: 投票後の地点
+          headers:
+            Cache-Control: {$ref: '#/components/headers/NoStore'}
+            X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SafetyReportResult'}
+        '400': {$ref: '#/components/responses/InvalidRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '405': {$ref: '#/components/responses/MethodNotAllowed'}
+        '409': {$ref: '#/components/responses/VoteConflict'}
+        '500': {$ref: '#/components/responses/InternalError'}
+        '503': {$ref: '#/components/responses/Busy'}
   /:
     get:
       operationId: getAppShell
@@ -2034,7 +2155,7 @@ components:
       headers:
         Allow:
           description: 当該APIで定義するメソッド（GETまたはPOST）。APIの暗黙HEADは提供しない。
-          schema: {type: string, enum: [GET, POST]}
+          schema: {type: string, enum: [GET, POST, 'GET, POST']}
         Cache-Control: {$ref: '#/components/headers/NoStore'}
         X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
       content:
@@ -2099,6 +2220,30 @@ components:
         text/plain:
           schema: {type: string}
           example: Not Found
+    VoteConflict:
+      description: 409 already_voted（この投票者はこの地点に投票済み）またはvote_limit（地点の票の上限）。
+      headers:
+        Cache-Control: {$ref: '#/components/headers/NoStore'}
+        X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+          example: {error: {code: already_voted, message: この地点には投票済みです。}}
+  parameters:
+    VoterId:
+      name: X-Voter-Id
+      in: header
+      required: true
+      description: |
+        ブラウザーごとの匿名の投票者ID（16〜64文字の英数字・-・_）。重複投票の判定だけに使い、
+        サーバはハッシュだけを保存する。消せば再投票できるので本人確認ではない。無い・形式違いは400。
+      schema: {type: string, pattern: '^[A-Za-z0-9_-]{16,64}$'}
+    VoterIdOptional:
+      name: X-Voter-Id
+      in: header
+      required: false
+      description: 送るとmy_voteにその投票者の票を返す。
+      schema: {type: string}
   schemas:
     Mode:
       type: string
@@ -2375,9 +2520,22 @@ components:
       description: |
         高リスクの小線分（high_risk_totalで数えるもの）でsidが連続する最大列を結合した区間。元geometryは重複送信しない。
         元geometryとnavigation.vertex_distances_mから表示位置を補間する。区間の計算・順序はbackendだけで決める。
+    GuidanceStep:
+      type: object
+      required: [maneuver, at_m]
+      additionalProperties: false
+      properties:
+        maneuver:
+          type: string
+          enum: [left, right, slight_left, slight_right, uturn, arrive]
+        at_m:
+          type: number
+          minimum: 0
+          maximum: 110000
+          description: 経路始点から案内地点までの距離、m。vertex_distances_mと同じ軸で、丸めない。
     NavigationData:
       type: object
-      required: [projection_lat_deg, length_m, vertex_distances_m, sections]
+      required: [projection_lat_deg, length_m, vertex_distances_m, sections, guidance]
       additionalProperties: false
       properties:
         projection_lat_deg:
@@ -2404,11 +2562,19 @@ components:
             全対象区間をstart_segment_index昇順で返し、切り捨てない。対象なしは[]。
             区間のsid範囲は重複せず、隣接区間の間には対象外sidが1本以上ある。
             sum(end_segment_index-start_segment_index+1)=候補のhigh_risk_total。
+        guidance:
+          type: array
+          minItems: 1
+          maxItems: 14999
+          items: {$ref: '#/components/schemas/GuidanceStep'}
+          description: |
+            経路始点からの案内地点をat_m昇順で返す。最後の要素だけがarriveで、そのat_mはlength_mと完全に一致する。
+            at_mは有限で0以上length_m以下、非減少。旧方式はarrive 1件だけを返す。
       description: |
         移行追加。選定1〜3経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。
         距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。
         110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。
-        選定経路分のnavigation合計は空白なしUTF-8 JSONで7500000バイト以下を検証する。
+        選定経路分のnavigation合計は空白なしUTF-8 JSONで10200000バイト以下を検証する。
     WeatherMatch:
       type: object
       required: [accident_count, fatal_accidents, injury_accidents, deaths, injuries]
@@ -2553,12 +2719,13 @@ components:
         risk_note: {type: string, minLength: 1, description: 推定指標の説明と、曝露補正した事故確率ではない旨。文面はbehavior.md 8章}
     GeocodeResult:
       type: object
-      required: [lat, lon, label]
+      required: [lat, lon, label, detail]
       additionalProperties: false
       properties:
         lat: {$ref: '#/components/schemas/Latitude'}
         lon: {$ref: '#/components/schemas/Longitude'}
-        label: {type: string, description: 提供元の表示名。HTMLとして解釈しない。}
+        label: {type: string, description: '施設名・地点名。名前が無い候補は提供元の住所全体。HTMLとして解釈しない。'}
+        detail: {type: [string, 'null'], description: '都道府県・市区町村・地区からなる短い所在地。無ければnull。HTMLとして解釈しない。'}
     GeocodeResponse:
       type: object
       required: [results, attribution]
@@ -2662,9 +2829,88 @@ components:
           properties:
             code:
               type: string
-              enum: [invalid_request, not_found, method_not_allowed, route_too_long, no_route, external_api_error, data_unavailable, service_busy, internal_error]
+              enum: [invalid_request, not_found, method_not_allowed, route_too_long, no_route, external_api_error, data_unavailable, service_busy, internal_error, already_voted, vote_limit]
               description: HTTPとの対応はcomponents.responsesおよびbehavior.mdを参照。
             message:
               type: string
               minLength: 1
               description: 日本語の利用者向け説明。位置・住所・秘密・スタックトレースを含めない。
+    SafetyKind:
+      type: string
+      enum: [safe, danger]
+      description: safe=安全、danger=危険。
+    SafetyReportId:
+      type: string
+      pattern: '^[0-9a-f]{32}$'
+    SafetyText:
+      type: string
+      maxLength: 500
+      description: 口コミ。前後の空白を除いて500文字以内。空ならなし。HTMLとして解釈しない。
+    SafetyComment:
+      type: object
+      required: [id, kind, text, created_at]
+      additionalProperties: false
+      properties:
+        id: {type: string, minLength: 1}
+        kind: {$ref: '#/components/schemas/SafetyKind'}
+        text: {type: string, minLength: 1, maxLength: 500}
+        created_at: {type: string, format: date-time, description: 書いた日時（UTC）}
+    SafetyReport:
+      type: object
+      required: [id, lat, lon, created_at, safe_count, danger_count, my_vote, comments]
+      additionalProperties: false
+      properties:
+        id: {$ref: '#/components/schemas/SafetyReportId'}
+        lat: {$ref: '#/components/schemas/Latitude'}
+        lon: {$ref: '#/components/schemas/Longitude'}
+        created_at: {type: string, format: date-time, description: 地点を作った日時（UTC）}
+        safe_count: {type: integer, minimum: 0, maximum: 5000}
+        danger_count: {type: integer, minimum: 0, maximum: 5000}
+        my_vote:
+          description: X-Voter-Idの投票者の票。送らない・未投票はnull。
+          oneOf:
+            - {$ref: '#/components/schemas/SafetyKind'}
+            - {type: 'null'}
+        comments:
+          type: array
+          maxItems: 100
+          items: {$ref: '#/components/schemas/SafetyComment'}
+          description: 古い順。新しい100件だけを残す。
+    SafetyReportList:
+      type: object
+      required: [reports]
+      additionalProperties: false
+      properties:
+        reports:
+          type: array
+          maxItems: 500
+          items: {$ref: '#/components/schemas/SafetyReport'}
+          description: 新しい順。
+    SafetyReportResult:
+      type: object
+      required: [report]
+      additionalProperties: false
+      properties:
+        report: {$ref: '#/components/schemas/SafetyReport'}
+    SafetyVote:
+      type: object
+      required: [kind]
+      additionalProperties: false
+      properties:
+        kind: {$ref: '#/components/schemas/SafetyKind'}
+        text:
+          oneOf:
+            - {$ref: '#/components/schemas/SafetyText'}
+            - {type: 'null'}
+    SafetyReportCreate:
+      type: object
+      required: [lat, lon, kind]
+      additionalProperties: false
+      properties:
+        lat: {$ref: '#/components/schemas/Latitude'}
+        lon: {$ref: '#/components/schemas/Longitude'}
+        kind: {$ref: '#/components/schemas/SafetyKind'}
+        text:
+          oneOf:
+            - {$ref: '#/components/schemas/SafetyText'}
+            - {type: 'null'}

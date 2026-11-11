@@ -9,6 +9,7 @@
 //! 解決し、未定義の `/api/*` には404のJSONを返す。
 
 pub mod access_log;
+pub mod community;
 pub mod compress;
 pub mod conditions;
 pub mod error;
@@ -38,6 +39,7 @@ use crate::api::weather_cache::WeatherCache;
 use crate::config::Attribution;
 use crate::contract::{Calendar, RouteEngine};
 use crate::providers::clock::Clock;
+use crate::providers::community::CommunityStore;
 use crate::providers::geoapify::Geocoder;
 use crate::providers::open_meteo::WeatherProvider;
 
@@ -96,6 +98,8 @@ pub struct Services {
     pub clock: Arc<dyn Clock>,
     /// 気象キャッシュのTTL。
     pub weather_cache_ttl: Duration,
+    /// 安全危険情報（口コミ・投票）の保存先。
+    pub community: Arc<dyn CommunityStore>,
 }
 
 /// ハンドラの共有状態。複製は同じ状態を共有する。
@@ -112,6 +116,7 @@ struct StateInner {
     geocoder: Arc<dyn Geocoder>,
     weather: WeatherCache,
     clock: Arc<dyn Clock>,
+    community: Arc<dyn CommunityStore>,
     route_admission: Arc<Semaphore>,
     cpu: Arc<Semaphore>,
 }
@@ -135,6 +140,7 @@ impl AppState {
                 geocoder: services.geocoder,
                 weather,
                 clock: services.clock,
+                community: services.community,
             }),
         }
     }
@@ -176,6 +182,10 @@ impl AppState {
         &self.inner.clock
     }
 
+    pub fn community(&self) -> &Arc<dyn CommunityStore> {
+        &self.inner.community
+    }
+
     pub(crate) fn route_admission(&self) -> &Arc<Semaphore> {
         &self.inner.route_admission
     }
@@ -196,6 +206,11 @@ async fn get_not_allowed() -> Response {
 
 async fn post_not_allowed() -> Response {
     ApiError::MethodNotAllowed("POST").into_response()
+}
+
+/// /api/reports（GETとPOST）への他のメソッド。
+async fn reports_not_allowed() -> Response {
+    ApiError::MethodNotAllowed("GET, POST").into_response()
 }
 
 async fn api_not_found() -> Response {
@@ -220,6 +235,17 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/conditions", api_get(get(conditions::handle)))
         .route("/api/health", api_get(get(health::handle)))
         .route("/api/status", api_get(get(health::handle)))
+        .route(
+            "/api/reports",
+            get(community::list)
+                .post(community::create)
+                .head(reports_not_allowed)
+                .fallback(reports_not_allowed),
+        )
+        .route(
+            "/api/reports/{id}/votes",
+            post(community::vote).fallback(post_not_allowed),
+        )
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
         .route("/api/{*rest}", any(api_not_found))

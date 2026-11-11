@@ -319,6 +319,16 @@ svg {
 .suggestions li span {
   overflow-wrap: anywhere;
 }
+.suggestion-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.suggestion-detail {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
 .suggestions li svg {
   color: var(--muted);
 }

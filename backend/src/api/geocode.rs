@@ -31,6 +31,7 @@ struct ResultDto<'a> {
     lat: f64,
     lon: f64,
     label: &'a str,
+    detail: Option<&'a str>,
 }
 
 #[derive(Serialize)]
@@ -87,6 +88,7 @@ fn serialize(places: &[Place], attribution: &[Attribution]) -> serde_json::Resul
                 lat: p.position.lat,
                 lon: p.position.lon,
                 label: &p.label,
+                detail: p.detail.as_deref(),
             })
             .collect(),
         attribution: attribution

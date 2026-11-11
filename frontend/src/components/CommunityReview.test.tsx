@@ -1,17 +1,30 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SafetyReport } from "../community/reports";
 import { CommunityReview } from "./CommunityReview";
 
 const report: SafetyReport = {
-  id: "tooltip",
-  kind: "danger",
+  id: "0123456789abcdef0123456789abcdef",
   lat: 35.6812,
   lon: 139.7671,
-  text: "夜は見通しが悪くて危険",
-  createdAt: null,
-  supportCount: 1,
-  comments: [],
+  created_at: "2026-11-04T09:15:00.000Z",
+  safe_count: 1,
+  danger_count: 2,
+  my_vote: "danger",
+  comments: [
+    {
+      id: "c1",
+      kind: "danger",
+      text: "夜は見通しが悪くて危険",
+      created_at: "2026-11-04T09:15:00.000Z",
+    },
+    {
+      id: "c2",
+      kind: "safe",
+      text: "昼は人通りが多い",
+      created_at: "2026-11-05T03:00:00.000Z",
+    },
+  ],
 };
 const rect = (bottom: number, height: number): DOMRect => ({
   x: 0,
@@ -53,14 +66,13 @@ describe("community warning placement", () => {
         <div className="route-map-shell">
           <CommunityReview
             report={report}
-            supported
-            onSupport={vi.fn()}
+            onVote={vi.fn()}
             onClose={vi.fn()}
             error=""
           />
         </div>,
       );
-      fireEvent.focus(screen.getByRole("button", { name: "投票" }));
+      fireEvent.focus(screen.getByRole("button", { name: "安全に投票" }));
       const tooltip = screen.getByRole("tooltip");
       expect(tooltip).toHaveAttribute("data-placement", expected);
       expect(
@@ -85,14 +97,13 @@ describe("community warning placement", () => {
       <div className="route-map-shell">
         <CommunityReview
           report={report}
-          supported
-          onSupport={vi.fn()}
+          onVote={vi.fn()}
           onClose={vi.fn()}
           error=""
         />
       </div>,
     );
-    fireEvent.focus(screen.getByRole("button", { name: "投票" }));
+    fireEvent.focus(screen.getByRole("button", { name: "安全に投票" }));
     expect(screen.getByRole("tooltip")).toHaveAttribute(
       "data-placement",
       "bottom",
@@ -108,6 +119,48 @@ describe("community warning placement", () => {
     expect(screen.getByRole("tooltip")).toHaveAttribute(
       "data-placement",
       "bottom",
+    );
+  });
+});
+
+describe("community review", () => {
+  it("shows the safe and danger tallies and each comment's kind", () => {
+    render(<CommunityReview report={report} onVote={vi.fn()} onClose={vi.fn()} error="" />);
+    const region = screen.getByRole("region", { name: "口コミ" });
+    expect(within(region).getByLabelText("安全1票・危険2票")).toHaveTextContent(
+      "安全1票危険2票",
+    );
+    const items = within(region).getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("危険");
+    expect(items[0]).toHaveTextContent("夜は見通しが悪くて危険");
+    expect(items[1]).toHaveTextContent("安全");
+    expect(items[1]).toHaveTextContent("昼は人通りが多い");
+  });
+
+  it("offers a safe or danger vote until this browser has voted", () => {
+    const onVote = vi.fn();
+    const { rerender } = render(
+      <CommunityReview
+        report={{ ...report, my_vote: null }}
+        onVote={onVote}
+        onClose={vi.fn()}
+        error=""
+      />,
+    );
+    const group = screen.getByRole("group", { name: "この地点に投票" });
+    fireEvent.click(within(group).getByRole("button", { name: "危険に投票" }));
+    expect(onVote).toHaveBeenCalledWith("danger");
+    rerender(<CommunityReview report={report} onVote={onVote} onClose={vi.fn()} error="" />);
+    for (const button of within(group).getAllByRole("button"))
+      expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(within(group).getByRole("button", { name: "危険に投票" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(within(group).getByRole("button", { name: "安全に投票" }));
+    expect(onVote).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "同一地点には一度しか入力できません",
     );
   });
 });

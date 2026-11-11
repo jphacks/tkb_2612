@@ -1,5 +1,8 @@
-/** フロントの案内表示モデル。将来のAPIの案内地点も、この距離軸で受け取る。 */
-export type Maneuver = "left" | "right" | "straight" | "arrive";
+import type { components } from "../api/generated/schema";
+import type { RouteCandidate } from "../lib/types";
+
+/** フロントの案内表示モデル。APIの案内地点をこの距離軸で受け取る。 */
+export type Maneuver = components["schemas"]["GuidanceStep"]["maneuver"];
 
 export interface GuidanceStep {
   id: string;
@@ -18,6 +21,16 @@ export interface NavigationGuidance {
 export type GuidanceHistory = ReadonlySet<string>;
 
 export const createGuidanceHistory = (): GuidanceHistory => new Set();
+
+/** 経路応答の案内地点を、通過履歴で使うID付きの表示モデルへ変換する。 */
+export function guidanceStepsFromRoute(route: RouteCandidate): GuidanceStep[] {
+  if (!route.navigation) return [];
+  return route.navigation.guidance.map((step, index) => ({
+    id: `${route.id}:guide-${index}`,
+    maneuver: step.maneuver,
+    atM: step.at_m,
+  }));
+}
 
 const EMPTY_GUIDANCE_HISTORY = createGuidanceHistory();
 

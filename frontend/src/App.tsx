@@ -44,9 +44,9 @@ import { setUpdateBlocked } from "./pwa/register";
 import { useRouteSearch } from "./state/useRouteSearch";
 import type { RouteResponse } from "./lib/types";
 import { NavigationGuidanceBar } from "./components/NavigationGuidanceBar";
-import { createDemoGuidance } from "./navigation/demoGuidance";
 import {
   createGuidanceHistory,
+  guidanceStepsFromRoute,
   nextGuidance,
   updateGuidanceHistory,
   type GuidanceHistory,
@@ -157,11 +157,10 @@ function NavigationApp({
   const navigation = useNavigation({ result, mapAvailable: !mapUnavailable });
   const navigating = navigation.snapshot !== null;
   const guidanceSteps = useMemo(
-    () => isDemo && navigation.route && navigation.snapshot?.kind === "simulation"
-      ? createDemoGuidance(navigation.route) : [],
-    [navigation.route, navigation.snapshot?.kind],
+    () => navigation.route ? guidanceStepsFromRoute(navigation.route) : [],
+    [navigation.route],
   );
-  // 現APIには右左折の案内地点がない。デモの模擬走行だけにサンプルを渡し、実APIでは推測しない。
+  // 曲がり角はAPIのnavigation.guidanceだけを使い、経路形状から推測しない。
   const guidanceProgress = navigation.snapshot?.phase === "tracking" && !navigation.snapshot.remainingStale
     ? navigation.snapshot.match.p : null;
   // 通過状態はセッションごとに保持する。終了するとrouteがnullになるので、開始し直したら持ち越さない。
@@ -169,7 +168,8 @@ function NavigationApp({
   useEffect(() => {
     setGuidanceHistory(createGuidanceHistory());
   }, [navigation.route?.id]);
-  const navigationGuidance = guidanceProgress === null
+  const hasTurnGuidance = guidanceSteps.some((step) => step.maneuver !== "arrive");
+  const navigationGuidance = guidanceProgress === null || !hasTurnGuidance
     ? null : nextGuidance(guidanceSteps, guidanceProgress, guidanceHistory);
   useEffect(() => {
     if (guidanceProgress === null) return;

@@ -16,7 +16,7 @@
 | API | 契約 |
 |---|---|
 | POST `/api/route` | 条件を検証し、別検証で確定する経路処理へ渡す。候補geometry、集計値、比較対象ID、追加時間、説明、warningsと、選定候補だけのnavigationを返す。 |
-| GET `/api/geocode?q=...` | 明示操作による住所/地点検索。trim後Unicode2〜200文字、qは1個。提供元順で最大5件の`{lat,lon,label}`と、`{text,url}`の配列のattributionを返す。0件は200/空配列。 |
+| GET `/api/geocode?q=...` | 明示操作による住所/地点検索。trim後Unicode2〜200文字、qは1個。提供元順で最大5件の`{lat,lon,label,detail}`と、`{text,url}`の配列のattributionを返す。0件は200/空配列。 |
 | GET `/api/conditions` | 出発日時と任意の地域座標から時間帯・曜日区分・天候候補を返す。事故データを参照せず、気象失敗でも時間帯・曜日区分を200で返す。 |
 | GET `/api/health` | ロード済みデータの準備状態、`api_version / release_id / dataset_id / accidents / data_years / load_seconds`を返す。grid_cellsはグリッド索引を採用した場合だけ追加し、このフィールドから索引方式を強制しない。上流へ疎通しない。`/api/status`は同じ応答の非推奨エイリアス。 |
 
@@ -51,9 +51,9 @@ GeoJSONはWGS84の`[lon,lat]`、入力/住所候補は名前付きlat/lon。緯�
 
 `NavigationData` はprojection_lat_deg・length_m・vertex_distances_m・sections。behavior 6章の局所平面で累積距離を作り、深刻度3以上の全sidを経路順に並べ、連続sidの最大列だけ結合する。距離減衰・天候倍率を加えない。数値・結合・順序はbackend一か所に置き、表示用high_risk_sectionsの上位100件・非結合・high_risk_totalは維持する。正確な計算と相関制約は [api/behavior.md](api/behavior.md) 7章、判断理由は [navigation-delegated-decisions.md](navigation-delegated-decisions.md) に従う。
 
-80km/15,000頂点から保守的に局所全長110,000m、小線分16,466本、結合後8,233区間/経路。3経路のnavigationは7,500,000バイト以下を検証し、全route応答の小計は13,331,016バイト、メタデータ込み概ね13〜14MBのケースでサイズ・RAM・gzip圧縮を含む全体35秒期限を測る。圧縮率は保証せず、送信形式は区間オブジェクトを維持する。1Mbps・RTT 300msでgzip/identityとも本文全受信・展開・解析/検査まで180秒以内を受け入れとする（behavior 7章）。navigation構築もaggregation_msへ含む。区間を切り捨てた部分成功にはしない。
+80km/15,000頂点から保守的に局所全長110,000m、小線分16,466本、結合後8,233区間/経路。3経路のnavigationは10,200,000バイト以下を検証し、全route応答の小計は16,030,836バイト、メタデータ込み概ね16MBのケースでサイズ・RAM・gzip圧縮を含む全体35秒期限を測る。圧縮率は保証せず、送信形式は区間オブジェクトを維持する。1Mbps・RTT 300msでgzip/identityとも本文全受信・展開・解析/検査まで180秒以内を受け入れとする（behavior 7章）。navigation構築もaggregation_msへ含む。区間を切り捨てた部分成功にはしない。
 
-ナビ生成・開始・進行でOSRM呼出しを増やさない。公共OSRM全利用者合計1req/秒・ROUTING_MIN_INTERVAL_MS=1050・1検索最大3呼出し・steps=falseを維持する。現在地を使う再検索は明示ボタンによる通常route検索であり、既存ゲート・上限・503を適用する。ナビの位置はブラウザ内だけで処理し、再検索と既存conditions規則以外では送信しない。実機/模擬とも同じ無保存・ログ除外を適用する。ブラウザ内の照合はfrontend-spec 7.3と [navigation-matching-cases.md](navigation-matching-cases.md) の条件・テストで規定し、方式は実装時に選び記録する。サーバの累積距離・区間生成手順はこの照合方式の選定とは別に維持する。
+ナビ生成・開始・進行でOSRM呼出しを増やさない。公共OSRM全利用者合計1req/秒・ROUTING_MIN_INTERVAL_MS=1050・1検索最大3呼出し・steps=falseを維持する。進行方向の案内（`navigation.guidance`）は新方式のグラフから作り（behavior 7章）、OSRMには問い合わせない。旧方式は `arrive` 1件だけを返す。現在地を使う再検索は明示ボタンによる通常route検索であり、既存ゲート・上限・503を適用する。ナビの位置はブラウザ内だけで処理し、再検索と既存conditions規則以外では送信しない。実機/模擬とも同じ無保存・ログ除外を適用する。ブラウザ内の照合はfrontend-spec 7.3と [navigation-matching-cases.md](navigation-matching-cases.md) の条件・テストで規定し、方式は実装時に選び記録する。サーバの累積距離・区間生成手順はこの照合方式の選定とは別に維持する。
 
 ## 4. 時間帯・曜日・気象【PR #1合意と委任判断】
 
@@ -79,7 +79,7 @@ WMO変換はPR #1の対応表を自動初期値用の近似として採用する
 
 ## 6. 外部提供元・通信制御【委任判断】
 
-**住所検索はGeoapify Forward Geocodingを採用する。** 明示検索をサーバから`https://api.geoapify.com/v1/geocode/search`へ送り、`text=q / lang=ja / filter=countrycode:jp / limit=5 / format=json`を指定する。apiKeyはサーバのsecretに置き、外部JSONのlat/lon/formattedを既存のlat/lon/labelへ変換する。Geoapify/OpenStreetMapの帰属とリンクを返し、画面で表示できるようにする。[住所API](https://apidocs.geoapify.com/docs/geocoding/forward-geocoding/)
+**住所検索はGeoapify Forward Geocodingを採用する。** 明示検索をサーバから`https://api.geoapify.com/v1/geocode/search`へ送り、`text=q / lang=ja / filter=countrycode:jp / limit=5 / format=json`を指定する。apiKeyはサーバのsecretに置き、外部JSONからlat/lon/label/detailへの変換は[behavior.md](api/behavior.md) 10章の規則に従う。Geoapify/OpenStreetMapの帰属とリンクを返し、画面で表示できるようにする。[住所API](https://apidocs.geoapify.com/docs/geocoding/forward-geocoding/)
 
 初期はGeoapify Freeの枠内での限定利用を設計上の前提にする。公式枠は3,000 credits/日・最大5要求/秒で、単純な住所検索は通常1 credit/要求。アプリの初期制御は1.05秒以上の間隔・1同時通信・2,000要求/日とし、同じアカウントの他利用も含めて配備前に残枠を確認する。上限は自動停止や無料の保証ではなく、規約上超過料金等があり得るため、実使用量を確認し、有料プランへ自動変更しない。[料金](https://www.geoapify.com/pricing/)、[利用条件](https://www.geoapify.com/terms-and-conditions/)
 

@@ -49,7 +49,7 @@ providers ──> contract
 |---|---|---|
 | route入力 | — | JSON・Content-Type・型・列挙・互換入力（整数コード、null、`時間帯`、`hour`）の解釈。`RouteQuery::new` で座標・直線距離・許容時間を検証する（`validate_endpoints` を先に呼ぶと、behavior.md 4章の検証順を守れる） |
 | 経路取得 | 追加候補の要否、左右の経由点、呼出し順（初回→左→右）、値と頂点数の検証、80km判定、重複排除、並べ替え、警告 | URLの組立て、識別UA、上流ゲート、8秒の通信期限、サイズ上限、JSON構造の解釈、提供元のエラーの変換。先頭6本までを提供元の順で1本ずつ解釈して返す |
-| 計算 | 事故集計、選定、ナビ区間、説明文、計算中の中断 | `spawn_blocking` での実行、CPU同時数の上限、navigationのサイズ（7,500,000バイト）とJSONの安全整数範囲の検査 |
+| 計算 | 事故集計、選定、ナビ区間、説明文、計算中の中断 | `spawn_blocking` での実行、CPU同時数の上限、navigationのサイズ（10,200,000バイト）とJSONの安全整数範囲の検査 |
 | conditions | `Calendar` の実装（祝日表の読込、判定） | datetimeの検証とAsia/Tokyoへの換算、`TokyoMinute` の作成、天候の取得 |
 | health | `DatasetInfo` の提供 | 応答の組立て、未ready時の503 |
 
@@ -159,8 +159,8 @@ Issue #9 の実装です。設定は環境変数（architecture.md 6章）だけ
 | `src/main.rs`、`src/startup.rs` | 設定の検査→ログ→releaseの解決（`ACCIDENT_DATA_DIR` を1回だけ `canonicalize`）→祝日表→待受け→事故データの読込（readyまで `/api/health`・`/api/route` は503、`/api/conditions` は使える）。読込の失敗・panicで待受けをやめて非0で終了する。SIGTERM/Ctrl-Cで受付をやめ、処理中の接続を最大10秒待つ |
 | `src/config.rs` | 6章の変数の既定値と検査。誤りは変数名だけを出し、値・秘密・URLを出さない。`BACKEND_BIND` が無く `PORT` があれば `0.0.0.0:$PORT` |
 | `src/logging.rs` | ルートのテンプレート・status・処理時間・匿名のエラーコードだけを出す。依存ライブラリのログは出さない |
-| `src/api/` | `/api/route`・`/api/geocode`・`/api/conditions`・`/api/health`・`/api/status` と静的配信、エラー変換、gzip、転送期限、気象キャッシュ |
-| `src/providers/` | OSRM・Geoapify・Open-Meteoのアダプタ、上流HTTPクライアント（プロキシ・リダイレクトなし、期限とサイズ上限）、上流ゲート（`local`・`firestore`） |
+| `src/api/` | `/api/route`・`/api/geocode`・`/api/conditions`・`/api/health`・`/api/status`・`/api/reports`（安全危険情報の共有、Issue #23） と静的配信、エラー変換、gzip、転送期限、気象キャッシュ |
+| `src/providers/` | OSRM・Geoapify・Open-Meteoのアダプタ、上流HTTPクライアント（プロキシ・リダイレクトなし、期限とサイズ上限）、上流ゲート（`local`・`firestore`）、口コミの保存（`COMMUNITY_STORE`：`local`・`firestore`。未設定は `UPSTREAM_GATE` と同じ） |
 | `examples/dev_stack.rs` | C4用の偽上流（下記）。本番の処理から使わない |
 
 ### テスト

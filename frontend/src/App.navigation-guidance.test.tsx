@@ -4,8 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FASTEST_LABEL, SAFE_LABEL } from "./components/RouteCallouts";
 import type { RouteCandidate } from "./lib/types";
 import type { GuidanceStep } from "./navigation/guidance";
-import { resetApi } from "./test/apiMock";
-import { advance, beginNavigation, installGeolocation, openNavigationSidebar, openResults, startGroup } from "./test/navigationApp";
+import { api, resetApi } from "./test/apiMock";
+import { advance, beginNavigation, installGeolocation, lastRoute, openNavigationSidebar, openResults, positionAt, startGroup } from "./test/navigationApp";
 
 const harness = vi.hoisted(() => ({
   /** 指定すると、デモの案内地点をこの関数の結果へ置き換える。 */
@@ -19,11 +19,11 @@ vi.mock("./components/LogoIntro", () => ({
     <button onClick={onComplete}>動画をスキップして開始</button>
   ),
 }));
-vi.mock("./navigation/demoGuidance", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./navigation/demoGuidance")>();
+vi.mock("./navigation/guidance", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./navigation/guidance")>();
   return {
     ...actual,
-    createDemoGuidance: (route: RouteCandidate) => harness.guidance?.(route) ?? actual.createDemoGuidance(route),
+    guidanceStepsFromRoute: (route: RouteCandidate) => harness.guidance?.(route) ?? actual.guidanceStepsFromRoute(route),
   };
 });
 vi.mock("./components/RouteMap", async (importOriginal) => {
@@ -123,6 +123,80 @@ describe("上部バーの案内と通過状態", () => {
     beginWithoutJitter(nextRoute);
     advance(6000);
     expect(bar().getByText("右折")).toBeVisible();
+  });
+});
+
+describe("APIの案内地点の表示", () => {
+  it("実機GPSのナビでもAPIのguidanceから距離と方向を表示する", async () => {
+    const gps = installGeolocation();
+    await openResults();
+    const route = await lastRoute("fastest");
+    const turn = route.navigation!.guidance.find((step) => step.maneuver !== "arrive")!;
+    const start = Math.max(0, turn.at_m - 40);
+    vi.useFakeTimers();
+    beginNavigation(FASTEST_LABEL, "実機GPSで開始");
+    openNavigationSidebar();
+    for (let i = 0; i < 7; i++) {
+      advance(1000);
+      gps.emit(positionAt(route, start + i * 1.4));
+    }
+    expect(bar().getByText("右折")).toBeVisible();
+    expect(displayedDistance()).toBeGreaterThan(0);
+  });
+
+  it("同じroute-1で再検索した後、前の経路で通過した案内を新しい経路で表示する", async () => {
+    harness.guidance = (route) => [
+      { id: "turn", maneuver: "right", atM: 15 },
+      { id: "arrival", maneuver: "arrive", atM: route.navigation!.length_m },
+    ];
+    await openResults();
+    vi.useFakeTimers();
+    startGroup(FASTEST_LABEL);
+    fireEvent.click(screen.getByText("模擬走行の設定"));
+    fireEvent.click(screen.getByRole("radio", { name: "4倍" }));
+    beginNavigation(FASTEST_LABEL, "模擬走行で開始");
+    openNavigationSidebar();
+    advance(10_000);
+    expect(action()).toBe("目的地");
+    fireEvent.click(screen.getByRole("button", { name: "逸脱を試す" }));
+    advance(3_000);
+    expect(within(screen.getByLabelText("ナビの状態")).getByRole("status")).toHaveTextContent("経路から外れています");
+    fireEvent.click(screen.getByRole("button", { name: "安全な場所で停止してから現在地から再検索" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    const response = await api.searchRoutes.mock.results.at(-1)!.value;
+    expect(response.fastest_id).toBe("route-1");
+    fireEvent.click(simulationControls().getByRole("radio", { name: "1倍" }));
+    advance(6000);
+    expect(bar().getByText("右折")).toBeVisible();
+  });
+
+  it.each([
+    ["slight_left", "斜め左"],
+    ["slight_right", "斜め右"],
+    ["uturn", "Uターン"],
+  ] as const)("%sの案内を表示する", async (maneuver, label) => {
+    harness.guidance = (route) => [
+      { id: "turn", maneuver, atM: route.navigation!.length_m / 2 },
+      { id: "arrival", maneuver: "arrive", atM: route.navigation!.length_m },
+    ];
+    await openResults();
+    vi.useFakeTimers();
+    beginNavigation(FASTEST_LABEL, "模擬走行で開始");
+    advance(6000);
+    expect(action()).toBe(label);
+  });
+
+  it("案内がarriveだけの経路では経路に沿って進むと表示し、右左折を出さない", async () => {
+    harness.guidance = (route) => [
+      { id: "arrival", maneuver: "arrive", atM: route.navigation!.length_m },
+    ];
+    await openResults();
+    vi.useFakeTimers();
+    beginNavigation(FASTEST_LABEL, "模擬走行で開始");
+    advance(6000);
+    expect(action()).toBe("経路に沿って進む");
+    expect(displayedDistance()).toBeNull();
+    expect(bar().queryByText("右折")).not.toBeInTheDocument();
   });
 });
 

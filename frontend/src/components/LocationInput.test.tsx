@@ -2,27 +2,30 @@ import { useState } from "react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { searchPlaces } from "../api/client";
-import type { GeocodeResponse, Place } from "../lib/types";
+import type { GeocodeResponse, GeocodeResult } from "../lib/types";
 import LocationInput, { type LocationValue } from "./LocationInput";
 
 vi.mock("../api/client", () => ({ isDemo: true, searchPlaces: vi.fn() }));
 
-const tokyo: Place = {
-  label: "東京駅 — 東京都千代田区丸の内1丁目",
+const tokyo: GeocodeResult = {
+  label: "東京駅",
+  detail: "東京都千代田区丸の内1丁目",
   lat: 35.6812,
   lon: 139.7671,
 };
-const ueno: Place = {
-  label: "上野駅 — 東京都台東区上野7丁目",
+const ueno: GeocodeResult = {
+  label: "上野駅",
+  detail: "東京都台東区上野7丁目",
   lat: 35.7138,
   lon: 139.7773,
 };
-const akihabara: Place = {
-  label: "秋葉原駅 — 東京都千代田区外神田1丁目",
+const akihabara: GeocodeResult = {
+  label: "秋葉原駅",
+  detail: "東京都千代田区外神田1丁目",
   lat: 35.6984,
   lon: 139.7731,
 };
-const response = (results: Place[]): GeocodeResponse => ({
+const response = (results: GeocodeResult[]): GeocodeResponse => ({
   results,
   attribution: [{ text: "デモ候補", url: "https://example.com/" }],
 });
@@ -172,7 +175,7 @@ describe("LocationInput", () => {
       await oldResponse.promise;
     });
     expect(
-      screen.queryByRole("option", { name: tokyo.label }),
+      screen.queryByRole("option", { name: /^東京駅/ }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("option", { name: ueno.label }),
@@ -184,7 +187,7 @@ describe("LocationInput", () => {
     fireEvent.change(input, { target: { value: "東京" } });
     await advance(300);
     fireEvent.keyDown(input, { key: "ArrowUp" });
-    const last = screen.getByRole("option", { name: akihabara.label });
+    const last = screen.getByRole("option", { name: /^秋葉原駅/ });
     expect(last).toHaveAttribute("aria-selected", "true");
     expect(input).toHaveAttribute("aria-activedescendant", last.id);
     fireEvent.keyDown(input, { key: "Enter" });
@@ -193,5 +196,100 @@ describe("LocationInput", () => {
       place: akihabara,
     });
     expect(screen.getByText("地点を確定しました")).toBeInTheDocument();
+  });
+
+  it("hides details when every candidate name contains the query", async () => {
+    const skytree: GeocodeResult = {
+      label: "東京スカイツリー",
+      detail: "東京都墨田区押上1丁目",
+      lat: 35.7101,
+      lon: 139.8107,
+    };
+    vi.mocked(searchPlaces).mockResolvedValueOnce(response([tokyo, skytree]));
+    const { input } = renderLocation();
+    fireEvent.change(input, { target: { value: "東京" } });
+    await advance(300);
+
+    expect(screen.getByRole("option", { name: "東京駅" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "東京スカイツリー" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("東京都千代田区丸の内1丁目"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("東京都墨田区押上1丁目")).not.toBeInTheDocument();
+  });
+
+  it("shows details only for duplicated labels when every name contains the query", async () => {
+    const sameLabel: GeocodeResult = {
+      ...tokyo,
+      detail: "東京都千代田区丸の内2丁目",
+      lat: 35.6813,
+    };
+    const skytree: GeocodeResult = {
+      label: "東京スカイツリー",
+      detail: "東京都墨田区押上1丁目",
+      lat: 35.7101,
+      lon: 139.8107,
+    };
+    vi.mocked(searchPlaces).mockResolvedValueOnce(
+      response([tokyo, sameLabel, skytree]),
+    );
+    const { input } = renderLocation();
+    fireEvent.change(input, { target: { value: "東京" } });
+    await advance(300);
+
+    expect(
+      screen.getByRole("option", {
+        name: "東京駅 東京都千代田区丸の内1丁目",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", {
+        name: "東京駅 東京都千代田区丸の内2丁目",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "東京スカイツリー" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("東京都墨田区押上1丁目")).not.toBeInTheDocument();
+  });
+
+  it("shows the detail when the query is not part of the label", async () => {
+    vi.mocked(searchPlaces).mockResolvedValueOnce(response([tokyo]));
+    const { input } = renderLocation();
+    fireEvent.change(input, { target: { value: "千代田区" } });
+    await advance(300);
+
+    expect(
+      screen.getByRole("option", {
+        name: "東京駅 東京都千代田区丸の内1丁目",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps only the label in the input while retaining the detail on the chosen place", async () => {
+    const sameLabel: GeocodeResult = {
+      ...tokyo,
+      detail: "東京都千代田区丸の内2丁目",
+      lat: 35.6813,
+    };
+    vi.mocked(searchPlaces).mockResolvedValueOnce(
+      response([tokyo, sameLabel]),
+    );
+    const { input, onChange } = renderLocation();
+    fireEvent.change(input, { target: { value: "東京" } });
+    await advance(300);
+
+    fireEvent.click(
+      screen.getByRole("option", {
+        name: "東京駅 東京都千代田区丸の内1丁目",
+      }),
+    );
+    expect(onChange).toHaveBeenLastCalledWith({
+      text: "東京駅",
+      place: tokyo,
+    });
+    expect(input).toHaveValue("東京駅");
   });
 });

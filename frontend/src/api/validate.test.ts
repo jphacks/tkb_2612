@@ -266,6 +266,32 @@ describe("API 2.0 contract and cross-field validation", () => {
       },
     ],
     [
+      "arrive before the last guidance step",
+      (result) => {
+        result.candidates[0].navigation!.guidance[0].maneuver = "arrive";
+      },
+    ],
+    [
+      "guidance distances going backwards",
+      (result) => {
+        const guidance = result.candidates[0].navigation!.guidance;
+        guidance[1].at_m = guidance[0].at_m - 1;
+      },
+    ],
+    [
+      "guidance beyond the route length",
+      (result) => {
+        const navigation = result.candidates[0].navigation!;
+        navigation.guidance.at(-1)!.at_m = navigation.length_m + 1;
+      },
+    ],
+    [
+      "missing guidance steps",
+      (result) => {
+        result.candidates[0].navigation!.guidance = [];
+      },
+    ],
+    [
       "API version drift",
       (result) => {
         Object.assign(result, { api_version: "1.0" });

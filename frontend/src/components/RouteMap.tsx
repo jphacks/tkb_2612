@@ -12,7 +12,11 @@ import type {
   AccidentFeature,
   RouteCandidate,
   RouteResponse,
+  SafetyReport,
 } from "../lib/types";
+import { boundsAround, dominantKind, tallyLabel } from "../community/reports";
+import { useSafetyReports } from "../community/useSafetyReports";
+import { SAFETY_COLORS } from "./icons/SafetyIcon";
 import "maplibre-gl/dist/maplibre-gl.css";
 // v6のESM版はworkerを import.meta.url からの相対で探すので、ビルドに含めてURLを渡す
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
@@ -22,6 +26,7 @@ import {
   emptyNavigationLayers,
   markMapStyleLoading,
   restoreMapLayers,
+  setCommunityLayer,
   setNavigationLayers,
   setRouteLayers,
   type NavigationLayers,
@@ -66,6 +71,8 @@ export type RouteMapProps = {
 type Coordinate = number[];
 const WIDTH = 960;
 const HEIGHT = 720;
+/** 経路の外接矩形をこの度数（約300m）だけ広げた範囲の口コミを重ねる。 */
+const REPORT_MARGIN_DEG = 0.003;
 
 function coordinateBounds(coordinates: Coordinate[]) {
   if (!coordinates.length) return { minX: 0, maxX: 1, minY: 0, maxY: 1 };
@@ -151,6 +158,7 @@ function AccidentPopup({
 
 type LiveMapProps = RouteMapProps & {
   styleUrl: string;
+  safetyReports: SafetyReport[];
   onAccident: (id: number) => void;
   onUnavailable: () => void;
   onPositions: (positions: Record<string, MapPoint>) => void;
@@ -309,6 +317,12 @@ function LiveMap(props: LiveMapProps) {
     props.showAccidents,
   ]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    setCommunityLayer(map, props.safetyReports);
+  }, [ready, props.safetyReports]);
+
   const navigationLayers = props.navigation?.layers;
   const navigationApplied = useRef(false);
   useEffect(() => {
@@ -418,6 +432,15 @@ export function RouteMap(props: RouteMapProps) {
     () => makeProjection(result?.candidates ?? []),
     [result],
   );
+  const reportBounds = useMemo(
+    () =>
+      boundsAround(
+        (result?.candidates ?? []).flatMap((route) => route.geometry.coordinates),
+        REPORT_MARGIN_DEG,
+      ),
+    [result],
+  );
+  const safetyReports = useSafetyReports(reportBounds);
   const path = (coordinates: Coordinate[]) =>
     coordinates.map((point) => project(point).join(",")).join(" ");
   const selectedAccident = showAccidents
@@ -517,6 +540,7 @@ export function RouteMap(props: RouteMapProps) {
         <LiveMap
           {...props}
           styleUrl={styleUrl}
+          safetyReports={safetyReports}
           onAccident={setAccidentId}
           onUnavailable={() => setLiveFailed(true)}
           onPositions={setLivePositions}
@@ -690,6 +714,28 @@ export function RouteMap(props: RouteMapProps) {
                   </g>
                 );
               })}
+            {result && safetyReports.length > 0 && (
+              <g className="map-community-pins" aria-label="口コミの地点">
+                {safetyReports.map((report) => {
+                  const [x, y] = project([report.lon, report.lat]);
+                  return (
+                    <circle
+                      key={report.id}
+                      cx={x}
+                      cy={y}
+                      r="6"
+                      className="map-community-pin"
+                      fill={SAFETY_COLORS[dominantKind(report)]}
+                      vectorEffect="non-scaling-stroke"
+                      role="img"
+                      aria-label={`口コミ：${tallyLabel(report)}`}
+                    >
+                      <title>{tallyLabel(report)}</title>
+                    </circle>
+                  );
+                })}
+              </g>
+            )}
             {navigation && (
               <g className="map-navigation" aria-hidden="true">
                 {navigation.layers.route.features.map((feature, index) => (
@@ -844,6 +890,18 @@ export function RouteMap(props: RouteMapProps) {
               <span>
                 <i className="legend-accident-unattributed" />
                 経路の近くの事故
+              </span>
+            </>
+          )}
+          {safetyReports.length > 0 && (
+            <>
+              <span>
+                <i className="legend-community-safe" />
+                安全の口コミ
+              </span>
+              <span>
+                <i className="legend-community-danger" />
+                危険の口コミ
               </span>
             </>
           )}

@@ -1,7 +1,9 @@
 import type { components } from "../api/generated/schema";
 
 type Schema = components["schemas"];
-export type Place = Schema["GeocodeResult"];
+export type GeocodeResult = Schema["GeocodeResult"];
+// 確定した地点。現在地など、住所検索以外の地点は detail を持たない。
+export type Place = Omit<GeocodeResult, "detail"> & { detail?: string | null };
 export type LatLon = Schema["LatLon"];
 export type Mode = Schema["Mode"];
 export type Period = Schema["Period"];
@@ -17,6 +19,13 @@ export type AccidentFeature = Schema["AccidentFeature"];
 export type HighRiskFeature = Schema["HighRiskFeature"];
 export type NavigationData = Schema["NavigationData"];
 export type ErrorResponse = Schema["ErrorResponse"];
+export type SafetyKind = Schema["SafetyKind"];
+export type SafetyReport = Schema["SafetyReport"];
+export type SafetyComment = Schema["SafetyComment"];
+export type SafetyReportList = Schema["SafetyReportList"];
+export type SafetyReportResult = Schema["SafetyReportResult"];
+export type SafetyReportCreate = Schema["SafetyReportCreate"];
+export type SafetyVote = Schema["SafetyVote"];
 
 export type Scenario =
   | "normal"

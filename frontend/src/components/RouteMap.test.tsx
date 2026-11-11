@@ -381,14 +381,14 @@ describe("RouteMapの実地図内部契約", () => {
     const { map } = await renderLive();
     expect([...map.sources.keys()].sort()).toEqual([
       "route-fastest", "route-safest", "route-high-risk", "route-accidents",
-      "current-location", "current-accuracy", "navigation-route", "navigation-alert",
+      "current-location", "current-accuracy", "navigation-route", "navigation-alert", "community-reports",
     ].sort());
     expect(map.layers.map((layer) => layer.id)).toEqual([
       "route-fastest-line", "route-safest-line", "route-hit", "navigation-route-line",
       "route-high-risk-line", "section-hit", "navigation-alert-line", "navigation-alert-point", "route-accidents-point",
-      "accident-hit", "current-accuracy-fill", "current-location-point",
+      "accident-hit", "community-reports-point", "current-accuracy-fill", "current-location-point",
     ]);
-    for (const id of ["route-safest", "current-location", "current-accuracy", "navigation-route", "navigation-alert"]) {
+    for (const id of ["route-safest", "current-location", "current-accuracy", "navigation-route", "navigation-alert", "community-reports"]) {
       expect(map.getSource(id)?.data).toEqual({ type: "FeatureCollection", features: [] });
     }
     expect(map.getLayer("route-fastest-line")).toMatchObject({
@@ -456,8 +456,8 @@ describe("RouteMapの実地図内部契約", () => {
     expect(map.sources.size).toBe(0);
     map.loaded = event !== "style.load";
     act(() => map.emit(event));
-    expect(map.sources.size).toBe(8);
-    expect(map.layers).toHaveLength(12);
+    expect(map.sources.size).toBe(9);
+    expect(map.layers).toHaveLength(13);
     expect(map.getSource("current-location")!.data).toEqual(navigation.location);
     expect(map.getSource("current-location")!.data.features[0].geometry).toEqual({ type: "Point", coordinates: [141, 35] });
     expect(map.getSource("route-accidents")!.data.features).toEqual([]);
@@ -466,7 +466,7 @@ describe("RouteMapの実地図内部契約", () => {
     const calls = map.getSource("route-fastest")!.setData.mock.calls.length;
     act(() => { map.emit("styledata"); map.emit("styledata"); });
     expect(map.getSource("route-fastest")!.setData).toHaveBeenCalledTimes(calls);
-    expect(map.layers).toHaveLength(12);
+    expect(map.layers).toHaveLength(13);
     expect(map.fitBounds).toHaveBeenCalledTimes(1);
   });
 
@@ -698,5 +698,47 @@ describe("RouteMapのナビ表示（手順10・11）", () => {
     expect(onUnavailableChange).toHaveBeenLastCalledWith(false);
     act(() => map.emit("webglcontextlost", {}));
     expect(onUnavailableChange).toHaveBeenLastCalledWith(true);
+  });
+});
+
+describe("RouteMap community reports", () => {
+  afterEach(() => localStorage.clear());
+
+  it("pins reports near the routes in the majority color without making them interactive", async () => {
+    const [origin] = DEMO_PLACES;
+    const report = (id: string, lat: number, kinds: ("safe" | "danger")[]) => ({
+      id: id.repeat(32),
+      lat,
+      lon: origin.lon,
+      created_at: "2026-11-04T09:15:00.000Z",
+      votes: kinds.map((kind, index) => ({ voter: `voter-${id}-${index}-000000000`, kind })),
+      comments: [],
+    });
+    localStorage.setItem(
+      "accilessnavi.safety-reports.v2",
+      JSON.stringify([
+        report("a", origin.lat, ["danger"]),
+        report("b", origin.lat + 0.0005, ["safe", "safe", "danger"]),
+        // 経路から遠い地点は読まない
+        report("c", origin.lat + 1, ["danger"]),
+      ]),
+    );
+    render(<RouteMap {...mapProps(createDemoRouteResponse(request))} />);
+    const danger = await screen.findByRole("img", { name: "口コミ：安全0票・危険1票" });
+    expect(danger).toHaveAttribute("fill", "#DC2626");
+    expect(screen.getByRole("img", { name: "口コミ：安全2票・危険1票" })).toHaveAttribute(
+      "fill",
+      "#16A34A",
+    );
+    expect(screen.getAllByRole("img", { name: /^口コミ：/ })).toHaveLength(2);
+    const legend = screen.getByLabelText("地図の凡例");
+    expect(legend).toHaveTextContent("安全の口コミ");
+    expect(legend).toHaveTextContent("危険の口コミ");
+  });
+
+  it("shows no community legend when there are no reports", async () => {
+    render(<RouteMap {...mapProps(createDemoRouteResponse(request))} />);
+    await act(async () => {});
+    expect(screen.getByLabelText("地図の凡例")).not.toHaveTextContent("口コミ");
   });
 });

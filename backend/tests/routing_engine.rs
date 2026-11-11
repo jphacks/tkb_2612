@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use accident_route_backend::contract::geo::METERS_PER_DEGREE;
 use accident_route_backend::contract::{
     Attribution, BoxFuture, CancelToken, CandidateSet, ConditionFilter, DatasetInfo, DayType,
-    EngineError, Interrupt, LatLon, Mode, Period, ProviderRoute, RouteEngine, RouteQuery, Router,
-    RoutingError, RoutingRequest, Weather,
+    EngineError, Interrupt, LatLon, Maneuver, Mode, Period, ProviderRoute, RouteEngine, RouteQuery,
+    Router, RoutingError, RoutingRequest, Weather,
 };
 use accident_route_backend::domain::routing::accident::{
     AssignTarget, Assignment, UnassignedReason, UnassignedRecord,
@@ -365,6 +365,13 @@ fn north(lat: f64, meters: f64) -> f64 {
     lat + meters / METERS_PER_DEGREE
 }
 
+/// 北緯35度・東経139度を基準に、東へ `east_m`、北へ `north_m` 移動したノード。
+fn node_offset(builder: &mut GraphBuilder, east_m: f64, north_m: f64) -> NodeId {
+    let lat = 35.0 + north_m / METERS_PER_DEGREE;
+    let lon = 139.0 + east_m / (METERS_PER_DEGREE * 35.0_f64.to_radians().cos());
+    builder.add_node_deg(lat, lon)
+}
+
 fn assert_no_duplicate_vertices(outcome: &accident_route_backend::contract::RouteOutcome) {
     for candidate in &outcome.candidates {
         assert!(candidate.path.coordinates.len() >= 2);
@@ -401,6 +408,36 @@ fn normal_search_passes_invariants_with_fractional_detour() {
     assert_no_duplicate_vertices(&outcome);
     assert_eq!(outcome.mode, Mode::Car);
     assert_eq!(outcome.dataset_id, dataset().dataset_id);
+}
+
+#[test]
+fn synthetic_crossroad_guidance_is_right_then_arrive() {
+    let mut builder = GraphBuilder::new();
+    let w = node_offset(&mut builder, -100.0, 0.0);
+    let c = node_offset(&mut builder, 0.0, 0.0);
+    let s = node_offset(&mut builder, 0.0, -100.0);
+    let n = node_offset(&mut builder, 0.0, 100.0);
+    let e = node_offset(&mut builder, 100.0, 0.0);
+    builder.add_edge(EdgeSpec::new(w, c));
+    builder.add_edge(EdgeSpec::new(c, s));
+    builder.add_edge(EdgeSpec::new(c, n));
+    builder.add_edge(EdgeSpec::new(c, e));
+    let graph = builder.build();
+    let engine = engine(&builder, empty_topology(&graph), &[], snapshot(&[]));
+    let q = query(
+        graph.node_coord(w).to_latlon(),
+        graph.node_coord(s).to_latlon(),
+        Mode::Car,
+        10.0,
+        ConditionFilter::default(),
+    );
+    let outcome = evaluate(&engine, &q).expect("評価できる");
+    check_outcome_invariants(&outcome).expect("相関制約");
+    let selected = &outcome.candidates[outcome.fastest];
+    let nav = selected.navigation.as_ref().expect("選定候補");
+    let maneuvers: Vec<Maneuver> = nav.guidance.iter().map(|step| step.maneuver).collect();
+    assert_eq!(maneuvers, vec![Maneuver::Right, Maneuver::Arrive]);
+    assert_eq!(nav.guidance.last().expect("案内あり").at_m, nav.length_m);
 }
 
 struct PanicRouter;

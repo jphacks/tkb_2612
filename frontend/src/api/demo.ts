@@ -6,7 +6,6 @@ import type {
   LatLon,
   NavigationData,
   Period,
-  Place,
   RouteCandidate,
   RouteRequest,
   RouteResponse,
@@ -17,34 +16,64 @@ import { ApiError } from "./errors";
 
 // Explicit synthetic fixtures: these addresses identify selectable places, but
 // generated lines and accident counts do not represent real roads or records.
-export const DEMO_PLACES: Place[] = [
-  { label: "東京駅 — 東京都千代田区丸の内1丁目", lat: 35.6812, lon: 139.7671 },
-  { label: "上野駅 — 東京都台東区上野7丁目", lat: 35.7138, lon: 139.7773 },
+export const DEMO_PLACES: GeocodeResponse["results"] = [
   {
-    label: "秋葉原駅 — 東京都千代田区外神田1丁目",
+    label: "東京駅",
+    detail: "東京都千代田区丸の内1丁目",
+    lat: 35.6812,
+    lon: 139.7671,
+  },
+  {
+    label: "上野駅",
+    detail: "東京都台東区上野7丁目",
+    lat: 35.7138,
+    lon: 139.7773,
+  },
+  {
+    label: "秋葉原駅",
+    detail: "東京都千代田区外神田1丁目",
     lat: 35.6984,
     lon: 139.7731,
   },
-  { label: "新宿駅 — 東京都新宿区新宿3丁目", lat: 35.6909, lon: 139.7003 },
-  { label: "渋谷駅 — 東京都渋谷区道玄坂1丁目", lat: 35.658, lon: 139.7016 },
-  { label: "つくば駅 — 茨城県つくば市吾妻2丁目", lat: 36.0827, lon: 140.1115 },
   {
-    label: "筑波大学 中央図書館 — 茨城県つくば市天王台1丁目",
+    label: "新宿駅",
+    detail: "東京都新宿区新宿3丁目",
+    lat: 35.6909,
+    lon: 139.7003,
+  },
+  {
+    label: "渋谷駅",
+    detail: "東京都渋谷区道玄坂1丁目",
+    lat: 35.658,
+    lon: 139.7016,
+  },
+  {
+    label: "つくば駅",
+    detail: "茨城県つくば市吾妻2丁目",
+    lat: 36.0827,
+    lon: 140.1115,
+  },
+  {
+    label: "筑波大学 中央図書館",
+    detail: "茨城県つくば市天王台1丁目",
     lat: 36.1098,
     lon: 140.1006,
   },
   {
-    label: "研究学園駅 — 茨城県つくば市研究学園5丁目",
+    label: "研究学園駅",
+    detail: "茨城県つくば市研究学園5丁目",
     lat: 36.0821,
     lon: 140.0811,
   },
   {
-    label: "つくば市役所 — 茨城県つくば市研究学園1丁目",
+    label: "つくば市役所",
+    detail: "茨城県つくば市研究学園1丁目",
     lat: 36.0835,
     lon: 140.0764,
   },
   {
-    label: "洞峰公園 — 茨城県つくば市二の宮2丁目",
+    label: "洞峰公園",
+    detail: "茨城県つくば市二の宮2丁目",
     lat: 36.0574,
     lon: 140.1174,
   },
@@ -65,7 +94,10 @@ export function findDemoPlaces(query: string): GeocodeResponse {
   const q = query.trim().normalize("NFKC").toLocaleLowerCase("ja");
   return {
     results: DEMO_PLACES.filter((place) =>
-      place.label.normalize("NFKC").toLocaleLowerCase("ja").includes(q),
+      `${place.label} ${place.detail ?? ""}`
+        .normalize("NFKC")
+        .toLocaleLowerCase("ja")
+        .includes(q),
     ).slice(0, 5),
     attribution: [
       {
@@ -155,6 +187,42 @@ function localPlane(coords: Coordinate[]) {
   return { phi, edges, vertexDistances };
 }
 
+/** デモの模式図の折れ曲がりから作る表示確認用の案内。実道路の交差点情報ではない。 */
+function demoGuidance(
+  coordinates: readonly Coordinate[],
+  projectionLatDeg: number,
+  vertexDistances: readonly number[],
+  length: number,
+): NavigationData["guidance"] {
+  const cos = Math.cos((projectionLatDeg * Math.PI) / 180);
+  const guidance: NavigationData["guidance"] = [];
+  for (let i = 1; i < coordinates.length - 1; i++) {
+    const incoming = [
+      (coordinates[i][0] - coordinates[i - 1][0]) * cos,
+      coordinates[i][1] - coordinates[i - 1][1],
+    ];
+    const outgoing = [
+      (coordinates[i + 1][0] - coordinates[i][0]) * cos,
+      coordinates[i + 1][1] - coordinates[i][1],
+    ];
+    if (!Math.hypot(...incoming) || !Math.hypot(...outgoing)) continue;
+    const angle =
+      (Math.atan2(
+        incoming[0] * outgoing[1] - incoming[1] * outgoing[0],
+        incoming[0] * outgoing[0] + incoming[1] * outgoing[1],
+      ) *
+        180) /
+      Math.PI;
+    if (Math.abs(angle) < 10) continue;
+    guidance.push({
+      maneuver: angle > 0 ? "left" : "right",
+      at_m: vertexDistances[i],
+    });
+  }
+  guidance.push({ maneuver: "arrive", at_m: length });
+  return guidance;
+}
+
 function periodOf(request: RouteRequest): Period | "all" {
   const value = request.period ?? request.時間帯 ?? "all";
   const canonical =
@@ -232,6 +300,12 @@ export function createDemoRouteResponse(
       projection_lat_deg: plane.phi,
       length_m: plane.vertexDistances[plane.vertexDistances.length - 1],
       vertex_distances_m: plane.vertexDistances,
+      guidance: demoGuidance(
+        coords,
+        plane.phi,
+        plane.vertexDistances,
+        plane.vertexDistances[plane.vertexDistances.length - 1],
+      ),
       sections: count
         ? [
             {
