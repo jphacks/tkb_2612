@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDemoRouteResponse, DEMO_PLACES } from "../api/demo";
+import { FASTEST_LABEL, SAFE_LABEL } from "./RouteCallouts";
 import { RouteMap, type RouteMapProps } from "./RouteMap";
 import type { RouteResponse } from "../lib/types";
 import { emptyNavigationLayers, setNavigationLayers } from "../map/layers";
@@ -53,24 +54,28 @@ describe("RouteMap", () => {
       const cards = [...group.querySelectorAll<HTMLElement>(".map-route-card")];
       expect(cards).toHaveLength(2);
       const considered = cards.find((card) =>
-        card.textContent?.includes("安全ルート"),
+        card.textContent?.includes(SAFE_LABEL),
       )!;
       const fastest = cards.find((card) =>
-        card.textContent?.includes("最短ルート"),
+        card.textContent?.includes(FASTEST_LABEL),
       )!;
       expect(considered).toHaveClass("route-considered");
       expect(fastest).toHaveClass("route-fastest");
       // Each card offers selection and a navigation start button.
       expect(
-        within(fastest).getByRole("button", { name: "最短ルートでナビを開始" }),
+        within(fastest).getByRole("button", {
+          name: `${FASTEST_LABEL}でナビを開始`,
+        }),
       ).toBeInTheDocument();
-      const line = screen.getByRole("button", { name: "A 最短ルートを選択" });
+      const line = screen.getByRole("button", {
+        name: `A ${FASTEST_LABEL}を選択`,
+      });
       expect(line).toHaveClass("route-fastest");
       fireEvent.pointerEnter(fastest);
       expect(line).toHaveClass("is-hovered");
       fireEvent.click(
         within(fastest).getByRole("button", {
-          name: /^最短ルート/,
+          name: new RegExp(`^${FASTEST_LABEL}`),
           pressed: false,
         }),
       );
@@ -100,7 +105,9 @@ describe("RouteMap", () => {
   it("connects route and section selection, and only shows factual accident fields", () => {
     const props = mapProps(createDemoRouteResponse(request));
     render(<RouteMap {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "A 最短ルートを選択" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: `A ${FASTEST_LABEL}を選択` }),
+    );
     expect(props.onSelectRoute).toHaveBeenCalledWith(props.result?.fastest_id);
     const selected = props.result!.candidates.find(
       (route) => route.id === props.selectedRouteId,
@@ -255,7 +262,7 @@ describe("RouteMap", () => {
     const { rerender } = render(<RouteMap {...props} />);
     expect(
       screen.getAllByRole("button", {
-        name: "A 最短ルート・安全ルート（同一経路）を選択",
+        name: `A ${FASTEST_LABEL}・${SAFE_LABEL}（同一経路）を選択`,
       }),
     ).toHaveLength(1);
     rerender(<RouteMap {...props} unavailable />);
@@ -267,7 +274,7 @@ describe("RouteMap", () => {
     const props = mapProps(createDemoRouteResponse(request));
     render(<RouteMap {...props} />);
     fireEvent.click(
-      screen.getByRole("button", { name: "安全ルートでナビを開始" }),
+      screen.getByRole("button", { name: `${SAFE_LABEL}でナビを開始` }),
     );
     expect(screen.getByRole("status")).toHaveTextContent(
       "ナビの開始は準備中です。",

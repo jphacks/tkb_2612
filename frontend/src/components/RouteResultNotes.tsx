@@ -13,18 +13,18 @@ function choiceSentence(
 ): string | null {
   if (result.safest_id === null || safest === undefined) return null;
   if (result.safest_id === result.fastest_id)
-    return "遠回りの上限までの経路の中では、最短ルートが推定リスクもいちばん低い経路です。";
+    return `遠回りの上限までの経路の中では、${FASTEST_LABEL}の経路が推定リスクもいちばん低い経路です。`;
   const minutes = result.extra_minutes ?? safest.extra_minutes;
   const longer =
     minutes < 1 ? "1分未満" : `${Math.round(minutes)}分`;
   if (result.risk_reduction_percent === null)
-    return `安全ルートは最短ルートより${longer}長くかかります。`;
-  return `安全ルートは最短ルートより${longer}長くかかりますが、推定リスクは${result.risk_reduction_percent.toFixed(1)}%低くなります。`;
+    return `${SAFE_LABEL}の経路は${FASTEST_LABEL}の経路より${longer}長くかかります。`;
+  return `${SAFE_LABEL}の経路は${FASTEST_LABEL}の経路より${longer}長くかかりますが、推定リスクは${result.risk_reduction_percent.toFixed(1)}%低くなります。`;
 }
 
 /**
- * 推定リスクを、最短ルートを100とした相対値で表す（最短ルートは常に「100」、ほかは小数1桁）。
- * 最短ルートの推定リスクが0以下で比べられないときは null を返す。
+ * 推定リスクを、最短時間経路を100とした相対値で表す（最短時間経路は常に「100」、ほかは小数1桁）。
+ * 最短時間経路の推定リスクが0以下で比べられないときは null を返す。
  */
 export function relativeRisk(
   route: RouteCandidate,
@@ -75,11 +75,11 @@ export function RouteResultNotes({ result }: Props) {
   return (
     <section className="route-result-notes" aria-label="検索結果の説明">
       {result.safest_id === null && (
-        <p>全候補で該当する事故がないため、安全ルートは選んでいません。</p>
+        <p>全候補で該当する事故がないため、{SAFE_LABEL}の経路は選んでいません。</p>
       )}
       {accidentCountReversed && (
         <p>
-          安全ルートは、過去事故の件数が最短ルートより多くなっています。件数は道路の種類による偶然のばらつきを含むため、推定リスクでは低い経路を選んでいます。
+          {SAFE_LABEL}の経路は、過去事故の件数が{FASTEST_LABEL}の経路より多くなっています。件数は道路の種類による偶然のばらつきを含むため、推定リスクでは低い経路を選んでいます。
         </p>
       )}
       {result.warnings.length > 0 && (
@@ -96,7 +96,7 @@ export function RouteResultNotes({ result }: Props) {
           <thead>
             <tr>
               <th scope="col">経路</th>
-              <th scope="col">推定リスク（最短ルート=100）</th>
+              <th scope="col">推定リスク（{FASTEST_LABEL}の経路=100）</th>
               <th scope="col">事故件数</th>
             </tr>
           </thead>

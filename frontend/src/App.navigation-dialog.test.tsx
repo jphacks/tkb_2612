@@ -1,6 +1,7 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SAFETY_NOTICE, WALKING_NOTICE } from "./components/NavigationConfirmDialog";
+import { SAFE_LABEL } from "./components/RouteCallouts";
 import { resetApi } from "./test/apiMock";
 import { openNavigationSidebar, advance, installGeolocation, openResults, startGroup } from "./test/navigationApp";
 
@@ -28,12 +29,12 @@ describe("開始前の注意ダイアログ（7.9）", () => {
     const gps = installGeolocation();
     await openResults();
     vi.useFakeTimers();
-    fireEvent.click(startGroup("最短ルート").getByRole("button", { name: "実機GPSで開始" }));
+    fireEvent.click(startGroup("最短時間").getByRole("button", { name: "実機GPSで開始" }));
     const dialog = screen.getByRole("dialog", { name: "ナビを開始する前に" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(within(dialog).getByText(SAFETY_NOTICE)).toBeVisible();
     expect(within(dialog).getByText(WALKING_NOTICE)).toBeVisible();
-    expect(within(dialog).getByText("最短ルートを実機GPSで開始します")).toBeVisible();
+    expect(within(dialog).getByText("最短時間を実機GPSで開始します")).toBeVisible();
     expect(within(dialog).getByRole("button", { name: "確認して開始" })).toHaveFocus();
     advance(10_000);
     expect(gps.watchPosition).not.toHaveBeenCalled();
@@ -48,7 +49,7 @@ describe("開始前の注意ダイアログ（7.9）", () => {
   it("キャンセルとEscapeでは開始せず、開始ボタンへフォーカスを戻す", async () => {
     const gps = installGeolocation();
     await openResults();
-    const button = startGroup("安全ルート").getByRole("button", { name: "模擬走行で開始" });
+    const button = startGroup(SAFE_LABEL).getByRole("button", { name: "模擬走行で開始" });
     button.focus();
     fireEvent.click(button);
     fireEvent.click(screen.getByRole("button", { name: "キャンセル" }));
@@ -63,9 +64,9 @@ describe("開始前の注意ダイアログ（7.9）", () => {
 
   it("模擬走行も同じ確認を要し、Tabはダイアログ内に留まる", async () => {
     await openResults();
-    fireEvent.click(startGroup("最短ルート").getByRole("button", { name: "模擬走行で開始" }));
+    fireEvent.click(startGroup("最短時間").getByRole("button", { name: "模擬走行で開始" }));
     const dialog = screen.getByRole("dialog");
-    expect(within(dialog).getByText("最短ルートを模擬走行で開始します")).toBeVisible();
+    expect(within(dialog).getByText("最短時間を模擬走行で開始します")).toBeVisible();
     const cancel = within(dialog).getByRole("button", { name: "キャンセル" });
     const confirm = within(dialog).getByRole("button", { name: "確認して開始" });
     confirm.focus();

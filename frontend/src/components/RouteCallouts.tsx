@@ -2,9 +2,9 @@ import { Send } from "lucide-react";
 import type { RouteCandidate, RouteResponse } from "../lib/types";
 import { formatMinutes } from "../lib/format";
 
-export const SAFE_LABEL = "安全ルート";
-export const FASTEST_LABEL = "最短ルート";
-export const MIDDLE_LABEL = "中間案";
+export const SAFE_LABEL = "安全重視";
+export const FASTEST_LABEL = "最短時間";
+export const MIDDLE_LABEL = "バランス";
 
 export type MapPoint = { x: number; y: number };
 export type MapSize = { width: number; height: number };
@@ -186,7 +186,7 @@ export function RouteCallouts({
     listRow = false,
   ) => {
     const same = route.id === result.fastest_id && route.id === result.safest_id;
-    // APIのdurationは秒。最短ルートとの差を分にして小数1桁で示す。
+    // APIのdurationは秒。最短時間経路との差を分にして小数1桁で示す。
     const extra = ((route.duration - baseDuration) / 60).toFixed(1);
     const label = same
       ? `${SAFE_LABEL}・${FASTEST_LABEL}`

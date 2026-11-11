@@ -50,7 +50,9 @@ describe("RouteResultNotes", () => {
     const section = renderNotes(result);
     expect(
       within(section).getByText(
-        /安全ルートは、過去事故の件数が最短ルートより多くなっています。/,
+        new RegExp(
+          `${SAFE_LABEL}の経路は、過去事故の件数が${FASTEST_LABEL}の経路より多くなっています。`,
+        ),
       ),
     ).toBeInTheDocument();
   });
@@ -72,7 +74,9 @@ describe("RouteResultNotes", () => {
       fastest.accident_count = fastestCount;
       const section = renderNotes(result);
       expect(
-        within(section).queryByText(/過去事故の件数が最短ルートより/),
+        within(section).queryByText(
+          new RegExp(`過去事故の件数が${FASTEST_LABEL}の経路より`),
+        ),
       ).not.toBeInTheDocument();
     },
   );
@@ -83,11 +87,13 @@ describe("RouteResultNotes", () => {
     const section = renderNotes(result);
     expect(
       within(section).getByText(
-        "全候補で該当する事故がないため、安全ルートは選んでいません。",
+        `全候補で該当する事故がないため、${SAFE_LABEL}の経路は選んでいません。`,
       ),
     ).toBeInTheDocument();
     expect(
-      within(section).queryByText(/過去事故の件数が最短ルートより/),
+      within(section).queryByText(
+        new RegExp(`過去事故の件数が${FASTEST_LABEL}の経路より`),
+      ),
     ).not.toBeInTheDocument();
   });
 
@@ -108,7 +114,7 @@ describe("RouteResultNotes", () => {
     const details = section.querySelector("details")!;
     expect(
       within(details).getByText(
-        "安全ルートは最短ルートより4分長くかかりますが、推定リスクは77.2%低くなります。",
+        `${SAFE_LABEL}の経路は${FASTEST_LABEL}の経路より4分長くかかりますが、推定リスクは77.2%低くなります。`,
       ),
     ).toBeInTheDocument();
   });
@@ -118,11 +124,13 @@ describe("RouteResultNotes", () => {
     expect(result.safest_id).toBe(result.fastest_id);
     const section = renderNotes(result);
     expect(
-      within(section).getByText(/最短ルートが推定リスクもいちばん低い経路です/),
+      within(section).getByText(
+        new RegExp(`${FASTEST_LABEL}の経路が推定リスクもいちばん低い経路です`),
+      ),
     ).toBeInTheDocument();
     const rows = within(section).getAllByRole("row");
     expect(rows).toHaveLength(2);
-    expect(rows[1]).toHaveTextContent("最短ルート・安全ルート");
+    expect(rows[1]).toHaveTextContent(`${FASTEST_LABEL}・${SAFE_LABEL}`);
   });
 
   it("lists the middle route in time order in the comparison table", () => {
@@ -149,12 +157,12 @@ describe("RouteResultNotes", () => {
       .getAllByRole("row")
       .slice(1);
     expect(within(fastestRow).getByRole("rowheader")).toHaveTextContent(
-      "最短ルート",
+      FASTEST_LABEL,
     );
     expect(within(fastestRow).getAllByRole("cell").map((c) => c.textContent))
       .toEqual(["100", "56件"]);
     expect(within(safestRow).getByRole("rowheader")).toHaveTextContent(
-      "安全ルート",
+      SAFE_LABEL,
     );
     expect(within(safestRow).getAllByRole("cell").map((c) => c.textContent))
       .toEqual(["22.6", "12件"]);
