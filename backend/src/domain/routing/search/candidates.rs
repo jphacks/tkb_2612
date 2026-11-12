@@ -237,7 +237,7 @@ pub fn select_candidates_with_middle(
     let best_fits = !same_as_p0 && within_limits(&best);
     let best_too_long = !same_as_p0 && !best_fits && too_long(&best);
     let middle = middle.filter(|m| !same_route(m, &p0) && !same_route(m, &best));
-    let middle_fits = middle.as_ref().is_some_and(&within_limits);
+    let middle_fits = middle.as_ref().is_some_and(within_limits);
     let middle_too_long = middle.as_ref().is_some_and(|m| !middle_fits && too_long(m));
 
     let mut kept: Vec<Path> = vec![p0];
