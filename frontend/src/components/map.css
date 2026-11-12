@@ -237,6 +237,58 @@
   stroke: #fff;
   stroke-width: 2;
 }
+/* 事故点のボタンと同じく、枠ではなく点の縁でフォーカスを示す。 */
+.map-community-button {
+  cursor: pointer;
+  outline: none;
+}
+.map-community-button:focus-visible .map-community-pin {
+  stroke: #0f172a;
+  stroke-width: 3;
+}
+/* 実地図の表示切り替え。MapLibreの拡大・縮小（右上、2ボタン）の下に並べる。 */
+.is-live-map .map-layer-controls {
+  top: 112px;
+  right: 10px;
+}
+/* 長い口コミが3件並んでも地図の外へはみ出さないよう、中をスクロールさせる。 */
+.map-report-popup {
+  max-height: calc(100% - 120px);
+  overflow-y: auto;
+}
+.map-report-tally + .map-report-tally {
+  margin-left: 8px;
+}
+.map-report-comments {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid #e2e8f0;
+  list-style: none;
+}
+.map-report-comments li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+}
+.map-report-kind {
+  font-weight: 700;
+}
+.map-report-comments time {
+  color: #64748b;
+}
+.map-report-comments p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+.map-report-empty,
+.map-report-more {
+  margin: 12px 0 0;
+  color: #64748b;
+}
 .map-empty,
 .map-unavailable {
   position: absolute;

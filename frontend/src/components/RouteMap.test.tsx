@@ -4,6 +4,7 @@ import { createDemoRouteResponse, DEMO_PLACES } from "../api/demo";
 import { RouteMap, type RouteMapProps } from "./RouteMap";
 import type { RouteResponse } from "../lib/types";
 import { emptyNavigationLayers, setNavigationLayers } from "../map/layers";
+import { distanceToLineM, NEAR_ROUTE_M } from "../community/reports";
 
 const request = {
   origin: DEMO_PLACES[0],
@@ -22,6 +23,7 @@ function mapProps(result: RouteResponse): RouteMapProps {
     onSelectRoute: vi.fn(),
     onSelectSection: vi.fn(),
     showAccidents: true,
+    showReports: true,
     unavailable: false,
   };
 }
@@ -379,7 +381,7 @@ describe("RouteMapの実地図内部契約", () => {
     expect(map.layers.map((layer) => layer.id)).toEqual([
       "route-fastest-line", "route-safest-line", "route-hit", "navigation-route-line",
       "route-high-risk-line", "section-hit", "navigation-alert-line", "navigation-alert-point", "route-accidents-point",
-      "accident-hit", "community-reports-point", "current-accuracy-fill", "current-location-point",
+      "accident-hit", "community-reports-point", "community-hit", "current-accuracy-fill", "current-location-point",
     ]);
     for (const id of ["route-safest", "current-location", "current-accuracy", "navigation-route", "navigation-alert", "community-reports"]) {
       expect(map.getSource(id)?.data).toEqual({ type: "FeatureCollection", features: [] });
@@ -450,7 +452,7 @@ describe("RouteMapの実地図内部契約", () => {
     map.loaded = event !== "style.load";
     act(() => map.emit(event));
     expect(map.sources.size).toBe(9);
-    expect(map.layers).toHaveLength(13);
+    expect(map.layers).toHaveLength(14);
     expect(map.getSource("current-location")!.data).toEqual(navigation.location);
     expect(map.getSource("current-location")!.data.features[0].geometry).toEqual({ type: "Point", coordinates: [141, 35] });
     expect(map.getSource("route-accidents")!.data.features).toEqual([]);
@@ -459,7 +461,7 @@ describe("RouteMapの実地図内部契約", () => {
     const calls = map.getSource("route-fastest")!.setData.mock.calls.length;
     act(() => { map.emit("styledata"); map.emit("styledata"); });
     expect(map.getSource("route-fastest")!.setData).toHaveBeenCalledTimes(calls);
-    expect(map.layers).toHaveLength(13);
+    expect(map.layers).toHaveLength(14);
     expect(map.fitBounds).toHaveBeenCalledTimes(1);
   });
 
@@ -697,33 +699,44 @@ describe("RouteMapのナビ表示（手順10・11）", () => {
 describe("RouteMap community reports", () => {
   afterEach(() => localStorage.clear());
 
-  it("pins reports near the routes in the majority color without making them interactive", async () => {
-    const [origin] = DEMO_PLACES;
-    const report = (id: string, lat: number, kinds: ("safe" | "danger")[]) => ({
-      id: id.repeat(32),
-      lat,
-      lon: origin.lon,
-      created_at: "2026-11-04T09:15:00.000Z",
-      votes: kinds.map((kind, index) => ({ voter: `voter-${id}-${index}-000000000`, kind })),
-      comments: [],
-    });
-    localStorage.setItem(
-      "accilessnavi.safety-reports.v2",
-      JSON.stringify([
-        report("a", origin.lat, ["danger"]),
-        report("b", origin.lat + 0.0005, ["safe", "safe", "danger"]),
-        // 経路から遠い地点は読まない
-        report("c", origin.lat + 1, ["danger"]),
-      ]),
+  const [origin] = DEMO_PLACES;
+  type StoredComment = { kind: "safe" | "danger"; text: string; created_at: string };
+  const stored = (
+    id: string,
+    point: { lat: number; lon: number },
+    kinds: ("safe" | "danger")[],
+    comments: StoredComment[] = [],
+  ) => ({
+    id: id.repeat(32),
+    lat: point.lat,
+    lon: point.lon,
+    created_at: "2026-11-04T09:15:00.000Z",
+    votes: kinds.map((kind, index) => ({ voter: `voter-${id}-${index}-000000000`, kind })),
+    comments: comments.map((comment, index) => ({ id: `${id}${index}`.padEnd(32, "0"), ...comment })),
+  });
+  const seed = (...reports: ReturnType<typeof stored>[]) =>
+    localStorage.setItem("accilessnavi.safety-reports.v2", JSON.stringify(reports));
+  const selectedLine = (props: RouteMapProps) =>
+    props.result!.candidates.find((route) => route.id === props.selectedRouteId)!.geometry.coordinates;
+  // 外接矩形の中（読み込む範囲）だが、選択中の経路からは72mより遠い地点
+  const far = { lat: origin.lat - 0.0025, lon: origin.lon - 0.0025 };
+
+  it("pins only reports near the selected route, in the majority color", async () => {
+    const props = mapProps(createDemoRouteResponse(request));
+    expect(distanceToLineM(far, selectedLine(props))).toBeGreaterThan(NEAR_ROUTE_M);
+    seed(
+      stored("a", origin, ["danger"]),
+      stored("b", { lat: origin.lat + 0.0005, lon: origin.lon }, ["safe", "safe", "danger"]),
+      stored("c", far, ["danger"]),
+      stored("d", { lat: origin.lat + 1, lon: origin.lon }, ["danger"]),
     );
-    render(<RouteMap {...mapProps(createDemoRouteResponse(request))} />);
-    const danger = await screen.findByRole("img", { name: "口コミ：安全0票・危険1票" });
-    expect(danger).toHaveAttribute("fill", "#DC2626");
-    expect(screen.getByRole("img", { name: "口コミ：安全2票・危険1票" })).toHaveAttribute(
-      "fill",
-      "#16A34A",
-    );
-    expect(screen.getAllByRole("img", { name: /^口コミ：/ })).toHaveLength(2);
+    render(<RouteMap {...props} />);
+    const danger = await screen.findByRole("button", { name: "口コミ（安全0票・危険1票）を表示" });
+    expect(danger.querySelector(".map-community-pin")).toHaveAttribute("fill", "#DC2626");
+    expect(
+      screen.getByRole("button", { name: "口コミ（安全2票・危険1票）を表示" }).querySelector(".map-community-pin"),
+    ).toHaveAttribute("fill", "#16A34A");
+    expect(screen.getAllByRole("button", { name: /^口コミ（/ })).toHaveLength(2);
     const legend = screen.getByLabelText("地図の凡例");
     expect(legend).toHaveTextContent("安全の口コミ");
     expect(legend).toHaveTextContent("危険の口コミ");
@@ -733,5 +746,157 @@ describe("RouteMap community reports", () => {
     render(<RouteMap {...mapProps(createDemoRouteResponse(request))} />);
     await act(async () => {});
     expect(screen.getByLabelText("地図の凡例")).not.toHaveTextContent("口コミ");
+  });
+
+  it("shows no community legend when the only reports are far from the selected route", async () => {
+    seed(stored("c", far, ["danger"]));
+    render(<RouteMap {...mapProps(createDemoRouteResponse(request))} />);
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: /^口コミ（/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("地図の凡例")).not.toHaveTextContent("口コミ");
+  });
+
+  it("opens the tally, post date and newest three comments when a pin is pressed", async () => {
+    seed(
+      stored("a", origin, ["safe", "danger", "danger"], [
+        { kind: "safe", text: "いちばん古い", created_at: "2026-11-05T01:00:00.000Z" },
+        { kind: "safe", text: "歩道が広い", created_at: "2026-11-06T01:00:00.000Z" },
+        { kind: "danger", text: "朝は自転車が多い", created_at: "2026-11-07T01:00:00.000Z" },
+        { kind: "danger", text: "見通しが悪い", created_at: "2026-11-07T16:00:00.000Z" },
+      ]),
+    );
+    render(<RouteMap {...mapProps(createDemoRouteResponse(request))} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^口コミ（/ }));
+    const popup = screen.getByRole("region", { name: "口コミ" });
+    expect(popup).toHaveTextContent("2026年11月4日");
+    expect(within(popup).getByLabelText("安全1票・危険2票")).toHaveTextContent("安全 1票危険 2票");
+    const items = within(popup).getAllByRole("listitem");
+    // 新しい順。日付は日本時間（16:00Zは翌日）
+    expect(items.map((item) => item.textContent)).toEqual([
+      "危険11/8見通しが悪い",
+      "危険11/7朝は自転車が多い",
+      "安全11/6歩道が広い",
+    ]);
+    expect(popup).toHaveTextContent("ほか 1件");
+    expect(popup).not.toHaveTextContent("いちばん古い");
+    fireEvent.click(within(popup).getByRole("button", { name: "口コミを閉じる" }));
+    expect(screen.queryByRole("region", { name: "口コミ" })).not.toBeInTheDocument();
+  });
+
+  it("says so when a report has no comment text", async () => {
+    seed(stored("a", origin, ["danger"]));
+    render(<RouteMap {...mapProps(createDemoRouteResponse(request))} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^口コミ（/ }));
+    const popup = screen.getByRole("region", { name: "口コミ" });
+    expect(popup).toHaveTextContent("口コミの本文はありません");
+    expect(popup).not.toHaveTextContent("ほか");
+  });
+
+  it("never shows the accident and report popups together", async () => {
+    seed(stored("a", origin, ["danger"]));
+    render(<RouteMap {...mapProps(createDemoRouteResponse(request))} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^口コミ（/ }));
+    fireEvent.click(screen.getAllByRole("button", { name: /事故記録 .* を表示/ })[0]);
+    expect(screen.getByRole("region", { name: "過去の事故記録" })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "口コミ" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^口コミ（/ }));
+    expect(screen.getByRole("region", { name: "口コミ" })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "過去の事故記録" })).not.toBeInTheDocument();
+  });
+
+  it("toggles the reports, and hiding them closes the popup and the legend", async () => {
+    seed(stored("a", origin, ["danger"]));
+    const onShowReports = vi.fn();
+    const props = { ...mapProps(createDemoRouteResponse(request)), onShowReports };
+    const { rerender } = render(<RouteMap {...props} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^口コミ（/ }));
+    const toggle = screen.getByRole("button", { name: "口コミを地図に表示" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(toggle);
+    expect(onShowReports).toHaveBeenCalledWith(false);
+    rerender(<RouteMap {...props} showReports={false} />);
+    expect(screen.getByRole("button", { name: "口コミを地図に表示" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.queryByRole("button", { name: /^口コミ（/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "口コミ" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("地図の凡例")).not.toHaveTextContent("口コミ");
+    // 表示に戻しても、閉じたポップアップは開き直さない
+    rerender(<RouteMap {...props} />);
+    expect(await screen.findByRole("button", { name: /^口コミ（/ })).toBeVisible();
+    expect(screen.queryByRole("region", { name: "口コミ" })).not.toBeInTheDocument();
+  });
+
+  it("closes the report popup when another route is selected", async () => {
+    seed(stored("a", origin, ["danger"]));
+    const props = mapProps(createDemoRouteResponse(request));
+    const { rerender } = render(<RouteMap {...props} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^口コミ（/ }));
+    rerender(<RouteMap {...props} selectedRouteId={props.result!.fastest_id} />);
+    expect(screen.queryByRole("region", { name: "口コミ" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the same reports and popup during navigation", async () => {
+    seed(stored("a", origin, ["danger"], [
+      { kind: "danger", text: "見通しが悪い", created_at: "2026-11-07T01:00:00.000Z" },
+    ]));
+    const props = mapProps(createDemoRouteResponse(request));
+    render(
+      <RouteMap
+        {...props}
+        onShowReports={vi.fn()}
+        navigation={{ layers: emptyNavigationLayers(), follow: true, onFollowChange: vi.fn() }}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /^口コミ（/ }));
+    expect(screen.getByRole("region", { name: "口コミ" })).toHaveTextContent("見通しが悪い");
+    expect(screen.getByRole("button", { name: "口コミを地図に表示" })).toBeVisible();
+  });
+
+  describe("on the live map", () => {
+    beforeEach(() => {
+      live.maps.length = 0;
+      vi.stubEnv("VITE_API_MODE", "live");
+      vi.stubEnv("VITE_MAP_STYLE_URL", "https://example.invalid/style.json");
+    });
+    afterEach(() => { vi.unstubAllEnvs(); });
+
+    it("draws only nearby reports with their id, opens one on click, and shows both toggles", async () => {
+      const props = {
+        ...mapProps(createDemoRouteResponse(request)),
+        onShowAccidents: vi.fn(),
+        onShowReports: vi.fn(),
+      };
+      seed(stored("a", origin, ["danger"]), stored("c", far, ["danger"]));
+      const { map } = await renderLive(props);
+      await waitFor(() =>
+        expect(map.getSource("community-reports")!.data.features).toHaveLength(1),
+      );
+      expect(map.getSource("community-reports")!.data.features[0]).toEqual({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [origin.lon, origin.lat] },
+        properties: { reportId: "a".repeat(32), color: "#DC2626" },
+      });
+      const toggles = screen.getByRole("group", { name: "地図の表示切り替え" });
+      expect(within(toggles).getByRole("button", { name: "事故点を地図に表示" })).toBeVisible();
+      expect(within(toggles).getByRole("button", { name: "口コミを地図に表示" })).toBeVisible();
+      // 事故点と重なっていても口コミを優先する
+      map.queryRenderedFeatures.mockReturnValue([
+        { id: 0, layer: { id: "accident-hit" }, properties: {} },
+        { layer: { id: "community-hit" }, properties: { reportId: "a".repeat(32) } },
+      ]);
+      act(() => map.emit("click", { point: { x: 0, y: 0 } }));
+      expect(screen.getByRole("region", { name: "口コミ" })).toBeVisible();
+      expect(screen.queryByRole("region", { name: "過去の事故記録" })).not.toBeInTheDocument();
+    });
+
+    it("clears the layer when the reports are hidden", async () => {
+      seed(stored("a", origin, ["danger"]));
+      const props = mapProps(createDemoRouteResponse(request));
+      const { map, rerender } = await renderLive(props);
+      await waitFor(() =>
+        expect(map.getSource("community-reports")!.data.features).toHaveLength(1),
+      );
+      rerender(<RouteMap {...props} showReports={false} />);
+      expect(map.getSource("community-reports")!.data.features).toEqual([]);
+    });
   });
 });

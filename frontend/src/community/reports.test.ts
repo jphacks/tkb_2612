@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   boundsAround,
+  distanceToLineM,
   dominantKind,
   isTooWide,
+  NEAR_ROUTE_M,
+  reportsNearLine,
   storedVoterId,
   tallyLabel,
   voterId,
@@ -135,5 +138,38 @@ describe("demo store", () => {
         "voter-a-000000000000",
       ),
     ).rejects.toMatchObject({ code: "invalid_request" });
+  });
+});
+
+describe("distance to the route", () => {
+  // 東西に約182m（経度0.002度、緯度35.68度）の線分
+  const line = [
+    [139.767, 35.68],
+    [139.769, 35.68],
+  ];
+
+  it("measures to the nearest point of a segment, not just its vertices", () => {
+    // 線分の中点から北に0.0005度（約55.6m）
+    expect(distanceToLineM({ lat: 35.6805, lon: 139.768 }, line)).toBeCloseTo(55.6, 0);
+    // 端点の外側は端点までの距離
+    expect(distanceToLineM({ lat: 35.68, lon: 139.7665 }, line)).toBeCloseTo(45.2, 0);
+  });
+
+  it("handles a single point and an empty line", () => {
+    expect(distanceToLineM({ lat: 35.68, lon: 139.767 }, [[139.767, 35.68]])).toBe(0);
+    expect(distanceToLineM({ lat: 35.68, lon: 139.767 }, [])).toBe(Infinity);
+  });
+
+  it("keeps reports within 72m in their original order", () => {
+    const at = (id: string, metresNorth: number) => ({
+      ...base,
+      id,
+      lat: 35.68 + metresNorth / ((6371008.8 * Math.PI) / 180),
+      lon: 139.768,
+    });
+    const reports = [at("b", 71.9), at("a", 10), at("c", 72.1)];
+    expect(NEAR_ROUTE_M).toBe(72);
+    expect(reportsNearLine(reports, line).map((report) => report.id)).toEqual(["b", "a"]);
+    expect(reportsNearLine(reports, line, 20).map((report) => report.id)).toEqual(["a"]);
   });
 });
