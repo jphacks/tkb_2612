@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { searchRoutes } from "../api/client";
 import { describeError, ROUTE_INPUT_HINT } from "../api/errorMessage";
+import { FASTEST_LABEL, MIDDLE_LABEL, SAFE_LABEL } from "../components/RouteCallouts";
 import type { Place, RouteResponse, Scenario } from "../lib/types";
 import type { NavigationSelection } from "../navigation/preflight";
 import type { NavigationKind, SimulationSettings } from "../navigation/session";
@@ -21,7 +22,9 @@ export const RESEARCH_INTERRUPTED =
 export const TOO_CLOSE =
   "現在地と目的地の直線距離が20m未満のため、再検索できません";
 export const NO_SAFEST =
-  "安全ルートがありません。最短ルートから開始する場合は、開始操作を行ってください";
+  `${SAFE_LABEL}の経路がありません。${FASTEST_LABEL}の経路から開始する場合は、開始操作を行ってください`;
+export const NO_MIDDLE =
+  `${MIDDLE_LABEL}の経路がありません。表示した経路から選び直してください`;
 export const STAGE_TEXT: Record<ReSearchStage, string> = {
   locating: "現在地を取得しています",
   conditions: "条件を取得しています",
@@ -216,6 +219,12 @@ export function useReSearch(params: Params) {
         snapshot.current = null;
         finish({ status: "idle" });
         setNotice(NO_SAFEST);
+        return;
+      }
+      if (snap.selection === "middle" && outcome.response.middle_id === null) {
+        snapshot.current = null;
+        finish({ status: "idle" });
+        setNotice(NO_MIDDLE);
         return;
       }
       setResume({

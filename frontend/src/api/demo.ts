@@ -243,7 +243,7 @@ function weatherOf(request: RouteRequest): Weather | "all" {
 
 export function createDemoRouteResponse(
   request: RouteRequest,
-  scenario: "normal" | "same" | "zero" = "normal",
+  scenario: "normal" | "same" | "middle" | "zero" = "normal",
 ): RouteResponse {
   const start: Coordinate = [request.origin.lon, request.origin.lat];
   const end: Coordinate = [request.dest.lon, request.dest.lat];
@@ -259,9 +259,11 @@ export function createDemoRouteResponse(
   );
 
   const navigations = new Map<string, NavigationData>();
-  const candidates: RouteCandidate[] = [0, 1].map((index) => {
+  const indexes = scenario === "middle" ? [0, 1, 2] : [0, 1];
+  const bends = scenario === "middle" ? [0.09, -0.12, -0.2] : [0.09, -0.2];
+  const candidates: RouteCandidate[] = indexes.map((index) => {
     const id = `route-${index + 1}`;
-    const bend = index === 0 ? 0.09 : -0.2;
+    const bend = bends[index];
     const coords: Coordinate[] = [
       start,
       ...[0.34, 0.67].map((ratio) => {
@@ -283,10 +285,12 @@ export function createDemoRouteResponse(
         ? 0
         : scenario === "same"
           ? index + 1
-          : index === 0
-            ? 3
-            : 1;
-    const duration = baseTime + index * 360;
+          : scenario === "middle"
+            ? 3 - index
+            : index === 0
+              ? 3
+              : 1;
+    const duration = baseTime + index * (scenario === "middle" ? 180 : 360);
     const plane = localPlane(coords);
     const precedingSegments = Math.max(1, Math.ceil(plane.edges[0] / 75));
     const sourceSegments = Math.max(1, Math.ceil(plane.edges[1] / 75));
@@ -386,6 +390,7 @@ export function createDemoRouteResponse(
             },
       weighted_risk: weight,
       risk_per_km: round(weight / Math.max(length / 1000, 0.001), 3),
+      risk_reduction_percent: null,
       accident_points: { type: "FeatureCollection", features: points },
       points_shown: count,
       high_risk_sections: {
@@ -411,10 +416,10 @@ export function createDemoRouteResponse(
           : [],
       },
       high_risk_total: count ? 1 : 0,
-      // Filled after selection: only fastest/safest carry navigation data.
+      // Filled after selection: only fastest/middle/safest carry navigation data.
       navigation: null,
       exact_condition_count: count,
-      extra_minutes: index * 6,
+      extra_minutes: (duration - baseTime) / 60,
       within_detour: duration <= baseTime + maxDetour * 60 + 1e-6,
     };
   });
@@ -430,13 +435,41 @@ export function createDemoRouteResponse(
               a.duration - b.duration ||
               a.distance - b.distance,
           )[0];
+  const middleCandidate = scenario === "middle" ? candidates[1] : undefined;
+  const middle =
+    safest &&
+    middleCandidate &&
+    middleCandidate.within_detour &&
+    middleCandidate.id !== fastest.id &&
+    middleCandidate.id !== safest.id &&
+    fastest.duration < middleCandidate.duration &&
+    middleCandidate.duration < safest.duration &&
+    safest.weighted_risk < middleCandidate.weighted_risk &&
+    middleCandidate.weighted_risk < fastest.weighted_risk &&
+    fastest.weighted_risk > 0
+      ? middleCandidate
+      : null;
   for (const route of candidates)
-    if (route.id === fastest.id || route.id === safest?.id)
+    if (
+      route.id === fastest.id ||
+      route.id === middle?.id ||
+      route.id === safest?.id
+    )
       route.navigation = navigations.get(route.id) ?? null;
+  for (const route of candidates)
+    route.risk_reduction_percent = fastest.weighted_risk
+      ? round(
+          ((fastest.weighted_risk - route.weighted_risk) /
+            fastest.weighted_risk) *
+            100,
+          1,
+        )
+      : null;
   return {
     api_version: "2.0",
     dataset_id: DATASET_ID,
     fastest_id: fastest.id,
+    middle_id: middle?.id ?? null,
     safest_id: safest?.id ?? null,
     candidates,
     extra_minutes: safest?.extra_minutes ?? null,
@@ -448,7 +481,7 @@ export function createDemoRouteResponse(
       ? "全候補で該当する過去の事故がないため、事故を考慮した経路は選んでいません。"
       : safest.id === fastest.id
         ? "今回は最短時間経路が事故を考慮した経路と同じです。"
-        : `取得した2候補のうち、最短時間経路から+${maxDetour}分以内で重みの合計が最小の候補を選びました。`,
+        : `取得した${candidates.length}候補のうち、最短時間経路から+${maxDetour}分以内で重みの合計が最小の候補を選びました。`,
     warnings: [
       "デモデータです。経路の線・事故記録・所要時間は実際の道路や事故を示しません。",
       ...(scenario === "zero"

@@ -620,7 +620,7 @@
           "description": "経路始点からの案内地点をat_m昇順で返す。最後の要素だけがarriveで、そのat_mはlength_mと完全に一致する。\nat_mは有限で0以上length_m以下、非減少。旧方式はarrive 1件だけを返す。\n"
         }
       },
-      "description": "移行追加。選定1〜2経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。\n距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。\n110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。\n選定経路分のnavigation合計は空白なしUTF-8 JSONで6800000バイト以下を検証する。\n"
+      "description": "移行追加。選定1〜3経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。\n距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。\n110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。\n選定経路分のnavigation合計は空白なしUTF-8 JSONで10200000バイト以下を検証する。\n"
     },
     "WeatherMatch": {
       "type": "object",
@@ -667,6 +667,7 @@
         "weather_match",
         "weighted_risk",
         "risk_per_km",
+        "risk_reduction_percent",
         "accident_points",
         "points_shown",
         "high_risk_sections",
@@ -744,6 +745,13 @@
           "minimum": 0,
           "description": "丸めたweighted_risk/max(distance/1000,0.001)、重み点/km、小数3桁に丸め。選定に使わない。"
         },
+        "risk_reduction_percent": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "最短時間経路のweighted_risk（小数2桁）に対する削減率（%、小数1桁）。最短時間経路のweighted_riskが0ならnull。最短時間経路自身は0。負の値はリスクが高いことを表す。"
+        },
         "accident_points": {
           "$ref": "#/$defs/AccidentCollection"
         },
@@ -769,7 +777,7 @@
               "type": "null"
             }
           ],
-          "description": "必須。idがfastest_idまたはnullでないsafest_idならNavigationData、それ以外はnull。対象0件はsections=[]。"
+          "description": "必須。idがfastest_id、nullでないsafest_id、nullでないmiddle_idのいずれかならNavigationData、それ以外はnull。対象0件はsections=[]。"
         },
         "exact_condition_count": {
           "$ref": "#/$defs/Count",
@@ -839,6 +847,7 @@
         "dataset_id",
         "fastest_id",
         "safest_id",
+        "middle_id",
         "candidates",
         "extra_minutes",
         "risk_reduction_percent",
@@ -875,6 +884,17 @@
           ],
           "description": "安全ルート。新方式は全候補で該当事故（集合B）が0件でも推定リスクが最小の経路を選ぶ。旧方式は全候補0件ならnull。nullなら全候補0件である。"
         },
+        "middle_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RouteId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "中間案の候補ID。新方式で、最短時間経路と事故考慮経路のあいだに時間とリスクがあり、差が十分な経路があるときだけ入る。旧方式（schema 2）は常にnull。fastest_id・safest_idとは異なる。"
+        },
         "candidates": {
           "type": "array",
           "minItems": 1,
@@ -882,7 +902,7 @@
           "items": {
             "$ref": "#/$defs/RouteCandidate"
           },
-          "description": "durationの安定昇順。fastest_idとnullでないsafest_idは必ずこの中に存在し、その候補だけnavigationが非null。同一IDの2選定は1個を共用。"
+          "description": "durationの安定昇順。fastest_id・nullでないsafest_id・nullでないmiddle_idは必ずこの中に存在し、その候補だけnavigationが非null。同一IDの複数選定は1個を共用。"
         },
         "extra_minutes": {
           "type": [

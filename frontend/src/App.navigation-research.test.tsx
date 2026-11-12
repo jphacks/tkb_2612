@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDemoRouteResponse } from "./api/demo";
+import { FASTEST_LABEL, SAFE_LABEL } from "./components/RouteCallouts";
 import { NavigationSimulator } from "./navigation/simulator";
 import { NavigationSession } from "./navigation/session";
 import { ApiError } from "./api/errors";
@@ -43,12 +44,12 @@ function deferred<T>() {
 /** 4倍の模擬走行を開始し、逸脱の表示まで進める。 */
 async function deviate() {
   await openResults();
-  startGroup("最短ルート");
+  startGroup("最短時間");
   fireEvent.click(screen.getByText("模擬走行の設定"));
   fireEvent.click(screen.getByRole("radio", { name: "4倍" }));
   fireEvent.change(screen.getByLabelText(/seed/), { target: { value: "42" } });
   vi.useFakeTimers();
-  beginNavigation("最短ルート", "模擬走行で開始");
+  beginNavigation("最短時間", "模擬走行で開始");
   openNavigationSidebar();
   advance(10_000);
   fireEvent.click(screen.getByRole("button", { name: "逸脱を試す" }));
@@ -71,9 +72,9 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
     );
     await openResults();
     vi.useFakeTimers();
-    beginNavigation("安全ルート", "模擬走行で開始");
+    beginNavigation(SAFE_LABEL, "模擬走行で開始");
     openNavigationSidebar();
-    expect(screen.getByText("安全ルート", { selector: "dd" })).toBeVisible();
+    expect(screen.getByText(SAFE_LABEL, { selector: "dd" })).toBeVisible();
     advance(10_000);
     fireEvent.click(screen.getByRole("button", { name: "逸脱を試す" }));
     advance(12_000);
@@ -81,14 +82,14 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     const response = await api.searchRoutes.mock.results.at(-1)!.value;
     expect(response.fastest_id).not.toBe(response.safest_id);
-    expect(screen.getByText("安全ルート", { selector: "dd" })).toBeVisible();
+    expect(screen.getByText(SAFE_LABEL, { selector: "dd" })).toBeVisible();
     expect(api.searchRoutes).toHaveBeenCalledTimes(2);
   });
 
   it("開始直後の位置確認中には再検索を案内しない", async () => {
     await openResults();
     vi.useFakeTimers();
-    beginNavigation("最短ルート", "模擬走行で開始");
+    beginNavigation("最短時間", "模擬走行で開始");
     openNavigationSidebar();
     advance(3_000);
     expect(phase()).toHaveTextContent("照合保留");
@@ -237,7 +238,7 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
   it("事故考慮経路なしで返ったときは、最短時間へ自動で切り替えず開始操作を案内する", async () => {
     await openResults();
     vi.useFakeTimers();
-    beginNavigation("安全ルート", "模擬走行で開始");
+    beginNavigation(SAFE_LABEL, "模擬走行で開始");
     openNavigationSidebar();
     advance(10_000);
     fireEvent.click(screen.getByRole("button", { name: "逸脱を試す" }));
@@ -251,9 +252,9 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
     });
     expect(screen.queryByRole("complementary", { name: "ナビ" })).not.toBeInTheDocument();
     expect(
-      screen.getByText("安全ルートがありません。最短ルートから開始する場合は、開始操作を行ってください"),
+      screen.getByText(`${SAFE_LABEL}の経路がありません。${FASTEST_LABEL}の経路から開始する場合は、開始操作を行ってください`),
     ).toBeVisible();
-    expect(screen.queryByRole("group", { name: "安全ルート" })).not.toBeInTheDocument();
-    expect(startGroup("最短ルート").getByRole("button", { name: "模擬走行で開始" })).toBeVisible();
+    expect(screen.queryByRole("group", { name: SAFE_LABEL })).not.toBeInTheDocument();
+    expect(startGroup(FASTEST_LABEL).getByRole("button", { name: "模擬走行で開始" })).toBeVisible();
   });
 });

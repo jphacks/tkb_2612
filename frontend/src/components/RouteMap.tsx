@@ -51,9 +51,11 @@ import {
 import { isFatalMapError } from "../map/errors";
 import {
   FASTEST_LABEL,
+  MIDDLE_LABEL,
   RouteCallouts,
   SAFE_LABEL,
   featuredRoutes,
+  featuredSymbol,
   routeAnchor,
   routeTone,
   type MapPoint,
@@ -130,10 +132,13 @@ function keyActivate(event: KeyboardEvent<SVGGElement>, action: () => void) {
 }
 
 function routeLabel(route: RouteCandidate, result: RouteResponse) {
+  const symbol = featuredSymbol(result, route.id);
+  const prefix = symbol === null ? "" : `${symbol} `;
   if (route.id === result.fastest_id && route.id === result.safest_id)
-    return `${FASTEST_LABEL}・${SAFE_LABEL}（同一経路）`;
-  if (route.id === result.fastest_id) return FASTEST_LABEL;
-  if (route.id === result.safest_id) return SAFE_LABEL;
+    return `${prefix}${FASTEST_LABEL}・${SAFE_LABEL}（同一経路）`;
+  if (route.id === result.middle_id) return `${prefix}${MIDDLE_LABEL}`;
+  if (route.id === result.fastest_id) return `${prefix}${FASTEST_LABEL}`;
+  if (route.id === result.safest_id) return `${prefix}${SAFE_LABEL}`;
   return `候補 ${route.id.replace("route-", "")}`;
 }
 
@@ -990,6 +995,12 @@ export function RouteMap(props: RouteMapProps) {
                 <i className="legend-considered" />
                 {SAFE_LABEL}
               </span>
+              {result?.middle_id !== null && result?.middle_id !== undefined && (
+                <span>
+                  <i className="legend-middle" />
+                  {MIDDLE_LABEL}
+                </span>
+              )}
               <span>
                 <i className="legend-fastest" />
                 {FASTEST_LABEL}

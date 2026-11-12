@@ -23,19 +23,28 @@ use crate::domain::engine::{
 use crate::domain::navigation::{
     HIGH_RISK_MIN_WEIGHT, display_sections_checked, navigation_data_checked, vertex_distances,
 };
-use crate::domain::rounding::py_round;
+use crate::domain::rounding::{py_round, risk_reduction_percent};
 use crate::domain::routing::risk::RiskView;
 use crate::domain::routing::risk::arc_cost::{RiskArcCost, path_risk};
 use crate::domain::routing::search::SearchContext;
+use crate::domain::routing::search::SearchStatus;
+use crate::domain::routing::search::candidates::same_route;
 use crate::domain::routing::search::endpoints::path_distance_dm;
 use crate::domain::routing::search::route::RouteError;
-use crate::domain::routing::search::route::find_routes_ds;
+use crate::domain::routing::search::route::find_routes_with_middle_ds;
 use crate::domain::routing::snap::snap;
 
 use super::engine::RoutingEngine;
 
 /// within_detourの判定の許容（秒）。
 const DETOUR_EPSILON_S: f64 = 1e-6;
+
+/// 中間案を探す許容時間の下限（分）。仮置き。docs/multi-route-design.md 4.1節
+pub const MIDDLE_MIN_DETOUR_MIN: f64 = 4.0;
+/// 中間案と事故考慮経路の所要時間の差の下限（秒）。仮置き。docs/multi-route-design.md 4.1節
+pub const MIDDLE_MIN_TIME_GAP_S: f64 = 60.0;
+/// 中間案の削減率が事故考慮経路の削減率に占める割合の下限。仮置き。docs/multi-route-design.md 4.1節
+pub const MIDDLE_MIN_REDUCTION_RATIO: f64 = 0.5;
 
 const RISK_NOTE_HEAD: &str = "過去の事故に基づく推定指標です。事故を道路の区間や交差点に割り当て、道路の種類ごとの平均で偶然のばらつきを補正しています。";
 const RISK_NOTE_CAR: &str = "生活道路は交通量が少ないぶん件数が少なく出るため、重く数えています。";
@@ -99,6 +108,97 @@ pub struct EvaluationReport {
     pub candidates: Vec<CandidateReport>,
     /// 探索の候補の整理で80,000mを超えるために外した候補の数。
     pub dropped_too_long: u64,
+    /// 中間案を探索した場合の `search_best` の状態。探索しなければ `None`。
+    pub middle_status: Option<SearchStatus>,
+    /// 中間案の楕円の切り出しと探索。中間案を探索しなければ0。
+    pub middle_ms: f64,
+}
+
+/// 中間案を探す遠回りの上限（デシ秒）。許容時間の分単位の切り捨てが4分未満なら `None`。
+pub fn middle_search_detour_ds(max_detour_min: f64) -> Option<u64> {
+    let whole_min = max_detour_min.floor();
+    if whole_min < MIDDLE_MIN_DETOUR_MIN {
+        return None;
+    }
+    Some(600 * (whole_min / 2.0).floor() as u64)
+}
+
+/// 中間案の選定結果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MiddleSelection {
+    /// `candidates` の添字。中間案を出さないなら `None`。
+    pub middle: Option<usize>,
+    /// 中間案として採用しなかったために候補から外す添字。
+    pub remove: Option<usize>,
+    /// 取り除きを反映した fastest の添字。
+    pub fastest: usize,
+    /// 取り除きを反映した safest の添字。
+    pub safest: Option<usize>,
+}
+
+/// 中間案の添字を決め、採用しなかった中間案を候補から外すかどうかを返す。
+///
+/// `matching` は `search.middle` と同じ経路の候補の添字（見つからなければ `None`）。
+/// `durations`・`risks` は候補と同じ順の、丸めた所要時間（秒）と `weighted_risk`。
+pub fn select_middle(
+    fastest: usize,
+    safest: Option<usize>,
+    any_accident: bool,
+    matching: Option<usize>,
+    durations: &[f64],
+    risks: &[f64],
+) -> MiddleSelection {
+    let mut selection = MiddleSelection {
+        middle: None,
+        remove: None,
+        fastest,
+        safest,
+    };
+    let Some(k) = matching else {
+        return selection;
+    };
+    let base = risks.get(fastest).copied().unwrap_or(0.0);
+    let is_middle = safest.is_some_and(|s| {
+        s != fastest
+            && any_accident
+            && base > 0.0
+            && k != fastest
+            && k != s
+            && durations
+                .get(fastest)
+                .zip(durations.get(k))
+                .zip(durations.get(s))
+                .is_some_and(|((&f, &m), &safe)| f < m && m < safe)
+            && risks
+                .get(k)
+                .zip(risks.get(s))
+                .is_some_and(|(&m, &safe)| safe < m && m < base)
+            && durations
+                .get(s)
+                .zip(durations.get(k))
+                .is_some_and(|(&safe, &m)| safe - m >= MIDDLE_MIN_TIME_GAP_S)
+            && risks.get(s).is_some_and(|&safe| {
+                risks
+                    .get(k)
+                    .is_some_and(|&m| (base - m) >= MIDDLE_MIN_REDUCTION_RATIO * (base - safe))
+            })
+    });
+    if is_middle {
+        selection.middle = Some(k);
+        return selection;
+    }
+    if k != fastest && safest != Some(k) {
+        selection.remove = Some(k);
+        if fastest > k {
+            selection.fastest -= 1;
+        }
+        if let Some(s) = selection.safest
+            && s > k
+        {
+            selection.safest = Some(s - 1);
+        }
+    }
+    selection
 }
 
 fn search_error(error: RouteError, cancel: &CancelToken) -> EngineError {
@@ -161,9 +261,18 @@ pub fn evaluate_with_report(
         conditions,
     );
     let detour_ds = (600.0 * query.max_detour_min()).floor() as u64;
+    let middle_detour_ds = middle_search_detour_ds(query.max_detour_min());
     let search = {
         let mut cost = RiskArcCost::new(&mut view);
-        find_routes_ds(&ctx, &mut cost, &start, &end, detour_ds, cancel)
+        find_routes_with_middle_ds(
+            &ctx,
+            &mut cost,
+            &start,
+            &end,
+            detour_ds,
+            middle_detour_ds,
+            cancel,
+        )
     };
     cancel.check()?;
     let search = match search {
@@ -177,6 +286,11 @@ pub fn evaluate_with_report(
             "探索の候補が0本です".to_owned(),
         ));
     }
+    // 中間案と同じ経路の候補の添字（80kmの検査などで落ちていれば `None`）。
+    let matching_middle = search
+        .middle
+        .as_ref()
+        .and_then(|m| search.candidates.iter().position(|p| same_route(p, m)));
 
     // 候補ごとの形状・集合B・リスク・高リスク区間。
     for path in &search.candidates {
@@ -287,11 +401,11 @@ pub fn evaluate_with_report(
         .expect("候補は1本以上");
     let fastest_duration = candidates[fastest].duration_s;
     let limit_s = fastest_duration + query.max_detour_min() * 60.0 + DETOUR_EPSILON_S;
-    let extra: Vec<f64> = candidates
+    let mut extra: Vec<f64> = candidates
         .iter()
         .map(|c| py_round((c.duration_s - fastest_duration) / 60.0, 3))
         .collect();
-    let within: Vec<bool> = candidates.iter().map(|c| c.duration_s <= limit_s).collect();
+    let mut within: Vec<bool> = candidates.iter().map(|c| c.duration_s <= limit_s).collect();
     if let Some(i) = within.iter().position(|&ok| !ok) {
         return Err(EngineError::ContractViolation(format!(
             "候補{}の所要時間が遠回りの上限を超えています",
@@ -314,16 +428,34 @@ pub fn evaluate_with_report(
             if key(i) < key(best) { i } else { best }
         })
         .expect("最短時間経路は常に許容内");
+
+    // 中間案の選定。採用しなかった中間案は候補から外し、fastest・safestの添字を合わせる。
+    let durations: Vec<f64> = candidates.iter().map(|c| c.duration_s).collect();
+    let risks: Vec<f64> = candidates.iter().map(|c| c.weighted_risk).collect();
+    let selection = select_middle(
+        fastest,
+        Some(safest_index),
+        any_accident,
+        matching_middle,
+        &durations,
+        &risks,
+    );
+    let middle = selection.middle;
+    let fastest = selection.fastest;
+    let safest_index = selection.safest.expect("新方式は常にsafestを選ぶ");
+    if let Some(remove) = selection.remove {
+        candidates.remove(remove);
+        reports.remove(remove);
+        extra.remove(remove);
+        within.remove(remove);
+    }
+    let n = candidates.len();
+    // 取り除いた中間案だけに事故があった場合に備えて、取り除いた後の候補で数え直す。
+    let any_accident = candidates.iter().any(|c| c.totals.accident_count > 0);
     let safest = Some(safest_index);
     let base_risk = candidates[fastest].weighted_risk;
-    let risk_reduction_percent = safest.and_then(|s| {
-        (base_risk > 0.0).then(|| {
-            py_round(
-                100.0 * (base_risk - candidates[s].weighted_risk) / base_risk,
-                1,
-            )
-        })
-    });
+    let risk_reduction_percent =
+        safest.and_then(|s| risk_reduction_percent(base_risk, candidates[s].weighted_risk));
     let reason = {
         let mut reason = if safest_index == fastest {
             SAME_ROUTE_REASON.to_owned()
@@ -361,7 +493,7 @@ pub fn evaluate_with_report(
     let mut evaluated = Vec::with_capacity(n);
     for (i, candidate) in candidates.into_iter().enumerate() {
         cancel.check()?;
-        let selected = i == fastest || safest == Some(i);
+        let selected = i == fastest || safest == Some(i) || middle == Some(i);
         let navigation: Option<NavigationData> = if selected {
             let mut navigation =
                 navigation_data_checked(&candidate.subdivision, &candidate.weights, cancel)?;
@@ -400,6 +532,7 @@ pub fn evaluate_with_report(
         candidates: evaluated,
         fastest,
         safest,
+        middle,
         extra_minutes: safest.map(|s| extra[s]),
         risk_reduction_percent,
         reason,
@@ -412,6 +545,8 @@ pub fn evaluate_with_report(
         EvaluationReport {
             candidates: reports,
             dropped_too_long: search.dropped_too_long,
+            middle_status: search.stats.middle_status,
+            middle_ms: search.stats.middle_ms,
         },
     ))
 }
@@ -430,6 +565,31 @@ pub fn check_outcome_invariants(outcome: &RouteOutcome) -> Result<(), String> {
     }
     if outcome.safest.is_some_and(|s| s >= n) {
         return Err("safestが候補にない".into());
+    }
+    if outcome.middle.is_some_and(|m| m >= n) {
+        return Err("middleが候補にない".into());
+    }
+    if let Some(middle) = outcome.middle {
+        let Some(safest) = outcome.safest else {
+            return Err("middleがあるのにsafestがnull".into());
+        };
+        if middle == outcome.fastest {
+            return Err("middleがfastestと同じ".into());
+        }
+        if middle == safest {
+            return Err("middleがsafestと同じ".into());
+        }
+        let mid = &outcome.candidates[middle];
+        let fast = &outcome.candidates[outcome.fastest];
+        let safe = &outcome.candidates[safest];
+        if !(fast.path.duration_s < mid.path.duration_s
+            && mid.path.duration_s < safe.path.duration_s)
+        {
+            return Err("middleの所要時間がfastestとsafestのあいだにない".into());
+        }
+        if !(safe.weighted_risk < mid.weighted_risk && mid.weighted_risk < fast.weighted_risk) {
+            return Err("middleのweighted_riskがsafestとfastestのあいだにない".into());
+        }
     }
     // safestがnullなのは、事故があるときに限って違反になる（behavior.md 8章）
     let any_accident = outcome
@@ -473,7 +633,8 @@ pub fn check_outcome_invariants(outcome: &RouteOutcome) -> Result<(), String> {
         if c.high_risk_sections.iter().any(|s| s.severity_weight < 3) {
             return Err(format!("{id}: 重み3未満の表示区間がある"));
         }
-        let selected = i == outcome.fastest || outcome.safest == Some(i);
+        let selected =
+            i == outcome.fastest || outcome.safest == Some(i) || outcome.middle == Some(i);
         match (&c.navigation, selected) {
             (Some(nav), true) => check_navigation(&id, c, nav)?,
             (None, false) => {}

@@ -16,7 +16,7 @@ use super::Path;
 use super::SearchContext;
 use super::SearchStatus;
 use super::ellipse::{NO_DEDGE, Subgraph};
-use super::larac::larac;
+use super::larac::{LaracResult, larac};
 use super::rcsp::bounded_rcsp;
 use super::subgraph_search::{Objective, shortest_path};
 
@@ -34,15 +34,28 @@ pub struct SubgraphSearch {
     pub alternatives: Vec<Path>,
 }
 
-/// 部分グラフで、予算内でリスク最小の経路を探し、代替経路を集める。`p0` は最短時間経路
-/// （`best` が `p0` と同じ有向辺の列ならペナルティ法の代替経路は求めない）。
+/// 事故考慮経路の探索の結果。代替経路を集めるのに使う LARAC の結果も持つ。
+#[derive(Debug, Clone, PartialEq)]
+pub struct BestSearch {
+    /// 事故考慮経路。時間は `sub.budget_ds` 以下（予算内の経路がなければ最短時間経路で、`FastestOnly`）。
+    pub best: Path,
+    /// `Optimal`（最適性を確認）、`Bounded`（時間予算・ラベル数の上限で打ち切り）、`FastestOnly`。
+    pub status: SearchStatus,
+    /// 下界との相対差（`Optimal` なら0）。
+    pub gap: f64,
+    /// この経路を求めた LARAC の結果（凸包の点と最後の重み）。
+    pub larac: LaracResult,
+}
+
+/// 部分グラフで、予算内でリスク最小の経路（事故考慮経路）を探す。`search_subgraph` の手順1〜3。
+///
+/// LARAC で予算内の経路と下界を求め、リスクの最適性が確認できなければ RCSP で絞り込む。
 /// 出発から到着へ到達できなければ `None`。
-pub fn search_subgraph(
+pub fn search_best(
     ctx: &SearchContext<'_>,
     sub: &Subgraph,
-    p0: &Path,
     cancel: &CancelToken,
-) -> Result<Option<SubgraphSearch>, Interrupt> {
+) -> Result<Option<BestSearch>, Interrupt> {
     let larac = larac(ctx, sub, ctx.params.larac_iterations, cancel)?;
     if larac.min_risk.is_none() {
         return Ok(None);
@@ -61,6 +74,32 @@ pub fn search_subgraph(
             None => return Ok(None),
         },
     };
+    Ok(Some(BestSearch {
+        best,
+        status,
+        gap,
+        larac,
+    }))
+}
+
+/// 部分グラフで、予算内でリスク最小の経路を探し、代替経路を集める。`p0` は最短時間経路
+/// （`best` が `p0` と同じ有向辺の列ならペナルティ法の代替経路は求めない）。
+/// 出発から到着へ到達できなければ `None`。
+pub fn search_subgraph(
+    ctx: &SearchContext<'_>,
+    sub: &Subgraph,
+    p0: &Path,
+    cancel: &CancelToken,
+) -> Result<Option<SubgraphSearch>, Interrupt> {
+    let Some(found) = search_best(ctx, sub, cancel)? else {
+        return Ok(None);
+    };
+    let BestSearch {
+        best,
+        status,
+        gap,
+        larac,
+    } = found;
 
     let mut alternatives: Vec<Path> = larac
         .hull

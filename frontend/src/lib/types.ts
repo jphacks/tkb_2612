@@ -33,6 +33,7 @@ export type Scenario =
   | "loading"
   | "error"
   | "same"
+  | "middle"
   | "zero"
   | "map-error"
   | "conditions-error";

@@ -5,7 +5,7 @@
 //! 数値・件数・順序・選定・文言は②の値をそのまま使う（再計算しない）。
 //!
 //! 変換の前に相関制約・OpenAPIの値の範囲・JSONの安全整数範囲・有限値・navigationのサイズ
-//! （6,800,000バイト）を検査し、違反は内部契約違反（500）にする。間引いた200は返さない。
+//! （10,200,000バイト）を検査し、違反は内部契約違反（500）にする。間引いた200は返さない。
 
 use std::collections::HashSet;
 use std::io;
@@ -18,13 +18,13 @@ use crate::contract::engine::{
 use crate::contract::geo::{LAT_RANGE, LON_RANGE};
 use crate::contract::{
     AccidentPoint, AccidentTotals, EvaluatedRoute, HighRiskSegment, LonLat, Maneuver,
-    NavigationData, RouteOutcome,
+    NavigationData, RouteOutcome, risk_reduction_percent,
 };
 
 /// JSONの安全整数の上限（2^53−1）。
 pub const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 /// 選定経路分のnavigationの合計（空白なしUTF-8 JSON）の上限。
-pub const MAX_NAVIGATION_BYTES: u64 = 6_800_000;
+pub const MAX_NAVIGATION_BYTES: u64 = 10_200_000;
 /// OpenAPIの `NavigationData`・`NavigationSection` の範囲。
 pub const NAV_PROJECTION_LAT_RANGE: std::ops::RangeInclusive<f64> = 20.0..=46.0;
 pub const NAV_MAX_LENGTH_M: f64 = 110_000.0;
@@ -174,8 +174,11 @@ pub fn check_outcome(outcome: &RouteOutcome) -> Result<(), InvalidOutcome> {
     if !(1..=MAX_CANDIDATES).contains(&n) {
         return violation(format!("候補数{n}が1〜6の範囲外"));
     }
-    if outcome.fastest >= n || outcome.safest.is_some_and(|s| s >= n) {
-        return violation("fastest・safestが候補にない");
+    if outcome.fastest >= n
+        || outcome.safest.is_some_and(|s| s >= n)
+        || outcome.middle.is_some_and(|m| m >= n)
+    {
+        return violation("fastest・safest・middleが候補にない");
     }
     if outcome.dataset_id.len() != 64
         || !outcome
@@ -223,6 +226,27 @@ pub fn check_outcome(outcome: &RouteOutcome) -> Result<(), InvalidOutcome> {
         return violation("候補がduration昇順でない");
     }
     let fastest = &outcome.candidates[outcome.fastest];
+    if let Some(middle) = outcome.middle {
+        let Some(safest) = outcome.safest else {
+            return violation("middleがあるのにsafestがnull");
+        };
+        if middle == outcome.fastest {
+            return violation("middleがfastestと同じ");
+        }
+        if middle == safest {
+            return violation("middleがsafestと同じ");
+        }
+        let mid = &outcome.candidates[middle];
+        let safe = &outcome.candidates[safest];
+        if !(fastest.path.duration_s < mid.path.duration_s
+            && mid.path.duration_s < safe.path.duration_s)
+        {
+            return violation("middleの所要時間がfastestとsafestのあいだにない");
+        }
+        if !(safe.weighted_risk < mid.weighted_risk && mid.weighted_risk < fastest.weighted_risk) {
+            return violation("middleのweighted_riskがsafestとfastestのあいだにない");
+        }
+    }
     if let Some(safest) = outcome.safest.map(|s| &outcome.candidates[s]) {
         if !safest.within_detour {
             return violation("safestがwithin_detourでない");
@@ -235,6 +259,14 @@ pub fn check_outcome(outcome: &RouteOutcome) -> Result<(), InvalidOutcome> {
         }
         if fastest.weighted_risk > 0.0 && outcome.risk_reduction_percent.is_none() {
             return violation("fastestのリスクが正なのにrisk_reduction_percentがnull");
+        }
+        if fastest.weighted_risk > 0.0
+            && let Some(percent) = outcome.risk_reduction_percent
+        {
+            let expected = risk_reduction_percent(fastest.weighted_risk, safest.weighted_risk);
+            if expected != Some(percent) {
+                return violation("risk_reduction_percentがsafestの値と一致しない");
+            }
         }
     }
     if fastest.weighted_risk == 0.0 && outcome.risk_reduction_percent.is_some() {
@@ -363,7 +395,7 @@ fn check_candidate(
             return violation(format!("{id}: 表示区間が不正"));
         }
     }
-    let selected = i == outcome.fastest || outcome.safest == Some(i);
+    let selected = i == outcome.fastest || outcome.safest == Some(i) || outcome.middle == Some(i);
     match (&c.navigation, selected) {
         (Some(nav), true) => check_navigation(&id, c, nav),
         (None, false) => Ok(()),
@@ -694,6 +726,7 @@ struct CandidateDto<'a> {
     weather_match: Option<TotalsDto>,
     weighted_risk: f64,
     risk_per_km: f64,
+    risk_reduction_percent: Option<f64>,
     accident_points: FeatureCollection<AccidentFeatureDto>,
     points_shown: usize,
     high_risk_sections: FeatureCollection<HighRiskFeatureDto>,
@@ -705,7 +738,7 @@ struct CandidateDto<'a> {
 }
 
 impl<'a> CandidateDto<'a> {
-    fn new(index: usize, c: &'a EvaluatedRoute) -> Self {
+    fn new(index: usize, c: &'a EvaluatedRoute, base_risk: f64) -> Self {
         let id = route_id(index);
         let high_risk = c
             .high_risk_sections
@@ -728,6 +761,7 @@ impl<'a> CandidateDto<'a> {
             weather_match: c.weather_match.as_ref().map(TotalsDto::from),
             weighted_risk: c.weighted_risk,
             risk_per_km: c.risk_per_km,
+            risk_reduction_percent: risk_reduction_percent(base_risk, c.weighted_risk),
             points_shown: c.accident_points.len(),
             accident_points: FeatureCollection::new(
                 c.accident_points
@@ -766,6 +800,7 @@ struct RouteResponseDto<'a> {
     dataset_id: &'a str,
     fastest_id: String,
     safest_id: Option<String>,
+    middle_id: Option<String>,
     candidates: Vec<CandidateDto<'a>>,
     extra_minutes: Option<f64>,
     risk_reduction_percent: Option<f64>,
@@ -782,16 +817,18 @@ struct RouteResponseDto<'a> {
 impl<'a> RouteResponseDto<'a> {
     fn new(outcome: &'a RouteOutcome) -> Self {
         let conditions = outcome.conditions;
+        let base_risk = outcome.candidates[outcome.fastest].weighted_risk;
         Self {
             api_version: "2.0",
             dataset_id: &outcome.dataset_id,
             fastest_id: route_id(outcome.fastest),
             safest_id: outcome.safest.map(route_id),
+            middle_id: outcome.middle.map(route_id),
             candidates: outcome
                 .candidates
                 .iter()
                 .enumerate()
-                .map(|(i, c)| CandidateDto::new(i, c))
+                .map(|(i, c)| CandidateDto::new(i, c, base_risk))
                 .collect(),
             extra_minutes: outcome.extra_minutes,
             risk_reduction_percent: outcome.risk_reduction_percent,

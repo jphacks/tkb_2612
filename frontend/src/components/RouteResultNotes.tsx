@@ -1,9 +1,12 @@
 import type { RouteCandidate, RouteResponse } from "../lib/types";
-import { FASTEST_LABEL, SAFE_LABEL } from "./RouteCallouts";
+import { FASTEST_LABEL, MIDDLE_LABEL, SAFE_LABEL } from "./RouteCallouts";
 
 type Props = {
   result: RouteResponse;
 };
+
+export const COMPARISON_NOTICE =
+  "過去の事故に基づく参考指標です。事故に遭う確率や安全性を保証するものではありません。";
 
 const HEAVY_WEATHER = new Set(["雨", "霧", "雪"]);
 
@@ -13,18 +16,18 @@ function choiceSentence(
 ): string | null {
   if (result.safest_id === null || safest === undefined) return null;
   if (result.safest_id === result.fastest_id)
-    return "遠回りの上限までの経路の中では、最短ルートが推定リスクもいちばん低い経路です。";
+    return `遠回りの上限までの経路の中では、${FASTEST_LABEL}の経路が推定リスクもいちばん低い経路です。`;
   const minutes = result.extra_minutes ?? safest.extra_minutes;
   const longer =
     minutes < 1 ? "1分未満" : `${Math.round(minutes)}分`;
   if (result.risk_reduction_percent === null)
-    return `安全ルートは最短ルートより${longer}長くかかります。`;
-  return `安全ルートは最短ルートより${longer}長くかかりますが、推定リスクは${result.risk_reduction_percent.toFixed(1)}%低くなります。`;
+    return `${SAFE_LABEL}の経路は${FASTEST_LABEL}の経路より${longer}長くかかります。`;
+  return `${SAFE_LABEL}の経路は${FASTEST_LABEL}の経路より${longer}長くかかりますが、推定リスクは${result.risk_reduction_percent.toFixed(1)}%低くなります。`;
 }
 
 /**
- * 推定リスクを、最短ルートを100とした相対値で表す（最短ルートは常に「100」、ほかは小数1桁）。
- * 最短ルートの推定リスクが0以下で比べられないときは null を返す。
+ * 推定リスクを、最短時間経路を100とした相対値で表す（最短時間経路は常に「100」、ほかは小数1桁）。
+ * 最短時間経路の推定リスクが0以下で比べられないときは null を返す。
  */
 export function relativeRisk(
   route: RouteCandidate,
@@ -42,6 +45,9 @@ export function RouteResultNotes({ result }: Props) {
   const fastest = result.candidates.find(
     (route) => route.id === result.fastest_id,
   );
+  const middle = result.candidates.find(
+    (route) => route.id === result.middle_id,
+  );
   const accidentCountReversed =
     safest !== undefined &&
     fastest !== undefined &&
@@ -57,6 +63,13 @@ export function RouteResultNotes({ result }: Props) {
       route: fastest,
     });
   }
+  if (
+    middle !== undefined &&
+    middle.id !== result.fastest_id &&
+    middle.id !== result.safest_id
+  ) {
+    rows.push({ label: MIDDLE_LABEL, route: middle });
+  }
   if (safest !== undefined && safest.id !== result.fastest_id) {
     rows.push({ label: SAFE_LABEL, route: safest });
   }
@@ -64,12 +77,13 @@ export function RouteResultNotes({ result }: Props) {
 
   return (
     <section className="route-result-notes" aria-label="検索結果の説明">
+      <p>{COMPARISON_NOTICE}</p>
       {result.safest_id === null && (
-        <p>全候補で該当する事故がないため、安全ルートは選んでいません。</p>
+        <p>全候補で該当する事故がないため、{SAFE_LABEL}の経路は選んでいません。</p>
       )}
       {accidentCountReversed && (
         <p>
-          安全ルートは、過去事故の件数が最短ルートより多くなっています。件数は道路の種類による偶然のばらつきを含むため、推定リスクでは低い経路を選んでいます。
+          {SAFE_LABEL}の経路は、過去事故の件数が{FASTEST_LABEL}の経路より多くなっています。件数は道路の種類による偶然のばらつきを含むため、推定リスクでは低い経路を選んでいます。
         </p>
       )}
       {result.warnings.length > 0 && (
@@ -86,7 +100,7 @@ export function RouteResultNotes({ result }: Props) {
           <thead>
             <tr>
               <th scope="col">経路</th>
-              <th scope="col">推定リスク（最短ルート=100）</th>
+              <th scope="col">推定リスク（{FASTEST_LABEL}の経路=100）</th>
               <th scope="col">事故件数</th>
             </tr>
           </thead>

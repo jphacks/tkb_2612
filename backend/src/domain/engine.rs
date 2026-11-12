@@ -11,7 +11,7 @@ use crate::contract::{
 use super::candidates;
 use super::corridor::{Subdivision, corridor_hits};
 use super::navigation::{display_sections_checked, navigation_data_checked};
-use super::rounding::py_round;
+use super::rounding::{py_round, risk_reduction_percent};
 use super::scoring::{RouteScore, score_route};
 use super::snapshot::AccidentSnapshot;
 
@@ -158,14 +158,8 @@ impl RouteEngine for AccidentEngine {
         });
 
         let base_risk = scored[fastest].score.weighted_risk;
-        let risk_reduction_percent = safest.and_then(|s| {
-            (base_risk > 0.0).then(|| {
-                py_round(
-                    100.0 * (base_risk - scored[s].score.weighted_risk) / base_risk,
-                    1,
-                )
-            })
-        });
+        let risk_reduction_percent =
+            safest.and_then(|s| risk_reduction_percent(base_risk, scored[s].score.weighted_risk));
         let reason = match safest {
             None => NO_ACCIDENT_REASON.to_owned(),
             Some(s) => {
@@ -235,6 +229,7 @@ impl RouteEngine for AccidentEngine {
             candidates: evaluated,
             fastest,
             safest,
+            middle: None,
             extra_minutes: safest.map(|s| extra[s]),
             risk_reduction_percent,
             reason,

@@ -29,6 +29,7 @@ use accident_route_backend::domain::routing::search::alt::{
 };
 use accident_route_backend::domain::routing::search::candidates::{
     MAX_ROUTE_DISTANCE_DM, overlap_ratio, path_length_dm, select_candidates,
+    select_candidates_with_middle,
 };
 use accident_route_backend::domain::routing::search::ellipse::{
     EllipseError, NO_DEDGE, Subgraph, ellipse_subgraph, whole_graph_subgraph,
@@ -42,6 +43,9 @@ use accident_route_backend::domain::routing::search::pipeline::{
 use accident_route_backend::domain::routing::search::rcsp::bounded_rcsp;
 use accident_route_backend::domain::routing::search::reduced::{
     REDUCED_MAX_CLASS, REDUCED_RADIUS_M, reduced_ellipse,
+};
+use accident_route_backend::domain::routing::search::route::{
+    find_routes_ds, find_routes_with_middle_ds,
 };
 use accident_route_backend::domain::routing::search::{
     ArcCost, Path, SearchContext, SearchParams, SearchStatus,
@@ -2324,6 +2328,148 @@ fn select_candidates_drops_candidates_longer_than_80km() {
         10_000,
     );
     assert_eq!(kept, vec![long_p0]);
+}
+
+#[test]
+fn select_candidates_with_middle_keeps_middle_and_checks_limits() {
+    let w = CandidateWorld::new();
+    let (g, topo) = (&w.graph, &w.topology);
+    let p0 = w.path(&row(0, 0, 1), 100);
+    let best = w.path(&row(2, 0, 5), 600);
+    // best と6辺のうち5辺（80%超）を共有する中間案。
+    let mut cells = row(2, 0, 5);
+    cells.push((1, 5));
+    let middle = w.path(&cells, 550);
+
+    // middle は best と80%を超えて重なっても残す（p0・best と同じく重複除去の対象外）。
+    let (kept, stats) = select_candidates_with_middle(
+        g,
+        topo,
+        p0.clone(),
+        best.clone(),
+        Some(middle.clone()),
+        vec![],
+        1_000,
+    );
+    assert_eq!(
+        kept,
+        vec![p0.clone(), middle.clone(), best.clone()],
+        "middle が重複除去で落ちた"
+    );
+    assert_eq!(stats.dropped_too_long, 0);
+
+    // p0 と同じ中間案は足さない。
+    let (kept, _) = select_candidates_with_middle(
+        g,
+        topo,
+        p0.clone(),
+        best.clone(),
+        Some(p0.clone()),
+        vec![],
+        1_000,
+    );
+    assert_eq!(kept, vec![p0.clone(), best.clone()]);
+
+    // best と同じ中間案は足さない。
+    let (kept, _) = select_candidates_with_middle(
+        g,
+        topo,
+        p0.clone(),
+        best.clone(),
+        Some(best.clone()),
+        vec![],
+        1_000,
+    );
+    assert_eq!(kept, vec![p0.clone(), best.clone()]);
+
+    // 時間の上限を超える中間案は足さない。
+    let slow_middle = w.path(&cells, 1_001);
+    let (kept, _) = select_candidates_with_middle(
+        g,
+        topo,
+        p0.clone(),
+        best.clone(),
+        Some(slow_middle),
+        vec![],
+        1_000,
+    );
+    assert_eq!(kept, vec![p0.clone(), best.clone()]);
+}
+
+#[test]
+fn find_routes_with_middle_ds_finds_the_middle_route() {
+    // 3本の道：A(10分, リスク1000)・B(12分, リスク400)・C(14分, リスク0)。
+    // 本体の上限を14分にすると best は C、中間案の上限を12分にすると B が中間案になる。
+    let nodes = [
+        (35.000, 139.000), // 0: S
+        (35.001, 139.001), // 1: A1
+        (35.000, 139.002), // 2: T
+        (34.999, 139.001), // 3: B1
+        (35.002, 139.001), // 4: C1
+    ];
+    let edges = [
+        (0, 1, 25_000), // A: 10分
+        (1, 2, 25_000),
+        (0, 3, 30_000), // B: 12分
+        (3, 2, 30_000),
+        (0, 4, 35_000), // C: 14分
+        (4, 2, 35_000),
+    ];
+    let builder = small_graph(&nodes, &edges);
+    let world = World::new(&builder, Mode::Car);
+    let g = &world.graph;
+    let d = |a, b| builder.dedge(a, b);
+    let mut cost = TestCost::with_risk(g, &[(d(0, 1), 1_000), (d(0, 3), 400), (d(0, 4), 0)]);
+    let ctx = world.ctx(unlimited_params());
+    let cancel = CancelToken::unbounded();
+    let start = snap_at(g, 0, 0);
+    let end = snap_at(g, 1, 25_000);
+    let detour_ds = 4 * 600;
+    let middle_detour_ds = 2 * 600;
+
+    // 中間案を求めなければ、find_routes_ds と同じ結果になる。
+    let plain = find_routes_ds(&ctx, &mut cost, &start, &end, detour_ds, &cancel).unwrap();
+    let none = find_routes_with_middle_ds(&ctx, &mut cost, &start, &end, detour_ds, None, &cancel)
+        .unwrap();
+    assert_eq!(none.p0, plain.p0);
+    assert_eq!(none.best, plain.best);
+    assert_eq!(none.candidates, plain.candidates);
+    assert_eq!(none.budget_ds, plain.budget_ds);
+    assert_eq!(none.dropped_too_long, plain.dropped_too_long);
+    assert_eq!(none.stats.status, plain.stats.status);
+    assert_eq!(none.stats.gap, plain.stats.gap);
+    assert_eq!(none.stats.ellipse_nodes, plain.stats.ellipse_nodes);
+    assert_eq!(none.stats.ellipse_arcs, plain.stats.ellipse_arcs);
+    assert_eq!(none.stats.reduced, plain.stats.reduced);
+    assert_eq!(none.stats.fastest_only, plain.stats.fastest_only);
+    assert_eq!(none.stats.rcsp_completed, plain.stats.rcsp_completed);
+    assert_eq!(none.middle, None);
+    assert_eq!(none.stats.middle_ms, 0.0);
+    assert_eq!(none.stats.middle_status, None);
+
+    // 中間案は B（中くらいの道）で、候補にも入る。
+    let found = find_routes_with_middle_ds(
+        &ctx,
+        &mut cost,
+        &start,
+        &end,
+        detour_ds,
+        Some(middle_detour_ds),
+        &cancel,
+    )
+    .unwrap();
+    assert_eq!(found.p0.dedges, vec![d(0, 1), d(1, 2)]);
+    assert_eq!(found.best.dedges, vec![d(0, 4), d(4, 2)]);
+    let middle = found.middle.as_ref().expect("中間案がない");
+    assert_eq!(middle.dedges, vec![d(0, 3), d(3, 2)]);
+    assert_eq!(middle.time_ds, 12 * 600);
+    assert!(
+        found.candidates.iter().any(|p| p == middle),
+        "中間案が候補にない"
+    );
+    assert_eq!(found.candidates.len(), 3);
+    assert_eq!(found.stats.middle_status, Some(SearchStatus::Optimal));
+    assert!(found.stats.middle_ms.is_finite());
 }
 
 // ---------------------------------------------------------------------------------------------

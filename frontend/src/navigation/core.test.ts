@@ -16,7 +16,7 @@ describe("局所平面・開始前検査・残量（7.2/7.4）", () => {
     const g = createRouteGeometry(c.geometry.coordinates, c.expected.navigation);
     g.computedDistances.forEach((d, i) => expect(Math.abs(d - c.expected.navigation.vertex_distances_m[i])).toBeLessThanOrEqual(fixture.distance_tolerance_m));
     const route = { ...testRoute(), id: c.route_id, geometry: { type: "LineString" as const, coordinates: c.geometry.coordinates }, navigation: c.expected.navigation, high_risk_total: c.expected.high_risk_total };
-    const result = checkNavigationStart({ route, selection: "fastest", fastestId: c.route_id, safestId: null, responseGeneration: 2, currentGeneration: 2, mapAvailable: true });
+    const result = checkNavigationStart({ route, selection: "fastest", fastestId: c.route_id, middleId: null, safestId: null, responseGeneration: 2, currentGeneration: 2, mapAvailable: true });
     expect(result.ok).toBe(c.expected.navigation.length_m > 0);
   });
   it("経路最短距離・重複頂点・辺境界の補間", () => {
@@ -28,11 +28,18 @@ describe("局所平面・開始前検査・残量（7.2/7.4）", () => {
     expect(unprojectPoint(g, projectPoint(g, localPosition(123, 45)))).toEqual(localPosition(123, 45));
   });
   it("選定・世代・地図・不正距離軸・sidを拒否し、同一IDの種別は保持する", () => {
-    const args = { route: testRoute(), selection: "safest" as const, fastestId: "route-1", safestId: "route-1", responseGeneration: 2, currentGeneration: 2, mapAvailable: true };
+    const args = { route: testRoute(), selection: "safest" as const, fastestId: "route-1", middleId: null, safestId: "route-1", responseGeneration: 2, currentGeneration: 2, mapAvailable: true };
     expect(checkNavigationStart(args)).toMatchObject({ ok: true, selection: "safest" });
     for (const patch of [{ safestId: null }, { currentGeneration: 3 }, { mapAvailable: false }, { route: { ...args.route, navigation: null } }, { route: { ...args.route, navigation: { ...args.route.navigation!, vertex_distances_m: [0, 400] } } }]) expect(checkNavigationStart({ ...args, ...patch }).ok).toBe(false);
     const bad = testRoute(); bad.navigation!.sections = [{ id: "route-1:nav-99-99", start_segment_index: 99, end_segment_index: 99, start_m: 0, end_m: 500, severity_weight: 3 }]; bad.high_risk_total = 1;
     expect(checkNavigationStart({ ...args, route: bad }).ok).toBe(false);
+  });
+  it("中間案はmiddleIdが一致するときだけ開始でき、別IDでは拒否する", () => {
+    const route = testRoute();
+    const args = { route, selection: "middle" as const, fastestId: "route-2", middleId: "route-1", safestId: "route-3", responseGeneration: 2, currentGeneration: 2, mapAvailable: true };
+    expect(checkNavigationStart(args)).toMatchObject({ ok: true, selection: "middle" });
+    expect(checkNavigationStart({ ...args, middleId: "route-3" }).ok).toBe(false);
+    expect(checkNavigationStart({ ...args, middleId: null }).ok).toBe(false);
   });
   it("距離軸の割合をOSRM残量へ変換し、後退で増加、未確定はnull", () => {
     const r = { distance: 1200, duration: 125, navigation: { length_m: 500 } };

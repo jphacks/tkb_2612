@@ -6,7 +6,7 @@ export const SAFETY_NOTICE =
 export const WALKING_NOTICE = "徒歩の場合も、歩きながら画面を注視しないでください。";
 
 export interface NavigationConfirmDialogProps {
-  /** 例: 最短ルート */
+  /** 例: 最短時間 */
   selectionLabel: string;
   kind: NavigationKind;
   onConfirm: () => void;

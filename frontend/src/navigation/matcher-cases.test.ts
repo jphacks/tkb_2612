@@ -48,7 +48,7 @@ function run(id: string, jitter: boolean, seed: number, multiplier: 1 | 2 | 4 | 
     route.high_risk_total = endSid + 1;
     route.navigation!.sections = [{ id: `route-1:nav-0-${endSid}`, start_segment_index: 0, end_segment_index: endSid, start_m: 0, end_m: Math.min(300, route.navigation!.length_m), severity_weight: 3 }];
   }
-  expect(checkNavigationStart({ route, selection: "fastest", fastestId: route.id, safestId: null, responseGeneration: 1, currentGeneration: 1, mapAvailable: true }).ok).toBe(true);
+  expect(checkNavigationStart({ route, selection: "fastest", fastestId: route.id, middleId: null, safestId: null, responseGeneration: 1, currentGeneration: 1, mapAvailable: true }).ok).toBe(true);
   let trueP = 0;
   const unresolved = id.startsWith("M6") || id.startsWith("M7");
   const late = id.startsWith("M7");

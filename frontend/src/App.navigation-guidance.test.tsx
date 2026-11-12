@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FASTEST_LABEL, SAFE_LABEL } from "./components/RouteCallouts";
 import type { RouteCandidate } from "./lib/types";
 import type { GuidanceStep } from "./navigation/guidance";
 import { api, resetApi } from "./test/apiMock";
@@ -81,7 +82,7 @@ describe("上部バーの案内と通過状態", () => {
   it("揺らぎのある模擬走行で曲がり角を通過した後、通過した案内へ戻らない", async () => {
     await openResults();
     vi.useFakeTimers();
-    beginNavigation("最短ルート", "模擬走行で開始");
+    beginNavigation("最短時間", "模擬走行で開始");
     expect(screen.getByRole("region", { name: "ナビ案内" })).toBeVisible();
     fireEvent.click(simulationControls().getByRole("radio", { name: "8倍" }));
 
@@ -103,7 +104,7 @@ describe("上部バーの案内と通過状態", () => {
     expect(afterPassing.filter((distance) => distance === null || distance <= approach)).toEqual([]);
   });
 
-  it.each(["最短ルート", "安全ルート"])("停止後に%sで開始し直すと、前のセッションの通過状態を持ち越さない", async (nextRoute) => {
+  it.each([FASTEST_LABEL, SAFE_LABEL])("停止後に%sで開始し直すと、前のセッションの通過状態を持ち越さない", async (nextRoute) => {
     // 模擬走行の最初の進捗が後退許容幅に入る位置へ案内地点を置き、持ち越しを検出できるようにする。
     harness.guidance = (route) => [
       { id: "turn", maneuver: "right", atM: 15 },
@@ -111,7 +112,7 @@ describe("上部バーの案内と通過状態", () => {
     ];
     await openResults();
     vi.useFakeTimers();
-    beginWithoutJitter("最短ルート");
+    beginWithoutJitter(FASTEST_LABEL);
     advance(30_000);
     expect(action()).toBe("目的地");
 
@@ -133,7 +134,7 @@ describe("APIの案内地点の表示", () => {
     const turn = route.navigation!.guidance.find((step) => step.maneuver !== "arrive")!;
     const start = Math.max(0, turn.at_m - 40);
     vi.useFakeTimers();
-    beginNavigation("最短ルート", "実機GPSで開始");
+    beginNavigation(FASTEST_LABEL, "実機GPSで開始");
     openNavigationSidebar();
     for (let i = 0; i < 7; i++) {
       advance(1000);
@@ -150,10 +151,10 @@ describe("APIの案内地点の表示", () => {
     ];
     await openResults();
     vi.useFakeTimers();
-    startGroup("最短ルート");
+    startGroup(FASTEST_LABEL);
     fireEvent.click(screen.getByText("模擬走行の設定"));
     fireEvent.click(screen.getByRole("radio", { name: "4倍" }));
-    beginNavigation("最短ルート", "模擬走行で開始");
+    beginNavigation(FASTEST_LABEL, "模擬走行で開始");
     openNavigationSidebar();
     advance(10_000);
     expect(action()).toBe("目的地");
@@ -180,7 +181,7 @@ describe("APIの案内地点の表示", () => {
     ];
     await openResults();
     vi.useFakeTimers();
-    beginNavigation("最短ルート", "模擬走行で開始");
+    beginNavigation(FASTEST_LABEL, "模擬走行で開始");
     advance(6000);
     expect(action()).toBe(label);
   });
@@ -191,7 +192,7 @@ describe("APIの案内地点の表示", () => {
     ];
     await openResults();
     vi.useFakeTimers();
-    beginNavigation("最短ルート", "模擬走行で開始");
+    beginNavigation(FASTEST_LABEL, "模擬走行で開始");
     advance(6000);
     expect(action()).toBe("経路に沿って進む");
     expect(displayedDistance()).toBeNull();
@@ -203,7 +204,7 @@ describe("地図障害時の模擬走行バナー", () => {
   it("地図が使えなくなっても、一時停止した模擬走行のバナーを残し、案内バーは出さない", async () => {
     await openResults();
     vi.useFakeTimers();
-    beginNavigation("最短ルート", "模擬走行で開始");
+    beginNavigation("最短時間", "模擬走行で開始");
     advance(10_000);
     const overlay = () => within(document.querySelector(".nav-guidance-overlay") as HTMLElement);
     expect(overlay().getByText(NOTICE)).toBeVisible();
@@ -224,7 +225,7 @@ describe("地図障害時の模擬走行バナー", () => {
     installGeolocation();
     await openResults();
     vi.useFakeTimers();
-    beginNavigation("最短ルート", "実機GPSで開始");
+    beginNavigation("最短時間", "実機GPSで開始");
     act(() => harness.failMap!());
     expect(screen.getByText("地図を利用できません")).toBeVisible();
     expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();

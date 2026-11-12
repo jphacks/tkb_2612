@@ -15,6 +15,7 @@ use accident_route_backend::contract::{
     AccidentPoint, AccidentTotals, Attribution, EvaluatedRoute, GuidanceStep, HighRiskSegment,
     LonLat, Maneuver, NavigationData, NavigationSection, RouteOutcome,
 };
+use accident_route_backend::domain::rounding::risk_reduction_percent;
 use accident_route_backend::testing::fixtures::{
     check_outcome_invariants, expected_route_outcome, fixture_dataset_info, route_example,
     route_response_json, route_response_names,
@@ -111,11 +112,11 @@ fn unsafe_integer_outcome() -> RouteOutcome {
     outcome
 }
 
-/// navigationが6,800,000バイトを超える結果（頂点数を増やす）。
+/// navigationが10,200,000バイトを超える結果（頂点数を増やす）。
 fn oversized_navigation_outcome() -> RouteOutcome {
     let mut outcome = expected_route_outcome("noAccidents");
     let candidate = &mut outcome.candidates[outcome.fastest];
-    let n = 500_000;
+    let n = 800_000;
     candidate.path.coordinates = (0..n)
         .map(|i| LonLat::new(139.0 + i as f64 * 1e-6, 35.0))
         .collect();
@@ -137,10 +138,10 @@ fn json_safe_integer_overflow_is_rejected() {
     assert!(render_route_response(&unsafe_integer_outcome()).is_err());
 }
 
-/// 6,800,000バイトを超えるnavigationは拒否する。OpenAPIの範囲（頂点15,000・区間8,233・
-/// 案内14,999）内では選定2本の合計は約6.77MBに収まるので、超える結果は頂点数の範囲外でもある。
+/// 10,200,000バイトを超えるnavigationは拒否する。OpenAPIの範囲（頂点15,000・区間8,233・
+/// 案内14,999）内では選定3本の合計は約10.15MBに収まるので、超える結果は頂点数の範囲外でもある。
 #[test]
-fn navigation_over_six_point_eight_megabytes_is_rejected() {
+fn navigation_over_limit_is_rejected() {
     let outcome = oversized_navigation_outcome();
     let nav = outcome.candidates[outcome.fastest]
         .navigation
@@ -524,6 +525,59 @@ fn selection_and_rounding_correlations_are_checked() {
         let message = rejection(&outcome);
         assert!(message.contains(expected), "{expected}: {message}");
     }
+}
+
+/// 中間案を出せる結果（fastest=0・middle=1・safest=2）。
+fn middle_outcome() -> RouteOutcome {
+    let mut outcome = expected_route_outcome("twoSelected");
+    // 候補1と候補2のリスクを入れ替え、fastest > middle > safest にする。
+    outcome.candidates[1].weighted_risk = 8.34;
+    outcome.candidates[1].risk_per_km =
+        outcome.candidates[1].weighted_risk / (outcome.candidates[1].path.distance_m / 1000.0);
+    outcome.candidates[2].weighted_risk = 3.64;
+    outcome.candidates[2].risk_per_km =
+        outcome.candidates[2].weighted_risk / (outcome.candidates[2].path.distance_m / 1000.0);
+    outcome.candidates[2].navigation = outcome.candidates[1].navigation.clone();
+    outcome.middle = Some(1);
+    outcome.safest = Some(2);
+    outcome.extra_minutes = Some(outcome.candidates[2].extra_minutes);
+    outcome.risk_reduction_percent = risk_reduction_percent(12.21, 3.64);
+    outcome
+}
+
+#[test]
+fn middle_id_and_candidate_reduction_are_rendered() {
+    let outcome = middle_outcome();
+    check_outcome_invariants(&outcome).expect("中間案の相関制約");
+    let actual = render(&outcome);
+    assert_eq!(actual["middle_id"], "route-2");
+    assert_eq!(actual["risk_reduction_percent"].as_f64(), Some(70.2));
+    let reductions: Vec<_> = actual["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["risk_reduction_percent"].as_f64())
+        .collect();
+    assert_eq!(reductions, [Some(0.0), Some(31.7), Some(70.2)]);
+}
+
+#[test]
+fn middle_candidate_must_have_navigation() {
+    let mut outcome = middle_outcome();
+    outcome.candidates[1].navigation = None;
+    let message = rejection(&outcome);
+    assert!(
+        message.contains("選定候補なのにnavigationがない"),
+        "{message}"
+    );
+}
+
+#[test]
+fn top_level_reduction_must_match_safest_candidate() {
+    let mut outcome = middle_outcome();
+    outcome.risk_reduction_percent = Some(0.0);
+    let message = rejection(&outcome);
+    assert!(message.contains("safestの値と一致しない"), "{message}");
 }
 
 /// `within_detour` は要求の `max_detour_min` で判定した値と一致する（ハンドラでは500）。

@@ -73,7 +73,8 @@
 //! `--threads N`（既定4）、`--timeout-s S`（1件ごとの期限、既定35）、`--detour-min M`（既定10。ODの
 //! `detour_min` があればそちらを使う）、`--conditions random|all`（既定 `random`）、`--seed S`（既定1）。
 //! 1件ごとに `evaluate` の壁時計（`total_ms`）と `aggregation_ms`、応答の選定・候補の値を記録し、
-//! 候補ごとに間引く前の頂点数・間引きの有無・事故点数と、高リスク区間の2通りのしきい値
+//! 中間案は `middle_index`（候補の添字。なければnull）・`middle_status`（探索しなければnull）・
+//! `middle_ms` で出す。候補ごとに間引く前の頂点数・間引きの有無・事故点数と、高リスク区間の2通りのしきい値
 //! （`t3`：件数3以上、`t2`：件数2以上かつ深刻度の合計3以上）のsid数・区間数を出す。
 //! 処理の前後のVmRSS・VmHWMと読込の時間は標準エラーに出し、`--out` の拡張子を `.meta.json` に
 //! したファイルへ release_id・読込の秒数・処理の秒数・VmHWM・スレッド数を書く。
@@ -2510,6 +2511,9 @@ impl EngineRunner<'_> {
         rec.insert("invariants_ok".into(), Value::Null);
         rec.insert("fastest".into(), Value::Null);
         rec.insert("safest".into(), Value::Null);
+        rec.insert("middle_index".into(), Value::Null);
+        rec.insert("middle_status".into(), Value::Null);
+        rec.insert("middle_ms".into(), Value::Null);
         rec.insert("candidate_count".into(), json!(0));
         rec.insert("risk_reduction_percent".into(), Value::Null);
         rec.insert("dropped_too_long".into(), json!(0));
@@ -2535,6 +2539,17 @@ impl EngineRunner<'_> {
             "safest".into(),
             outcome.safest.map_or(Value::Null, |s| json!(s)),
         );
+        rec.insert(
+            "middle_index".into(),
+            outcome.middle.map_or(Value::Null, |m| json!(m)),
+        );
+        rec.insert(
+            "middle_status".into(),
+            report
+                .middle_status
+                .map_or(Value::Null, |s| json!(search_status_str(s))),
+        );
+        rec.insert("middle_ms".into(), json!(report.middle_ms));
         rec.insert("candidate_count".into(), json!(outcome.candidates.len()));
         rec.insert(
             "risk_reduction_percent".into(),
@@ -3044,6 +3059,7 @@ fn summarize_engine_group(key: &GroupKey, records: &[Value]) -> Value {
     let mut t2_values = Vec::new();
     let mut safest_more = 0_usize;
     let mut safest_different = 0_usize;
+    let mut middle_count = 0_usize;
 
     for record in records {
         let status = record["status"].as_str().unwrap_or("unknown");
@@ -3065,6 +3081,9 @@ fn summarize_engine_group(key: &GroupKey, records: &[Value]) -> Value {
         ok_count += 1;
         if record["safest"].is_null() {
             safest_null += 1;
+        }
+        if !record["middle_index"].is_null() {
+            middle_count += 1;
         }
         if record["invariants_ok"].as_bool() == Some(false) {
             invariants_false += 1;
@@ -3128,6 +3147,8 @@ fn summarize_engine_group(key: &GroupKey, records: &[Value]) -> Value {
             .map(|(count, n)| (count.to_string(), json!(n)))
             .collect::<serde_json::Map<String, Value>>(),
         "safest_null_rate": rate_json(safest_null, ok_count),
+        "middle_index_not_null_rate": rate_json(middle_count, ok_count),
+        "middle_count": middle_count,
         "invariants_false": invariants_false,
         "t3_mismatch_count": t3_mismatch,
         "route_too_long_rate": rate_json(route_too_long, records.len()),
@@ -3163,7 +3184,7 @@ fn engine_summary_line(group: &Value) -> String {
         None => group["mode"].as_str().unwrap_or("?").to_owned(),
     };
     format!(
-        "{key:<18} n={:<5} ok={:<5} total_ms p50/p95/p99/max={}/{}/{}/{} safest_null={} invariants_false={} t3_mismatch={} too_long={} dropped={}({}OD) simplified={} t3_med={} t2_med={} safest_more={}/{}({})",
+        "{key:<18} n={:<5} ok={:<5} total_ms p50/p95/p99/max={}/{}/{}/{} safest_null={} middle={} invariants_false={} t3_mismatch={} too_long={} dropped={}({}OD) simplified={} t3_med={} t2_med={} safest_more={}/{}({})",
         group["count"].as_u64().unwrap_or(0),
         group["ok_count"].as_u64().unwrap_or(0),
         number(&group["total_ms"]["median"]),
@@ -3171,6 +3192,7 @@ fn engine_summary_line(group: &Value) -> String {
         number(&group["total_ms"]["p99"]),
         number(&group["total_ms"]["max"]),
         rate(&group["safest_null_rate"]),
+        rate(&group["middle_index_not_null_rate"]),
         group["invariants_false"].as_u64().unwrap_or(0),
         group["t3_mismatch_count"].as_u64().unwrap_or(0),
         rate(&group["route_too_long_rate"]),

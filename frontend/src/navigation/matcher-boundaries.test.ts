@@ -146,7 +146,7 @@ for (const amplitude of [0.001, 1, 5]) it(`僅かに曲がる短辺列（振幅$
   const calculated = createRouteGeometry(route.geometry.coordinates, n);
   n.vertex_distances_m = calculated.computedDistances; n.length_m = calculated.computedDistances.at(-1)!;
   route.distance = n.length_m;
-  expect(checkNavigationStart({ route, selection: "fastest", fastestId: route.id, safestId: null, responseGeneration: 1, currentGeneration: 1, mapAvailable: true }).ok).toBe(true);
+  expect(checkNavigationStart({ route, selection: "fastest", fastestId: route.id, middleId: null, safestId: null, responseGeneration: 1, currentGeneration: 1, mapAvailable: true }).ok).toBe(true);
   const sim = new NavigationSimulator(route, { jitter: false }); const matcher = new NavigationMatcher(route.geometry, n, sim.clock);
   let first: number | null = null, arrived: number | null = null;
   sim.start(0, fix => { const r = matcher.update(fix); if (r.updated) { first ??= fix.timestamp / 1000; expect(Math.abs(r.p! - Math.min(n.length_m, n.length_m * fix.timestamp / 50000))).toBeLessThanOrEqual(20); } if (r.status === "arrived") arrived = fix.timestamp / 1000; sim.report(r.status); });
@@ -165,7 +165,7 @@ it("直角に接続する往復でも静止した重複位置を確定しない"
   route.geometry.coordinates = [[0, 0], [10, 0], [10, 200], [10, 0], [20, 0]].map(([x, y]) => { const p = localPosition(x, y); return [p.lon, p.lat]; });
   const n = route.navigation!; n.projection_lat_deg = route.geometry.coordinates.reduce((sum, p) => sum + p[1], 0) / 5;
   n.vertex_distances_m = createRouteGeometry(route.geometry.coordinates, n).computedDistances; n.length_m = n.vertex_distances_m.at(-1)!; route.distance = n.length_m;
-  expect(checkNavigationStart({ route, selection: "fastest", fastestId: route.id, safestId: null, responseGeneration: 1, currentGeneration: 1, mapAvailable: true }).ok).toBe(true);
+  expect(checkNavigationStart({ route, selection: "fastest", fastestId: route.id, middleId: null, safestId: null, responseGeneration: 1, currentGeneration: 1, mapAvailable: true }).ok).toBe(true);
   const clock = new VirtualClock(); const matcher = new NavigationMatcher(route.geometry, n, clock);
   for (let t = 0; t <= 70; t++) { clock.set(t * 1000); const r = matcher.update({ ...localPosition(10, 5), accuracy: 10, timestamp: t * 1000 }); expect(r.p).toBeNull(); expect(r.status).toBe("matching-hold"); }
 });

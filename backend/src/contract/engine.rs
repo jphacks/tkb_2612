@@ -32,6 +32,19 @@ pub const MAX_ACCIDENT_POINTS: usize = 250;
 /// 候補ごとの表示用高リスク区間の上限。
 pub const MAX_HIGH_RISK_SECTIONS: usize = 100;
 
+/// 最短時間経路のリスク `base` に対する `risk` の削減率（%、小数1桁）。
+///
+/// `100 × (base − risk) / base` を小数1桁に丸める（[`crate::domain::rounding::py_round`] と同じ
+/// 二進値の10進丸め）。`base` が0以下なら算出できないので `None`。負の値はリスクが基準より
+/// 高いことを表す。両エンジンと応答で同じ式を使うため、ここに1つだけ置く。
+pub fn risk_reduction_percent(base: f64, risk: f64) -> Option<f64> {
+    (base > 0.0).then(|| {
+        format!("{:.1}", 100.0 * (base - risk) / base)
+            .parse()
+            .expect("固定桁で書式化した有限値は再び読める")
+    })
+}
+
 /// routeの意味的な入力不正。すべて400 invalid_request。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum QueryError {
@@ -339,7 +352,7 @@ pub struct EvaluatedRoute {
     /// 100件で切る前の高リスクの小線分数（behavior.md 7章）。旧方式は深刻度の和が3以上、
     /// 新方式は事故の件数がしきい値以上の小線分。どちらも `severity_weight` は3以上。
     pub high_risk_total: u64,
-    /// fastestまたはsafestの候補だけ `Some`。
+    /// fastest・safest・middleの候補だけ `Some`。
     pub navigation: Option<NavigationData>,
     /// 小数3桁に丸めた追加時間（分）。
     pub extra_minutes: f64,
@@ -374,6 +387,8 @@ pub struct RouteOutcome {
     pub fastest: usize,
     /// `candidates` の添字。新方式は常に `Some`。旧方式は全候補で集合Bが空なら `None`。
     pub safest: Option<usize>,
+    /// `candidates` の添字。新方式で中間案を出すときだけ `Some`。旧方式は常に `None`。
+    pub middle: Option<usize>,
     pub extra_minutes: Option<f64>,
     pub risk_reduction_percent: Option<f64>,
     pub reason: String,

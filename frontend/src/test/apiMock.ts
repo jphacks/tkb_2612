@@ -39,7 +39,9 @@ export function resetApi() {
       Promise.resolve(
         createDemoRouteResponse(
           request,
-          scenario === "same" || scenario === "zero" ? scenario : "normal",
+          scenario === "same" || scenario === "middle" || scenario === "zero"
+            ? scenario
+            : "normal",
         ),
       ),
     );

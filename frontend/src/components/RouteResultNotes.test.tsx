@@ -2,7 +2,12 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { createDemoRouteResponse, DEMO_PLACES } from "../api/demo";
 import type { RouteRequest, RouteResponse } from "../lib/types";
-import { RouteResultNotes, relativeRisk } from "./RouteResultNotes";
+import {
+  FASTEST_LABEL,
+  MIDDLE_LABEL,
+  SAFE_LABEL,
+} from "./RouteCallouts";
+import { RouteResultNotes, COMPARISON_NOTICE, relativeRisk } from "./RouteResultNotes";
 
 const request: RouteRequest = {
   origin: DEMO_PLACES[0],
@@ -20,6 +25,26 @@ function renderNotes(result: RouteResponse) {
 }
 
 describe("RouteResultNotes", () => {
+  it.each([
+    ["1枚", "same"],
+    ["2枚", "normal"],
+    ["3枚", "middle"],
+    ["事故0件", "zero"],
+  ] as const)(
+    "shows the comparison notice outside the details with %s",
+    (_label, scenario) => {
+      const result = createDemoRouteResponse(request, scenario);
+      const section = renderNotes(result);
+      const details = section.querySelector("details");
+      expect(details).not.toBeNull();
+      expect(details).not.toHaveAttribute("open");
+      const notice = within(section).getByText(COMPARISON_NOTICE);
+      expect(notice).toBeVisible();
+      expect(details).not.toContainElement(notice);
+      expect(section.firstElementChild).toBe(notice);
+    },
+  );
+
   it("shows every warning without opening the details", () => {
     const result = createDemoRouteResponse(request);
     const section = renderNotes(result);
@@ -45,7 +70,9 @@ describe("RouteResultNotes", () => {
     const section = renderNotes(result);
     expect(
       within(section).getByText(
-        /安全ルートは、過去事故の件数が最短ルートより多くなっています。/,
+        new RegExp(
+          `${SAFE_LABEL}の経路は、過去事故の件数が${FASTEST_LABEL}の経路より多くなっています。`,
+        ),
       ),
     ).toBeInTheDocument();
   });
@@ -67,7 +94,9 @@ describe("RouteResultNotes", () => {
       fastest.accident_count = fastestCount;
       const section = renderNotes(result);
       expect(
-        within(section).queryByText(/過去事故の件数が最短ルートより/),
+        within(section).queryByText(
+          new RegExp(`過去事故の件数が${FASTEST_LABEL}の経路より`),
+        ),
       ).not.toBeInTheDocument();
     },
   );
@@ -78,11 +107,13 @@ describe("RouteResultNotes", () => {
     const section = renderNotes(result);
     expect(
       within(section).getByText(
-        "全候補で該当する事故がないため、安全ルートは選んでいません。",
+        `全候補で該当する事故がないため、${SAFE_LABEL}の経路は選んでいません。`,
       ),
     ).toBeInTheDocument();
     expect(
-      within(section).queryByText(/過去事故の件数が最短ルートより/),
+      within(section).queryByText(
+        new RegExp(`過去事故の件数が${FASTEST_LABEL}の経路より`),
+      ),
     ).not.toBeInTheDocument();
   });
 
@@ -103,7 +134,7 @@ describe("RouteResultNotes", () => {
     const details = section.querySelector("details")!;
     expect(
       within(details).getByText(
-        "安全ルートは最短ルートより4分長くかかりますが、推定リスクは77.2%低くなります。",
+        `${SAFE_LABEL}の経路は${FASTEST_LABEL}の経路より4分長くかかりますが、推定リスクは77.2%低くなります。`,
       ),
     ).toBeInTheDocument();
   });
@@ -113,11 +144,22 @@ describe("RouteResultNotes", () => {
     expect(result.safest_id).toBe(result.fastest_id);
     const section = renderNotes(result);
     expect(
-      within(section).getByText(/最短ルートが推定リスクもいちばん低い経路です/),
+      within(section).getByText(
+        new RegExp(`${FASTEST_LABEL}の経路が推定リスクもいちばん低い経路です`),
+      ),
     ).toBeInTheDocument();
     const rows = within(section).getAllByRole("row");
     expect(rows).toHaveLength(2);
-    expect(rows[1]).toHaveTextContent("最短ルート・安全ルート");
+    expect(rows[1]).toHaveTextContent(`${FASTEST_LABEL}・${SAFE_LABEL}`);
+  });
+
+  it("lists the middle route in time order in the comparison table", () => {
+    const result = createDemoRouteResponse(request, "middle");
+    const section = renderNotes(result);
+    const rows = within(section).getAllByRole("row").slice(1);
+    expect(
+      rows.map((row) => within(row).getByRole("rowheader").textContent),
+    ).toEqual([FASTEST_LABEL, MIDDLE_LABEL, SAFE_LABEL]);
   });
 
   it("shows the estimated risk relative to the fastest route (=100) and the same filtered accident counts as the cards", () => {
@@ -135,12 +177,12 @@ describe("RouteResultNotes", () => {
       .getAllByRole("row")
       .slice(1);
     expect(within(fastestRow).getByRole("rowheader")).toHaveTextContent(
-      "最短ルート",
+      FASTEST_LABEL,
     );
     expect(within(fastestRow).getAllByRole("cell").map((c) => c.textContent))
       .toEqual(["100", "3件"]);
     expect(within(safestRow).getByRole("rowheader")).toHaveTextContent(
-      "安全ルート",
+      SAFE_LABEL,
     );
     expect(within(safestRow).getAllByRole("cell").map((c) => c.textContent))
       .toEqual(["22.6", "1件"]);
@@ -197,7 +239,7 @@ describe("RouteResultNotes", () => {
     const { unmount } = render(<RouteResultNotes result={result} />);
     let section = screen.getByRole("region", { name: "検索結果の説明" });
     expect(section).toHaveTextContent("過去の事故を、起きた道路や交差点ごとに数えています。");
-    expect(section).not.toHaveTextContent("事故に遭う確率");
+    expect(section).not.toHaveTextContent("経路から72m以内");
     expect(section).not.toHaveTextContent("絞っていません");
     expect(section).not.toHaveTextContent("生活道路");
     expect(section).not.toHaveTextContent("雨・霧・雪を指定したとき");

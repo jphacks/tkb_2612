@@ -43,8 +43,8 @@ type CircleExpression = Extract<
   unknown[]
 >;
 
-// 見た目維持の暫定として全候補をroute-fastestに入れ、route-safestは空にする（6章と異なる）。
-// 選定2経路化は利用者判断待ち。合意後はfastest_id/safest_idのgeometryを各sourceへ分割する。
+// 全候補をroute-fastestに入れ、route-safestは空のまま既存のlayer構成を維持する。
+// 各featureの色はrouteToneに従ってrouteColorsから渡す。
 // 色はstyles.cssの:rootのトークンを読む（層を（再）作成するたびに取得する）。
 export function buildMapLayers(): LayerSpecification[] {
   const blue = mapColor("--blue");

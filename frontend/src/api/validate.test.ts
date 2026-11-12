@@ -24,11 +24,49 @@ const request: RouteRequest = {
 };
 
 describe("API 2.0 contract and cross-field validation", () => {
-  it("validates normal, same-route and zero-accident fixtures", () => {
-    for (const scenario of ["normal", "same", "zero"] as const) {
+  it("validates normal, same-route, middle and zero-accident fixtures", () => {
+    for (const scenario of ["normal", "same", "middle", "zero"] as const) {
       const result = createDemoRouteResponse(request, scenario);
       expect(validateRouteResponse(result, request)).toBe(result);
     }
+  });
+
+  it("provides a middle demo response in time and risk order with navigation", () => {
+    const result = validateRouteResponse(
+      createDemoRouteResponse(request, "middle"),
+      request,
+    );
+    expect(result.middle_id).not.toBeNull();
+    const fastest = result.candidates.find(
+      (route) => route.id === result.fastest_id,
+    )!;
+    const middle = result.candidates.find(
+      (route) => route.id === result.middle_id,
+    )!;
+    const safest = result.candidates.find(
+      (route) => route.id === result.safest_id,
+    )!;
+    expect(fastest.duration).toBeLessThan(middle.duration);
+    expect(middle.duration).toBeLessThan(safest.duration);
+    expect(safest.weighted_risk).toBeLessThan(middle.weighted_risk);
+    expect(middle.weighted_risk).toBeLessThan(fastest.weighted_risk);
+    expect(middle.navigation).not.toBeNull();
+    expect(safest.navigation).not.toBeNull();
+    const reduction = (route: RouteResponse["candidates"][number]) =>
+      Number(
+        (
+          (100 * (fastest.weighted_risk - route.weighted_risk)) /
+          fastest.weighted_risk
+        ).toFixed(1),
+      );
+    expect(middle.risk_reduction_percent).toBe(reduction(middle));
+    expect(safest.risk_reduction_percent).toBe(reduction(safest));
+    expect(middle.extra_minutes).toBeCloseTo(
+      (middle.duration - fastest.duration) / 60,
+    );
+    expect(safest.extra_minutes).toBeCloseTo(
+      (safest.duration - fastest.duration) / 60,
+    );
   });
 
   it("does not select a safest route or invent a reduction when all records are zero", () => {
@@ -179,6 +217,24 @@ describe("API 2.0 contract and cross-field validation", () => {
       },
     ],
     [
+      "middle id not in candidates",
+      (result) => {
+        result.middle_id = "route-9";
+      },
+    ],
+    [
+      "middle id equal to fastest_id",
+      (result) => {
+        result.middle_id = result.fastest_id;
+      },
+    ],
+    [
+      "middle id equal to safest_id",
+      (result) => {
+        result.middle_id = result.safest_id;
+      },
+    ],
+    [
       "missing reduction percentage while a safest route exists and the baseline risk is positive",
       (result) => {
         result.risk_reduction_percent = null;
@@ -244,6 +300,22 @@ describe("API 2.0 contract and cross-field validation", () => {
   ])("rejects %s", (_, mutate) => {
     const result = createDemoRouteResponse(request);
     mutate(result);
+    expect(() => validateRouteResponse(result, request)).toThrow(/API契約/);
+  });
+
+  it("accepts a middle route with navigation", () => {
+    const result = createDemoRouteResponse(request);
+    result.safest_id = result.fastest_id;
+    result.extra_minutes = 0;
+    result.risk_reduction_percent = 0;
+    result.middle_id = result.candidates[1].id;
+    expect(validateRouteResponse(result, request)).toBe(result);
+    expect(result.candidates[1].navigation).not.toBeNull();
+  });
+
+  it("rejects a middle id when safest is null", () => {
+    const result = createDemoRouteResponse(request, "zero");
+    result.middle_id = result.candidates[1].id;
     expect(() => validateRouteResponse(result, request)).toThrow(/API契約/);
   });
 

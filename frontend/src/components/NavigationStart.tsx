@@ -25,7 +25,7 @@ export interface NavigationStartProps {
   }) => void;
 }
 
-/** 選定2経路（fastest_idとnullでないsafest_id）だけに開始操作を置く。 */
+/** 選定3経路（fastest_id、nullでないmiddle_id、nullでないsafest_id）だけに開始操作を置く。 */
 export function NavigationStart({
   result,
   routeId,
@@ -53,6 +53,14 @@ export function NavigationStart({
         "fastest",
         result.candidates.find((route) => route.id === result.fastest_id),
       ],
+      ...(result.middle_id
+        ? [
+            [
+              "middle",
+              result.candidates.find((route) => route.id === result.middle_id),
+            ] as [NavigationSelection, RouteCandidate | undefined],
+          ]
+        : []),
       ...(result.safest_id
         ? [
             [
@@ -62,10 +70,13 @@ export function NavigationStart({
           ]
         : []),
     ];
-    return selections.flatMap(([selection, route]) =>
+    return selections.flatMap(([selection, route], index) =>
       route &&
       route.id === routeId &&
-      (selection === "safest" || result.fastest_id !== result.safest_id)
+      // 同じ ID の選定が複数あるときは、時間順で後ろの行だけを残す。
+      !selections
+        .slice(index + 1)
+        .some(([, later]) => later?.id === route.id)
         ? [
             {
               selection,
@@ -73,6 +84,7 @@ export function NavigationStart({
                 route,
                 selection,
                 fastestId: result.fastest_id,
+                middleId: result.middle_id,
                 safestId: result.safest_id,
                 responseGeneration: 0,
                 currentGeneration: 0,

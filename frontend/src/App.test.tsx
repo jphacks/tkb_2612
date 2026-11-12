@@ -17,6 +17,7 @@ import {
   findDemoPlaces,
 } from "./api/demo";
 import { ApiError } from "./api/errors";
+import { FASTEST_LABEL, SAFE_LABEL } from "./components/RouteCallouts";
 import type {
   ConditionsResponse,
   LatLon,
@@ -247,14 +248,14 @@ describe("App search flow and condition ownership", () => {
   it("clears old routes immediately on condition edits and sends the new values only on re-search", async () => {
     const user = await openResults();
     expect(
-      screen.getByRole("button", { name: "最短ルートを選択" }),
+      screen.getByRole("button", { name: "A 最短時間を選択" }),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("radio", { name: "雨" }));
     expect(
       screen.queryByRole("group", { name: "表示する経路" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "最短ルートを選択" }),
+      screen.queryByRole("button", { name: "A 最短時間を選択" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText("変更した条件で再検索してください。"),
@@ -352,14 +353,20 @@ describe("App search flow and condition ownership", () => {
     const group = await screen.findByRole("group", { name: "表示する経路" });
     await waitFor(() =>
       expect(
-        within(group).queryByRole("button", { name: /^安全ルート(?!でナビ)/ }),
+        within(group).queryByRole("button", {
+          name: new RegExp(`^${SAFE_LABEL}(?!でナビ)`),
+        }),
       ).not.toBeInTheDocument(),
     );
     expect(
-      within(group).getByRole("button", { name: /^最短ルート(?!でナビ)/ }),
+      within(group).getByRole("button", {
+        name: new RegExp(`^${FASTEST_LABEL}(?!でナビ)`),
+      }),
     ).toBeInTheDocument();
     expect(
-      within(group).getByRole("button", { name: /最短ルート.*過去事故 0 件/ }),
+      within(group).getByRole("button", {
+        name: new RegExp(`${FASTEST_LABEL}.*過去事故 0 件`),
+      }),
     ).toBeInTheDocument();
   });
 
