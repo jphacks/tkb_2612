@@ -112,3 +112,23 @@ describe("RouteCallouts on a low map", () => {
     expect(group).not.toHaveClass("is-tight");
   });
 });
+
+describe("RouteCallouts connector occlusion", () => {
+  it("cuts holes for map pins without masking the cards", () => {
+    const { container } = render(<RouteCallouts
+      result={createDemoRouteResponse(request)} positions={{}} size={{ width: 800, height: 600 }}
+      selectedRouteId={null} hoveredRouteId={null}
+      onSelectRoute={vi.fn()} onHoverRoute={vi.fn()} onNavigate={vi.fn()}
+      protectedPoints={[{ x: 120, y: 240, radius: 10 }]}
+    />);
+    const mask = container.querySelector("mask")!;
+    expect(mask).not.toBeNull();
+    const hole = mask.querySelector("circle")!;
+    expect(hole).toHaveAttribute("cx", "120");
+    expect(hole).toHaveAttribute("cy", "240");
+    expect(hole).toHaveAttribute("r", "10");
+    expect(hole).toHaveAttribute("fill", "black");
+    expect(container.querySelector(".map-callout-connectors > g")).toHaveAttribute("mask", `url(#${mask.id})`);
+    expect(container.querySelector(".map-route-card")!.closest("[mask]")).toBeNull();
+  });
+});

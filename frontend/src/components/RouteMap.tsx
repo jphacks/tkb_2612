@@ -57,6 +57,7 @@ import {
   routeAnchor,
   routeTone,
   type MapPoint,
+  type MapPinFootprint,
   type MapSize,
 } from "./RouteCallouts";
 import { attributionLabel } from "./accidentAttribution";
@@ -181,6 +182,7 @@ type LiveMapProps = RouteMapProps & {
   onReport: (id: string) => void;
   onUnavailable: () => void;
   onPositions: (positions: Record<string, MapPoint>) => void;
+  onProtectedPoints: (points: MapPinFootprint[]) => void;
 };
 
 function LiveMap(props: LiveMapProps) {
@@ -206,20 +208,6 @@ function LiveMap(props: LiveMapProps) {
           attributionControl: false,
         });
         mapRef.current = map;
-        const reportPositions = () => {
-          const result = current.current.result;
-          if (!map || !result) return;
-          current.current.onPositions(
-            Object.fromEntries(
-              featuredRoutes(result).map((route) => {
-                const point = map!.project(
-                  routeAnchor(route, route.id === result.safest_id ? 0.6 : 0.4),
-                );
-                return [route.id, { x: point.x, y: point.y }];
-              }),
-            ),
-          );
-        };
         const listen = <T extends keyof MapEventType>(
           type: T,
           handler: (event: MapEventType[T]) => void,
@@ -227,12 +215,10 @@ function LiveMap(props: LiveMapProps) {
           map!.on(type, handler);
           cleanups.push(() => map!.off(type, handler));
         };
-        listen("move", reportPositions);
         // 手動のパンだけが追従を解除する（easeToでは発火しない）。
         listen("dragstart", () => {
           current.current.navigation?.onFollowChange(false);
         });
-        listen("resize", reportPositions);
         map.addControl(
           new maplibre.NavigationControl({ showCompass: false }),
           "top-right",
@@ -359,6 +345,39 @@ function LiveMap(props: LiveMapProps) {
     setNavigationLayers(map, navigationLayers ?? emptyNavigationLayers());
   }, [ready, navigationLayers]);
 
+  // 補助線の端点と、線を抜く地点を同じ画面座標で更新する。
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    const update = () => {
+      const result = props.result;
+      const project = (coordinates: number[]) => {
+        const point = map.project([coordinates[0], coordinates[1]]);
+        return { x: point.x, y: point.y };
+      };
+      props.onPositions(Object.fromEntries(result ? featuredRoutes(result).map((route) => [
+        route.id,
+        project(routeAnchor(route, route.id === result.safest_id ? 0.6 : 0.4)),
+      ]) : []));
+      const selected = result?.candidates.find((route) => route.id === props.selectedRouteId);
+      props.onProtectedPoints([
+        ...(props.showAccidents ? selected?.accident_points.features ?? [] : []).map((point) => ({
+          ...project(point.geometry.coordinates), radius: 12,
+        })),
+        ...props.safetyReports.map((report) => ({
+          ...project([report.lon, report.lat]), radius: 10,
+        })),
+      ]);
+    };
+    update();
+    map.on("move", update);
+    map.on("resize", update);
+    return () => {
+      map.off("move", update);
+      map.off("resize", update);
+    };
+  }, [ready, props.result, props.selectedRouteId, props.showAccidents, props.safetyReports, props.onPositions, props.onProtectedPoints]);
+
   // 追従は現在地へ中心を寄せるだけ。測位ごとのfitBounds・回転・ズーム変更はしない。
   const followTarget = props.navigation?.follow
     ? navigationLayers?.location.features[0]?.geometry.coordinates
@@ -452,6 +471,7 @@ export function RouteMap(props: RouteMapProps) {
   const [livePositions, setLivePositions] = useState<Record<string, MapPoint>>(
     {},
   );
+  const [liveProtectedPoints, setLiveProtectedPoints] = useState<MapPinFootprint[]>([]);
   const shell = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<MapSize>({ width: WIDTH, height: HEIGHT });
   useLayoutEffect(() => {
@@ -540,6 +560,19 @@ export function RouteMap(props: RouteMapProps) {
       )
     : {};
 
+  const screenPoint = (coordinates: number[]) => {
+    const [x, y] = project(coordinates);
+    return { x: size.width / 2 + (x - center[0]) * scale, y: size.height / 2 + (y - center[1]) * scale };
+  };
+  const protectedPoints: MapPinFootprint[] = [
+    ...(showAccidents ? selectedRoute?.accident_points.features ?? [] : []).map((point) => ({
+      ...screenPoint(point.geometry.coordinates),
+      // 事故点の枠は拡大率に追従する。フォーカス時の太さ（5px）も含める。
+      radius: ((point.properties.attribution === "unattributed" ? 5 : 7) + 2.5) * scale + 1,
+    })),
+    ...routeReports.map((report) => ({ ...screenPoint([report.lon, report.lat]), radius: 6 * scale + 3 })),
+  ];
+
   useEffect(() => {
     setAccidentId(null);
     setReportId(null);
@@ -626,6 +659,7 @@ export function RouteMap(props: RouteMapProps) {
           onReport={openReport}
           onUnavailable={() => setLiveFailed(true)}
           onPositions={setLivePositions}
+          onProtectedPoints={setLiveProtectedPoints}
         />
       ) : (
         <div className="route-schematic-canvas">
@@ -734,6 +768,43 @@ export function RouteMap(props: RouteMapProps) {
                 );
               },
             )}
+            {navigation && (
+              <g className="map-navigation" aria-hidden="true" pointerEvents="none">
+                {navigation.layers.route.features.map((feature, index) => (
+                  <polyline
+                    key={index}
+                    className="map-nav-route"
+                    points={path(feature.geometry.coordinates)}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+                {navigation.layers.accuracy.features.map((feature, index) => (
+                  <polygon
+                    key={index}
+                    className="map-nav-accuracy"
+                    points={path(feature.geometry.coordinates[0])}
+                  />
+                ))}
+                {navigation.layers.alert.features.map((feature) =>
+                  feature.geometry.type === "LineString" ? (
+                    <polyline
+                      key={String(feature.id)}
+                      className="map-nav-alert"
+                      points={path(feature.geometry.coordinates)}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  ) : (
+                    <circle
+                      key={String(feature.id)}
+                      className="map-nav-alert-point"
+                      cx={project(feature.geometry.coordinates)[0]}
+                      cy={project(feature.geometry.coordinates)[1]}
+                      r="9"
+                    />
+                  ),
+                )}
+              </g>
+            )}
             {origin && (
               <g aria-label="出発地" className="map-endpoint">
                 <circle
@@ -835,40 +906,7 @@ export function RouteMap(props: RouteMapProps) {
               </g>
             )}
             {navigation && (
-              <g className="map-navigation" aria-hidden="true">
-                {navigation.layers.route.features.map((feature, index) => (
-                  <polyline
-                    key={index}
-                    className="map-nav-route"
-                    points={path(feature.geometry.coordinates)}
-                    vectorEffect="non-scaling-stroke"
-                  />
-                ))}
-                {navigation.layers.accuracy.features.map((feature, index) => (
-                  <polygon
-                    key={index}
-                    className="map-nav-accuracy"
-                    points={path(feature.geometry.coordinates[0])}
-                  />
-                ))}
-                {navigation.layers.alert.features.map((feature) =>
-                  feature.geometry.type === "LineString" ? (
-                    <polyline
-                      key={String(feature.id)}
-                      className="map-nav-alert"
-                      points={path(feature.geometry.coordinates)}
-                      vectorEffect="non-scaling-stroke"
-                    />
-                  ) : (
-                    <circle
-                      key={String(feature.id)}
-                      className="map-nav-alert-point"
-                      cx={project(feature.geometry.coordinates)[0]}
-                      cy={project(feature.geometry.coordinates)[1]}
-                      r="9"
-                    />
-                  ),
-                )}
+              <g className="map-navigation" aria-hidden="true" pointerEvents="none">
                 {navigation.layers.location.features.map((feature, index) => (
                   <circle
                     key={index}
@@ -894,6 +932,7 @@ export function RouteMap(props: RouteMapProps) {
           onHoverRoute={setHoveredRouteId}
           onNavigate={(id) => props.onNavigate ? props.onNavigate(id) : setNavNotice(true)}
           detached={disabled}
+          protectedPoints={disabled ? [] : styleUrl ? liveProtectedPoints : protectedPoints}
         />
       )}
       {/* Navigation (Issue #7 step 10) is not implemented yet; the button says so. */}

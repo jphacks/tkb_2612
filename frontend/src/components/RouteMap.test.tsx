@@ -265,6 +265,18 @@ describe("RouteMap", () => {
     expect(screen.getByRole("group", { name: "表示する経路" })).toBeVisible();
   });
 
+  it("keeps connector holes outside enlarged accident pins, including their focus border", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 960, height: 720 } as DOMRect);
+    const result = createDemoRouteResponse(request);
+    const { container, rerender } = render(<RouteMap {...mapProps(result)} selectedRouteId={result.fastest_id} />);
+    for (let i = 0; i < 4; i++) fireEvent.click(screen.getByRole("button", { name: "地図を拡大" }));
+    const hole = container.querySelector("mask circle")!;
+    // At 3x zoom: radius 7 plus half of the focused 5px stroke => 28.5px.
+    expect(Number(hole.getAttribute("r"))).toBeGreaterThanOrEqual(28.5);
+    rerender(<RouteMap {...mapProps(result)} selectedRouteId={result.fastest_id} showAccidents={false} />);
+    expect(container.querySelectorAll("mask circle")).toHaveLength(0);
+  });
+
   it("tells that navigation is not available yet instead of doing nothing", () => {
     const props = mapProps(createDemoRouteResponse(request));
     render(<RouteMap {...props} />);
@@ -834,6 +846,26 @@ describe("RouteMap community reports", () => {
     expect(screen.queryByRole("region", { name: "口コミ" })).not.toBeInTheDocument();
   });
 
+  it("paints navigation lines below accident and report pins, with location on top", async () => {
+    seed(stored("a", origin, ["danger"]));
+    const props = mapProps(createDemoRouteResponse(request));
+    const layers = emptyNavigationLayers();
+    layers.route.features.push({ type: "Feature", geometry: props.result!.candidates[0].geometry, properties: {} });
+    layers.alert.features.push({ type: "Feature", geometry: props.result!.candidates[0].geometry, properties: {} });
+    layers.location.features.push({ type: "Feature", geometry: { type: "Point", coordinates: [origin.lon, origin.lat] }, properties: {} });
+    const { container } = render(<RouteMap {...props} navigation={{ layers, follow: true, onFollowChange: vi.fn() }} />);
+    await screen.findByRole("button", { name: /^口コミ（/ });
+    const before = (lower: string, upper: string) => {
+      expect(container.querySelector(lower)!.compareDocumentPosition(container.querySelector(upper)!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    };
+    for (const line of [".map-nav-route", ".map-nav-alert"]) {
+      before(line, ".map-accident-dot");
+      before(line, ".map-community-pin");
+    }
+    before(".map-accident-dot", ".map-community-pin");
+    before(".map-community-pin", ".map-nav-location");
+  });
+
   it("keeps the same reports and popup during navigation", async () => {
     seed(stored("a", origin, ["danger"], [
       { kind: "danger", text: "見通しが悪い", created_at: "2026-11-07T01:00:00.000Z" },
@@ -886,6 +918,21 @@ describe("RouteMap community reports", () => {
       act(() => map.emit("click", { point: { x: 0, y: 0 } }));
       expect(screen.getByRole("region", { name: "口コミ" })).toBeVisible();
       expect(screen.queryByRole("region", { name: "過去の事故記録" })).not.toBeInTheDocument();
+    });
+
+    it("moves connector holes with live map pins and removes holes for hidden pins", async () => {
+      seed(stored("a", origin, ["danger"]));
+      const props = mapProps(createDemoRouteResponse(request));
+      const { map, container, rerender } = await renderLive(props);
+      await waitFor(() => expect(container.querySelectorAll('mask circle[r="10"]')).toHaveLength(1));
+      const reportHole = () => container.querySelector('mask circle[r="10"]')!;
+      expect(reportHole()).toHaveAttribute("cx", "100");
+      vi.spyOn(mapInstance(map), "project").mockReturnValue({ x: 250, y: 300 } as import("maplibre-gl").Point);
+      act(() => map.emit("move"));
+      expect(reportHole()).toHaveAttribute("cx", "250");
+      expect(reportHole()).toHaveAttribute("cy", "300");
+      rerender(<RouteMap {...props} showReports={false} showAccidents={false} />);
+      expect(container.querySelectorAll("mask circle")).toHaveLength(0);
     });
 
     it("clears the layer when the reports are hidden", async () => {

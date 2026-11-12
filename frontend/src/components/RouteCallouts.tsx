@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Send } from "lucide-react";
 import type { RouteCandidate, RouteResponse } from "../lib/types";
 import { formatMinutes } from "../lib/format";
@@ -6,6 +7,7 @@ export const SAFE_LABEL = "安全ルート";
 export const FASTEST_LABEL = "最短ルート";
 
 export type MapPoint = { x: number; y: number };
+export type MapPinFootprint = MapPoint & { radius: number };
 export type MapSize = { width: number; height: number };
 export type RouteTone = "considered" | "fastest" | "alternative";
 
@@ -62,6 +64,7 @@ type Props = {
   onHoverRoute: (id: string | null) => void;
   onNavigate: (id: string) => void;
   detached?: boolean;
+  protectedPoints?: MapPinFootprint[];
 };
 
 const clamp = (value: number, min: number, max: number) =>
@@ -77,7 +80,9 @@ export function RouteCallouts({
   onHoverRoute,
   onNavigate,
   detached = false,
+  protectedPoints = [],
 }: Props) {
+  const maskId = useId();
   const routes = featuredRoutes(result);
   const cardWidth =
     size.width < 480 && routes.length > 1
@@ -148,24 +153,35 @@ export function RouteCallouts({
           height={size.height}
           aria-hidden="true"
         >
-          {cards.map(({ route, tone, anchor, x, y }) => (
-            <g key={route.id} stroke={routeColors[tone]}>
-              <line
-                x1={anchor.x}
-                y1={anchor.y}
-                x2={clamp(anchor.x, x, x + cardWidth)}
-                y2={clamp(anchor.y, y + 16, y + cardHeight - 16)}
-                strokeWidth="2"
-              />
-              <circle
-                cx={anchor.x}
-                cy={anchor.y}
-                r="5"
-                fill="white"
-                strokeWidth="2"
-              />
-            </g>
-          ))}
+          <defs>
+            <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width={size.width} height={size.height}>
+              <rect width={size.width} height={size.height} fill="white" />
+              {protectedPoints.map(({ x, y, radius }, index) => (
+                <circle key={index} cx={x} cy={y} r={radius} fill="black" />
+              ))}
+            </mask>
+          </defs>
+          {/* 地図上の点には補助線を重ねない。カード自体はマスクしない。 */}
+          <g mask={`url(#${maskId})`}>
+            {cards.map(({ route, tone, anchor, x, y }) => (
+              <g key={route.id} stroke={routeColors[tone]}>
+                <line
+                  x1={anchor.x}
+                  y1={anchor.y}
+                  x2={clamp(anchor.x, x, x + cardWidth)}
+                  y2={clamp(anchor.y, y + 16, y + cardHeight - 16)}
+                  strokeWidth="2"
+                />
+                <circle
+                  cx={anchor.x}
+                  cy={anchor.y}
+                  r="5"
+                  fill="white"
+                  strokeWidth="2"
+                />
+              </g>
+            ))}
+          </g>
         </svg>
       )}
       {cards.map(({ route, tone, x, y }) => {
