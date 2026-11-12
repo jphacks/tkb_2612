@@ -109,6 +109,52 @@ export function isTooWide(bounds: SafetyBounds) {
   );
 }
 
+/**
+ * 経路の近くとみなす距離（m）。事故記録の「経路の近くの事故」の範囲
+ * （応答の `unattributed_radius_m`）と同じ値にそろえる。
+ */
+export const NEAR_ROUTE_M = 72;
+const METRES_PER_DEG = (6371008.8 * Math.PI) / 180;
+
+/**
+ * 地点から折れ線（`[lon, lat]` の並び）までの最短距離（m）。
+ * 地点の緯度で平面に近似する（数百mの範囲なら誤差は無視できる）。
+ */
+export function distanceToLineM(
+  point: LatLon,
+  line: readonly (readonly number[])[],
+): number {
+  if (!line.length) return Infinity;
+  const kx = METRES_PER_DEG * Math.cos((point.lat * Math.PI) / 180);
+  const plane = ([lon, lat]: readonly number[]) => [
+    (lon - point.lon) * kx,
+    (lat - point.lat) * METRES_PER_DEG,
+  ];
+  let [x, y] = plane(line[0]);
+  let best = Math.hypot(x, y);
+  for (let index = 1; index < line.length; index++) {
+    const [nextX, nextY] = plane(line[index]);
+    const dx = nextX - x;
+    const dy = nextY - y;
+    const length2 = dx * dx + dy * dy;
+    const t = length2
+      ? Math.max(0, Math.min(1, -(x * dx + y * dy) / length2))
+      : 0;
+    best = Math.min(best, Math.hypot(x + t * dx, y + t * dy));
+    [x, y] = [nextX, nextY];
+  }
+  return best;
+}
+
+/** 折れ線から `radius` m以内の地点（並びはそのまま）。 */
+export function reportsNearLine<T extends LatLon>(
+  reports: readonly T[],
+  line: readonly (readonly number[])[],
+  radius = NEAR_ROUTE_M,
+): T[] {
+  return reports.filter((report) => distanceToLineM(report, line) <= radius);
+}
+
 export function containsPoint(bounds: SafetyBounds, point: LatLon) {
   return (
     point.lat >= bounds.minLat &&

@@ -127,7 +127,7 @@ export function buildMapLayers(): LayerSpecification[] {
       source: "route-accidents",
       paint: { "circle-radius": 22, "circle-opacity": 0 },
     },
-    // 安全危険情報共有モードの投稿地点（Issue #23）。ナビでは表示だけで操作しない。
+    // 安全危険情報共有モードの投稿地点（Issue #23）。押すと内容を表示する（Issue #35）。
     {
       id: "community-reports-point",
       type: "circle",
@@ -138,6 +138,12 @@ export function buildMapLayers(): LayerSpecification[] {
         "circle-stroke-color": surface,
         "circle-stroke-width": 2,
       },
+    },
+    {
+      id: "community-hit",
+      type: "circle",
+      source: "community-reports",
+      paint: { "circle-radius": 22, "circle-opacity": 0 },
     },
     {
       id: "current-accuracy-fill",
@@ -294,15 +300,20 @@ export function setNavigationLayers(map: Map, data: Partial<NavigationLayers>): 
   restoreMapLayers(map);
 }
 
-/** 口コミの地点を多数派の色（同数は危険）の点で描く。空配列で消去する。 */
+/**
+ * 口コミの地点を多数派の色（同数は危険）の点で描く。空配列で消去する。
+ * 口コミのIDは文字列でfeature idに使えないため、propertiesのreportIdで引く。
+ */
 export function setCommunityLayer(map: Map, reports: readonly SafetyReport[]): void {
   updateData(stateFor(map), "community-reports", {
     type: "FeatureCollection",
     features: reports.map((report) => ({
       type: "Feature",
-      id: report.id,
       geometry: { type: "Point", coordinates: [report.lon, report.lat] },
-      properties: { color: SAFETY_COLORS[dominantKind(report)] },
+      properties: {
+        reportId: report.id,
+        color: SAFETY_COLORS[dominantKind(report)],
+      },
     })),
   });
   restoreMapLayers(map);

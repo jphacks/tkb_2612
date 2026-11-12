@@ -6,7 +6,18 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Crosshair, Eye, EyeOff, LocateFixed, MapPin, Minus, Plus, X } from "lucide-react";
+import {
+  Crosshair,
+  Eye,
+  EyeOff,
+  LocateFixed,
+  MapPin,
+  MessageSquare,
+  MessageSquareOff,
+  Minus,
+  Plus,
+  X,
+} from "lucide-react";
 import type { Map as MapLibreMap, MapEventType } from "maplibre-gl";
 import type {
   AccidentFeature,
@@ -14,9 +25,15 @@ import type {
   RouteResponse,
   SafetyReport,
 } from "../lib/types";
-import { boundsAround, dominantKind, tallyLabel } from "../community/reports";
+import {
+  boundsAround,
+  dominantKind,
+  reportsNearLine,
+  tallyLabel,
+} from "../community/reports";
 import { useSafetyReports } from "../community/useSafetyReports";
 import { SAFETY_COLORS } from "./icons/SafetyIcon";
+import { ReportPopup } from "./ReportPopup";
 import "maplibre-gl/dist/maplibre-gl.css";
 // v6のESM版はworkerを import.meta.url からの相対で探すので、ビルドに含めてURLを渡す
 import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
@@ -40,6 +57,7 @@ import {
   routeAnchor,
   routeTone,
   type MapPoint,
+  type MapPinFootprint,
   type MapSize,
 } from "./RouteCallouts";
 import { attributionLabel } from "./accidentAttribution";
@@ -59,6 +77,9 @@ export type RouteMapProps = {
   onSelectSection: (id: string | null) => void;
   showAccidents: boolean;
   onShowAccidents?: (show: boolean) => void;
+  /** 選択中の経路の近くの口コミ（Issue #35）を地図に重ねるか。 */
+  showReports: boolean;
+  onShowReports?: (show: boolean) => void;
   unavailable: boolean;
   navigation?: NavigationMapProps;
   onNavigate?: (id: string) => void;
@@ -69,7 +90,10 @@ export type RouteMapProps = {
 type Coordinate = number[];
 const WIDTH = 960;
 const HEIGHT = 720;
-/** 経路の外接矩形をこの度数（約300m）だけ広げた範囲の口コミを重ねる。 */
+/**
+ * 口コミは全候補の外接矩形をこの度数（約300m）だけ広げた範囲でまとめて読み、
+ * 選択中の経路の近く（NEAR_ROUTE_M）に絞って重ねる。経路を選び直しても読み直さない。
+ */
 const REPORT_MARGIN_DEG = 0.003;
 
 function coordinateBounds(coordinates: Coordinate[]) {
@@ -155,8 +179,10 @@ type LiveMapProps = RouteMapProps & {
   styleUrl: string;
   safetyReports: SafetyReport[];
   onAccident: (id: number) => void;
+  onReport: (id: string) => void;
   onUnavailable: () => void;
   onPositions: (positions: Record<string, MapPoint>) => void;
+  onProtectedPoints: (points: MapPinFootprint[]) => void;
 };
 
 function LiveMap(props: LiveMapProps) {
@@ -182,20 +208,6 @@ function LiveMap(props: LiveMapProps) {
           attributionControl: false,
         });
         mapRef.current = map;
-        const reportPositions = () => {
-          const result = current.current.result;
-          if (!map || !result) return;
-          current.current.onPositions(
-            Object.fromEntries(
-              featuredRoutes(result).map((route) => {
-                const point = map!.project(
-                  routeAnchor(route, route.id === result.safest_id ? 0.6 : 0.4),
-                );
-                return [route.id, { x: point.x, y: point.y }];
-              }),
-            ),
-          );
-        };
         const listen = <T extends keyof MapEventType>(
           type: T,
           handler: (event: MapEventType[T]) => void,
@@ -203,12 +215,10 @@ function LiveMap(props: LiveMapProps) {
           map!.on(type, handler);
           cleanups.push(() => map!.off(type, handler));
         };
-        listen("move", reportPositions);
         // 手動のパンだけが追従を解除する（easeToでは発火しない）。
         listen("dragstart", () => {
           current.current.navigation?.onFollowChange(false);
         });
-        listen("resize", reportPositions);
         map.addControl(
           new maplibre.NavigationControl({ showCompass: false }),
           "top-right",
@@ -234,16 +244,24 @@ function LiveMap(props: LiveMapProps) {
           if (!disposed && map) restoreMapLayers(map);
         });
         listen("click", (event) => {
-          if (
-            !map ||
-            !["accident-hit", "section-hit", "route-hit"].every((id) =>
-              map!.getLayer(id),
-            )
-          )
-            return;
+          const hitLayers = [
+            "community-hit",
+            "accident-hit",
+            "section-hit",
+            "route-hit",
+          ];
+          if (!map || !hitLayers.every((id) => map!.getLayer(id))) return;
           const features = map.queryRenderedFeatures(event.point, {
-            layers: ["accident-hit", "section-hit", "route-hit"],
+            layers: hitLayers,
           });
+          // 口コミは事故点より上に描くので、重なったら口コミを優先する
+          const report = features.find(
+            (feature) => feature.layer.id === "community-hit",
+          );
+          if (typeof report?.properties?.reportId === "string") {
+            current.current.onReport(report.properties.reportId);
+            return;
+          }
           const accident = features.find(
             (feature) => feature.layer.id === "accident-hit",
           );
@@ -327,6 +345,39 @@ function LiveMap(props: LiveMapProps) {
     setNavigationLayers(map, navigationLayers ?? emptyNavigationLayers());
   }, [ready, navigationLayers]);
 
+  // 補助線の端点と、線を抜く地点を同じ画面座標で更新する。
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    const update = () => {
+      const result = props.result;
+      const project = (coordinates: number[]) => {
+        const point = map.project([coordinates[0], coordinates[1]]);
+        return { x: point.x, y: point.y };
+      };
+      props.onPositions(Object.fromEntries(result ? featuredRoutes(result).map((route) => [
+        route.id,
+        project(routeAnchor(route, route.id === result.safest_id ? 0.6 : 0.4)),
+      ]) : []));
+      const selected = result?.candidates.find((route) => route.id === props.selectedRouteId);
+      props.onProtectedPoints([
+        ...(props.showAccidents ? selected?.accident_points.features ?? [] : []).map((point) => ({
+          ...project(point.geometry.coordinates), radius: 12,
+        })),
+        ...props.safetyReports.map((report) => ({
+          ...project([report.lon, report.lat]), radius: 10,
+        })),
+      ]);
+    };
+    update();
+    map.on("move", update);
+    map.on("resize", update);
+    return () => {
+      map.off("move", update);
+      map.off("resize", update);
+    };
+  }, [ready, props.result, props.selectedRouteId, props.showAccidents, props.safetyReports, props.onPositions, props.onProtectedPoints]);
+
   // 追従は現在地へ中心を寄せるだけ。測位ごとのfitBounds・回転・ズーム変更はしない。
   const followTarget = props.navigation?.follow
     ? navigationLayers?.location.features[0]?.geometry.coordinates
@@ -393,6 +444,8 @@ export function RouteMap(props: RouteMapProps) {
     onSelectSection,
     showAccidents,
     onShowAccidents,
+    showReports,
+    onShowReports,
     unavailable,
     navigation,
     onUnavailableChange,
@@ -401,6 +454,16 @@ export function RouteMap(props: RouteMapProps) {
   const routes = result?.candidates ?? [];
   const selectedRoute = routes.find((route) => route.id === selectedRouteId);
   const [accidentId, setAccidentId] = useState<number | null>(null);
+  const [reportId, setReportId] = useState<string | null>(null);
+  // 事故記録と口コミのポップアップは同じ場所に出すので、同時には開かない
+  const openAccident = (id: number) => {
+    setReportId(null);
+    setAccidentId(id);
+  };
+  const openReport = (id: string) => {
+    setAccidentId(null);
+    setReportId(id);
+  };
   const [liveFailed, setLiveFailed] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [hoveredRouteId, setHoveredRouteId] = useState<string | null>(null);
@@ -408,6 +471,7 @@ export function RouteMap(props: RouteMapProps) {
   const [livePositions, setLivePositions] = useState<Record<string, MapPoint>>(
     {},
   );
+  const [liveProtectedPoints, setLiveProtectedPoints] = useState<MapPinFootprint[]>([]);
   const shell = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<MapSize>({ width: WIDTH, height: HEIGHT });
   useLayoutEffect(() => {
@@ -436,7 +500,15 @@ export function RouteMap(props: RouteMapProps) {
     [result],
   );
   const safetyReports = useSafetyReports(reportBounds);
-  const path = (coordinates: Coordinate[]) =>
+  const routeReports = useMemo(
+    () =>
+      showReports && selectedRoute
+        ? reportsNearLine(safetyReports, selectedRoute.geometry.coordinates)
+        : [],
+    [showReports, selectedRoute, safetyReports],
+  );
+  const selectedReport = routeReports.find((report) => report.id === reportId);
+  const path =(coordinates: Coordinate[]) =>
     coordinates.map((point) => project(point).join(",")).join(" ");
   const selectedAccident = showAccidents
     ? selectedRoute?.accident_points.features.find(
@@ -488,9 +560,27 @@ export function RouteMap(props: RouteMapProps) {
       )
     : {};
 
+  const screenPoint = (coordinates: number[]) => {
+    const [x, y] = project(coordinates);
+    return { x: size.width / 2 + (x - center[0]) * scale, y: size.height / 2 + (y - center[1]) * scale };
+  };
+  const protectedPoints: MapPinFootprint[] = [
+    ...(showAccidents ? selectedRoute?.accident_points.features ?? [] : []).map((point) => ({
+      ...screenPoint(point.geometry.coordinates),
+      // 事故点の枠は拡大率に追従する。フォーカス時の太さ（5px）も含める。
+      radius: ((point.properties.attribution === "unattributed" ? 5 : 7) + 2.5) * scale + 1,
+    })),
+    ...routeReports.map((report) => ({ ...screenPoint([report.lon, report.lat]), radius: 6 * scale + 3 })),
+  ];
+
   useEffect(() => {
     setAccidentId(null);
+    setReportId(null);
   }, [result, selectedRouteId]);
+  // 非表示にしたら閉じる（表示に戻したときに開き直さない）
+  useEffect(() => {
+    if (!showReports) setReportId(null);
+  }, [showReports]);
   useEffect(() => {
     setZoom(1);
     setLiveFailed(false);
@@ -520,6 +610,35 @@ export function RouteMap(props: RouteMapProps) {
     setZoom(1);
     onSelectSection(null);
   };
+  // 事故点と口コミの表示切り替え。模式図では拡大・縮小の下に、実地図では単独で置く。
+  const layerToggles = (
+    <>
+      {onShowAccidents && (
+        <button
+          type="button"
+          aria-label="事故点を地図に表示"
+          aria-pressed={showAccidents}
+          onClick={() => onShowAccidents(!showAccidents)}
+        >
+          {showAccidents ? <Eye size={20} /> : <EyeOff size={20} />}
+        </button>
+      )}
+      {onShowReports && (
+        <button
+          type="button"
+          aria-label="口コミを地図に表示"
+          aria-pressed={showReports}
+          onClick={() => onShowReports(!showReports)}
+        >
+          {showReports ? (
+            <MessageSquare size={20} />
+          ) : (
+            <MessageSquareOff size={20} />
+          )}
+        </button>
+      )}
+    </>
+  );
 
   return (
     <div
@@ -535,10 +654,12 @@ export function RouteMap(props: RouteMapProps) {
         <LiveMap
           {...props}
           styleUrl={styleUrl}
-          safetyReports={safetyReports}
-          onAccident={setAccidentId}
+          safetyReports={routeReports}
+          onAccident={openAccident}
+          onReport={openReport}
           onUnavailable={() => setLiveFailed(true)}
           onPositions={setLivePositions}
+          onProtectedPoints={setLiveProtectedPoints}
         />
       ) : (
         <div className="route-schematic-canvas">
@@ -647,92 +768,8 @@ export function RouteMap(props: RouteMapProps) {
                 );
               },
             )}
-            {origin && (
-              <g aria-label="出発地" className="map-endpoint">
-                <circle
-                  cx={project(origin)[0]}
-                  cy={project(origin)[1]}
-                  r="12"
-                />
-                <text
-                  x={project(origin)[0]}
-                  y={project(origin)[1] - 24}
-                  textAnchor="middle"
-                >
-                  出発地
-                </text>
-              </g>
-            )}
-            {dest && (
-              <g aria-label="目的地" className="map-endpoint is-destination">
-                <circle cx={project(dest)[0]} cy={project(dest)[1]} r="12" />
-                <text
-                  x={project(dest)[0]}
-                  y={project(dest)[1] - 24}
-                  textAnchor="middle"
-                >
-                  目的地
-                </text>
-              </g>
-            )}
-            {showAccidents &&
-              selectedRoute?.accident_points.features.map((point) => {
-                const [x, y] = project(point.geometry.coordinates);
-                const unattributed =
-                  point.properties.attribution === "unattributed";
-                const activate = () => setAccidentId(point.id);
-                return (
-                  <g
-                    key={point.id}
-                    className="map-accident-button"
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`事故記録 ${point.id + 1} を表示`}
-                    onClick={activate}
-                    onKeyDown={(event) => keyActivate(event, activate)}
-                  >
-                    <circle
-                      cx={x}
-                      cy={y}
-                      r="7"
-                      fill="transparent"
-                      stroke="transparent"
-                      strokeWidth="44"
-                      vectorEffect="non-scaling-stroke"
-                    />
-                    <circle
-                      cx={x}
-                      cy={y}
-                      r={unattributed ? 5 : 7}
-                      className={`map-accident-dot${unattributed ? " is-unattributed" : ""}`}
-                    />
-                  </g>
-                );
-              })}
-            {result && safetyReports.length > 0 && (
-              <g className="map-community-pins" aria-label="口コミの地点">
-                {safetyReports.map((report) => {
-                  const [x, y] = project([report.lon, report.lat]);
-                  return (
-                    <circle
-                      key={report.id}
-                      cx={x}
-                      cy={y}
-                      r="6"
-                      className="map-community-pin"
-                      fill={SAFETY_COLORS[dominantKind(report)]}
-                      vectorEffect="non-scaling-stroke"
-                      role="img"
-                      aria-label={`口コミ：${tallyLabel(report)}`}
-                    >
-                      <title>{tallyLabel(report)}</title>
-                    </circle>
-                  );
-                })}
-              </g>
-            )}
             {navigation && (
-              <g className="map-navigation" aria-hidden="true">
+              <g className="map-navigation" aria-hidden="true" pointerEvents="none">
                 {navigation.layers.route.features.map((feature, index) => (
                   <polyline
                     key={index}
@@ -766,6 +803,110 @@ export function RouteMap(props: RouteMapProps) {
                     />
                   ),
                 )}
+              </g>
+            )}
+            {origin && (
+              <g aria-label="出発地" className="map-endpoint">
+                <circle
+                  cx={project(origin)[0]}
+                  cy={project(origin)[1]}
+                  r="12"
+                />
+                <text
+                  x={project(origin)[0]}
+                  y={project(origin)[1] - 24}
+                  textAnchor="middle"
+                >
+                  出発地
+                </text>
+              </g>
+            )}
+            {dest && (
+              <g aria-label="目的地" className="map-endpoint is-destination">
+                <circle cx={project(dest)[0]} cy={project(dest)[1]} r="12" />
+                <text
+                  x={project(dest)[0]}
+                  y={project(dest)[1] - 24}
+                  textAnchor="middle"
+                >
+                  目的地
+                </text>
+              </g>
+            )}
+            {showAccidents &&
+              selectedRoute?.accident_points.features.map((point) => {
+                const [x, y] = project(point.geometry.coordinates);
+                const unattributed =
+                  point.properties.attribution === "unattributed";
+                const activate = () => openAccident(point.id);
+                return (
+                  <g
+                    key={point.id}
+                    className="map-accident-button"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`事故記録 ${point.id + 1} を表示`}
+                    onClick={activate}
+                    onKeyDown={(event) => keyActivate(event, activate)}
+                  >
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r="7"
+                      fill="transparent"
+                      stroke="transparent"
+                      strokeWidth="44"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={unattributed ? 5 : 7}
+                      className={`map-accident-dot${unattributed ? " is-unattributed" : ""}`}
+                    />
+                  </g>
+                );
+              })}
+            {result && routeReports.length > 0 && (
+              <g className="map-community-pins" aria-label="口コミの地点">
+                {routeReports.map((report) => {
+                  const [x, y] = project([report.lon, report.lat]);
+                  const activate = () => openReport(report.id);
+                  return (
+                    <g
+                      key={report.id}
+                      className="map-community-button"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`口コミ（${tallyLabel(report)}）を表示`}
+                      onClick={activate}
+                      onKeyDown={(event) => keyActivate(event, activate)}
+                    >
+                      <title>{tallyLabel(report)}</title>
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r="6"
+                        fill="transparent"
+                        stroke="transparent"
+                        strokeWidth="44"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r="6"
+                        className="map-community-pin"
+                        fill={SAFETY_COLORS[dominantKind(report)]}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    </g>
+                  );
+                })}
+              </g>
+            )}
+            {navigation && (
+              <g className="map-navigation" aria-hidden="true" pointerEvents="none">
                 {navigation.layers.location.features.map((feature, index) => (
                   <circle
                     key={index}
@@ -791,6 +932,7 @@ export function RouteMap(props: RouteMapProps) {
           onHoverRoute={setHoveredRouteId}
           onNavigate={(id) => props.onNavigate ? props.onNavigate(id) : setNavNotice(true)}
           detached={disabled}
+          protectedPoints={disabled ? [] : styleUrl ? liveProtectedPoints : protectedPoints}
         />
       )}
       {/* Navigation (Issue #7 step 10) is not implemented yet; the button says so. */}
@@ -823,16 +965,16 @@ export function RouteMap(props: RouteMapProps) {
           <button type="button" aria-label="経路全体を表示" onClick={reset}>
             <Crosshair size={20} />
           </button>
-          {onShowAccidents && (
-            <button
-              type="button"
-              aria-label="事故点を地図に表示"
-              aria-pressed={showAccidents}
-              onClick={() => onShowAccidents(!showAccidents)}
-            >
-              {showAccidents ? <Eye size={20} /> : <EyeOff size={20} />}
-            </button>
-          )}
+          {layerToggles}
+        </div>
+      )}
+      {!disabled && styleUrl && (onShowAccidents || onShowReports) && (
+        <div
+          className="map-controls map-layer-controls"
+          role="group"
+          aria-label="地図の表示切り替え"
+        >
+          {layerToggles}
         </div>
       )}
       {!disabled && (
@@ -882,7 +1024,7 @@ export function RouteMap(props: RouteMapProps) {
               </span>
             </>
           )}
-          {safetyReports.length > 0 && (
+          {routeReports.length > 0 && (
             <>
               <span>
                 <i className="legend-community-safe" />
@@ -910,6 +1052,12 @@ export function RouteMap(props: RouteMapProps) {
         <AccidentPopup
           accident={selectedAccident}
           onClose={() => setAccidentId(null)}
+        />
+      )}
+      {!disabled && selectedReport && result && (
+        <ReportPopup
+          report={selectedReport}
+          onClose={() => setReportId(null)}
         />
       )}
     </div>

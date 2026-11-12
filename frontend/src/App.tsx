@@ -128,6 +128,7 @@ function NavigationApp({
   const [geocodeAttribution, setGeocodeAttribution] =
     useState<GeocodeAttribution>([]);
   const [showAccidents, setShowAccidents] = useState(true);
+  const [showReports, setShowReports] = useState(true);
   const [scenario, setScenario] = useState<Scenario>("normal");
   // The result page opens with the sidebar closed so the map is fully visible.
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -496,6 +497,8 @@ function NavigationApp({
                 }}
                 showAccidents={showAccidents}
                 onShowAccidents={setShowAccidents}
+                showReports={showReports}
+                onShowReports={setShowReports}
                 unavailable={scenario === "map-error"}
                 onUnavailableChange={setMapUnavailable}
                 navigation={
