@@ -111,7 +111,6 @@ API 2.0の実サーバーと地図配信元はこのリポジトリに含まれ�
 - `src/api/`：実APIクライアント、デモ、応答検証
 - `src/api/generated/`：OpenAPI由来の型とJSON Schema
 - `public/assets/acciless-navi-white.webm`：提供された白背景のロゴ動画。透過を使わず、スマートフォンでも動画内の背景を白で表示する
-- `public/assets/acciless-navi.webm`：透過版の原本（再生には白背景版を使用）
 - `public/assets/acciless-navi-poster.jpg`：動画から作った白背景の静止画
 
 添付ZIPのNext.js構成や分析SDKは取り込まず、画面の構成・余白・カード操作を参考にしています。
