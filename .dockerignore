@@ -11,6 +11,7 @@
 !frontend/tsconfig.json
 !frontend/vite.config.ts
 !frontend/public/
+!frontend/brand/
 !frontend/src/
 !frontend/scripts/
 !docs/api/fixtures/

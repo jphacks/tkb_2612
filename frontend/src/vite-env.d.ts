@@ -7,4 +7,5 @@ interface ImportMetaEnv {
   readonly VITE_MAP_STYLE_URL?: string;
   readonly VITE_ROUTING_ATTRIBUTION?: string;
   readonly VITE_MAP_ATTRIBUTION?: string;
+  readonly VITE_PUBLIC_ORIGIN?: string;
 }

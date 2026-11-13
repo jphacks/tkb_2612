@@ -16,12 +16,14 @@ docker build \
   --build-arg VITE_MAP_STYLE_URL="$MAP_STYLE_URL" \
   --build-arg VITE_ROUTING_ATTRIBUTION="$ROUTING_ATTRIBUTION" \
   --build-arg VITE_MAP_ATTRIBUTION="$MAP_ATTRIBUTION" \
+  --build-arg VITE_PUBLIC_ORIGIN="$PUBLIC_ORIGIN" \
   -t $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/$SERVICE:$RELEASE_ID .
 docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/$SERVICE:$RELEASE_ID
 ```
 
 - `ROUTING_ATTRIBUTION` は、イメージの `VITE_ROUTING_ATTRIBUTION` とCloud Runの `ROUTING_ATTRIBUTION` に同じ値を渡します（同じ変数から設定する）。
 - `VITE_*` はブラウザへ公開される値です。秘密を入れません。
+- `PUBLIC_ORIGIN` は任意で、Cloud RunのURLのorigin（例：`https://tkb-api-….run.app`、パスなし）です。設定するとOGPの `og:url`・`og:image` を出力します。未設定ならこの2つを出しません。リンクプレビューはクローラーが未認証でページと画像を取得できる場合だけ表示されます（IAPを有効にすると表示されません）。
 - **未決**：releaseをgitに含めるか、どこに置いてイメージへ入れるか（Issue #9 7章）。今はビルド引数 `ACCIDENT_RELEASE`（ビルドコンテキスト内のパス）で渡し、`accidents.csv.gz`・`metadata.json`・`syukujitsu.csv` が無ければビルドを止めます。中身の検証（hash・schema・件数）は起動時に `data::load_*` が行います。
 
 ローカルでの確認（偽上流は `cargo run --example dev_stack` で起動。コンテナからホストのループバックへは届かないので `--network host` を使う）：
