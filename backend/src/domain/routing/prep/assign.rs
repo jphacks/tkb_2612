@@ -1251,8 +1251,9 @@ pub fn snap_accidents(
         .into_par_iter()
         .map_init(Scratch::default, |scratch, ci| {
             let mut counts = TableCounts::default();
-            for i in ci * chunk..((ci + 1) * chunk).min(count) {
-                index.observe(coord_of(i), &input.accident_attrs[i], scratch, &mut counts);
+            let range = ci * chunk..((ci + 1) * chunk).min(count);
+            for (i, attrs) in range.clone().zip(&input.accident_attrs[range]) {
+                index.observe(coord_of(i), attrs, scratch, &mut counts);
             }
             counts
         })
