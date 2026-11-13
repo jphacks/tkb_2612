@@ -61,7 +61,7 @@ export function LogoIntro({ onComplete }: LogoIntroProps) {
         <video
           ref={videoRef}
           className="logo-intro-video"
-          src="/assets/acciless-navi.webm"
+          src="/assets/acciless-navi-white.webm"
           poster="/assets/acciless-navi-poster.jpg"
           autoPlay
           muted
