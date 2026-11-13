@@ -11,6 +11,11 @@ it("生成SWが出力一覧を保存し、同一ビルドでは同じversion、p
   const root = await mkdtemp(join(tmpdir(), "acciless-pwa-"));
   try {
     await mkdir(join(root, "public/assets"), { recursive: true });
+    await mkdir(join(root, "brand"), { recursive: true });
+    for (const size of [32, 180, 192, 512]) {
+      await writeFile(join(root, `brand/acciless-navi-icon-${size}.png`), `icon-${size}`);
+    }
+    await writeFile(join(root, "brand/acciless-navi-ogp.png"), "ogp");
     await writeFile(join(root, "index.html"), '<title>AcciLessNavi — ルート比較</title><script type="module" src="/app.js"></script>');
     await writeFile(join(root, "app.js"), 'import "./app.css"; document.title = "AcciLessNavi";');
     await writeFile(join(root, "app.css"), 'body { color: black; }');
@@ -45,6 +50,7 @@ it("生成SWが出力一覧を保存し、同一ビルドでは同じversion、p
       expect(cached.some((path) => /^\/assets\/.*\.js$/.test(path))).toBe(true);
       expect(cached.some((path) => /^\/assets\/.*\.css$/.test(path))).toBe(true);
       expect(cached).not.toContain("/sw.js");
+      expect(cached.some((path) => path.includes("acciless-navi-ogp"))).toBe(false);
       return version;
     };
     const first = await compile();
@@ -52,7 +58,13 @@ it("生成SWが出力一覧を保存し、同一ビルドでは同じversion、p
     await writeFile(join(root, "public/assets/poster.jpg"), "new");
     expect(await compile()).not.toBe(first);
     expect(JSON.parse(await readFile(join(root, "dist/manifest.webmanifest"), "utf8")))
-      .toEqual({ name: "AcciLessNavi — ルート比較", short_name: "AcciLessNavi", start_url: "/", scope: "/", display: "standalone" });
+      .toEqual({
+        name: "AcciLessNavi — ルート比較", short_name: "AcciLessNavi", start_url: "/", scope: "/", display: "standalone",
+        icons: [
+          { src: expect.stringMatching(/^\/assets\/acciless-navi-icon-192-[0-9a-f]{8}\.png$/), sizes: "192x192", type: "image/png" },
+          { src: expect.stringMatching(/^\/assets\/acciless-navi-icon-512-[0-9a-f]{8}\.png$/), sizes: "512x512", type: "image/png" },
+        ],
+      });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

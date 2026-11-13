@@ -112,5 +112,6 @@ API 2.0の実サーバーと地図配信元はこのリポジトリに含まれ�
 - `src/api/generated/`：OpenAPI由来の型とJSON Schema
 - `public/assets/acciless-navi.webm`：提供されたロゴ動画の原本
 - `public/assets/acciless-navi-poster.jpg`：動画から作った白背景の静止画
+- `brand/`：ファビコン・PWAアイコン・OGP画像。`scripts/brand-assets.ts` がビルド時に内容ハッシュ付きの名前で `dist/assets/` へ出力し、`index.html` のタグとmanifestの `icons` を作る。`acciless-navi-icon-source.png`（1024px）が原本で、各サイズは `convert acciless-navi-icon-source.png -resize 192x192 -strip acciless-navi-icon-192.png` のように作る（32・180・192・512）
 
 添付ZIPのNext.js構成や分析SDKは取り込まず、画面の構成・余白・カード操作を参考にしています。
