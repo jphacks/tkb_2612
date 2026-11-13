@@ -809,8 +809,8 @@ fn fill_severity(
                 let s = agg.total_severity() / n;
                 for c in 0..CELL_COUNT {
                     rows[k].s[c] = s;
-                    for w in 0..5 {
-                        rows[k].rho[c][w] = (agg.total_weather(w) / n) as f32;
+                    for (w, rho) in rows[k].rho[c].iter_mut().enumerate() {
+                        *rho = (agg.total_weather(w) / n) as f32;
                     }
                 }
             }
