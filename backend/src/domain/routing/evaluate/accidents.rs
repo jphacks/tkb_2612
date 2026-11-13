@@ -280,11 +280,12 @@ pub fn build_accident_set(
 
     // 6章(1)の2つ目：内部ノード（i = 0..n−2 の終点）が属するクラスタ。
     let mut seen_clusters: HashSet<ClusterId> = HashSet::new();
-    for i in 0..path.dedges.len().saturating_sub(1) {
+    let internal = &path.dedges[..path.dedges.len().saturating_sub(1)];
+    for (i, &dedge) in internal.iter().enumerate() {
         if i % CANCEL_CHECK_INTERVAL == 0 {
             cancel.check()?;
         }
-        let node = graph.dedge_to(path.dedges[i]);
+        let node = graph.dedge_to(dedge);
         let Some(cluster) = topology.cluster_of(node) else {
             continue;
         };
@@ -564,8 +565,9 @@ fn cluster_sid(
     }
     let mut first: Option<usize> = None;
     let mut last: Option<usize> = None;
-    for i in 0..path.dedges.len().saturating_sub(1) {
-        if topology.cluster_of(graph.dedge_to(path.dedges[i])) == Some(cluster) {
+    let internal = &path.dedges[..path.dedges.len().saturating_sub(1)];
+    for (i, &dedge) in internal.iter().enumerate() {
+        if topology.cluster_of(graph.dedge_to(dedge)) == Some(cluster) {
             let vertex = shape.internal_node_vertex(i).ok_or_else(|| {
                 EngineError::ContractViolation("クラスタの頂点範囲がありません".to_owned())
             })?;
