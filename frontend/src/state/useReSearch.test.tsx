@@ -8,6 +8,7 @@ import { RESEARCH_INTERRUPTED, NO_SAFEST, TOO_CLOSE, useReSearch } from "./useRe
 import type { NavigationControl, ReSearchSource } from "./useNavigation";
 import type { useConditions } from "./useConditions";
 import { useRouteSearch } from "./useRouteSearch";
+import { FIX_FUTURE_SKEW_MS } from "../navigation/thresholds";
 
 const client = vi.hoisted(() => ({ searchRoutes: vi.fn() }));
 vi.mock("../api/client", () => client);
@@ -196,7 +197,7 @@ describe("useReSearch: 現在地からの明示的再検索（7.6）", () => {
     await act(async () => view.result.current.reSearch.start());
     expect(state(view).status).toBe("failed");
     if (kind === "古い") vi.setSystemTime(Date.now() + 5001);
-    else if (kind === "未来") vi.setSystemTime(Date.now() - 1000);
+    else if (kind === "未来") vi.setSystemTime(Date.now() - FIX_FUTURE_SKEW_MS - 1);
     else fix.timestamp = NaN;
     await act(async () => view.result.current.reSearch.retry());
     expect(geo.getCurrentPosition).toHaveBeenCalledTimes(1);
@@ -205,6 +206,20 @@ describe("useReSearch: 現在地からの明示的再検索（7.6）", () => {
     await act(async () => geo.succeed({ ...here, timestamp: Date.now() }));
     expect(view.navigation.start).toHaveBeenCalledTimes(1);
     expect(view.refresh).toHaveBeenCalledTimes(2);
+    expect(client.searchRoutes).toHaveBeenCalledTimes(2);
+  });
+
+  it("再試行の既存originが端末時計のずれの許容幅までの未来なら再測位せずに使う", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const geo = geolocation();
+    client.searchRoutes.mockRejectedValueOnce(new ApiError("混雑", "service_busy", 503));
+    const fix = { ...here, timestamp: Date.now() };
+    const view = setup({ fix });
+    await act(async () => view.result.current.reSearch.start());
+    expect(state(view).status).toBe("failed");
+    vi.setSystemTime(Date.now() - FIX_FUTURE_SKEW_MS);
+    await act(async () => view.result.current.reSearch.retry());
+    expect(geo.getCurrentPosition).not.toHaveBeenCalled();
     expect(client.searchRoutes).toHaveBeenCalledTimes(2);
   });
 

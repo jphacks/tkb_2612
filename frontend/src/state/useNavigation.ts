@@ -9,7 +9,7 @@ import {
 } from "../navigation/session";
 import type { SimulationMultiplier } from "../navigation/simulator";
 import type { PositionFix } from "../navigation/source";
-import { ACCURACY_LIMIT_M, FIX_MAX_AGE_MS } from "../navigation/thresholds";
+import { ACCURACY_LIMIT_M, FIX_FUTURE_SKEW_MS, FIX_MAX_AGE_MS } from "../navigation/thresholds";
 
 export const START_MESSAGE = {
   device: "ナビを開始します",
@@ -194,7 +194,7 @@ export function useNavigation({ result, mapAvailable }: Options): NavigationCont
         : null,
       measureSimulation: active.stopForReSearch(),
       fix,
-      fixFresh: !!fix && fix.accuracy <= ACCURACY_LIMIT_M && age >= 0 && age <= FIX_MAX_AGE_MS,
+      fixFresh: !!fix && fix.accuracy <= ACCURACY_LIMIT_M && age >= -FIX_FUTURE_SKEW_MS && age <= FIX_MAX_AGE_MS,
     };
     end();
     return taken;

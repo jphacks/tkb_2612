@@ -8,7 +8,7 @@ import type { PositionFix } from "../navigation/source";
 import type { NavigationControl } from "./useNavigation";
 import type { useConditions } from "./useConditions";
 import type { useRouteSearch } from "./useRouteSearch";
-import { ACCURACY_LIMIT_M } from "../navigation/thresholds";
+import { ACCURACY_LIMIT_M, FIX_FUTURE_SKEW_MS, FIX_MAX_AGE_MS } from "../navigation/thresholds";
 
 export type ReSearchStage = "locating" | "conditions" | "route";
 export type ReSearchState =
@@ -86,7 +86,7 @@ function measure(): Promise<PositionFix> {
 
 function freshTimestamp(fix: PositionFix, now: number): boolean {
   const age = now - fix.timestamp;
-  return Number.isFinite(fix.timestamp) && age >= 0 && age <= 5000;
+  return Number.isFinite(fix.timestamp) && age >= -FIX_FUTURE_SKEW_MS && age <= FIX_MAX_AGE_MS;
 }
 
 function validated(fix: PositionFix, now: number): PositionFix {
