@@ -24,7 +24,7 @@ docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/$SERVICE:$RELEASE_ID
 - `ROUTING_ATTRIBUTION` は、イメージの `VITE_ROUTING_ATTRIBUTION` とCloud Runの `ROUTING_ATTRIBUTION` に同じ値を渡します（同じ変数から設定する）。
 - `VITE_*` はブラウザへ公開される値です。秘密を入れません。
 - `PUBLIC_ORIGIN` は任意で、Cloud RunのURLのorigin（例：`https://tkb-api-….run.app`、パスなし）です。設定するとOGPの `og:url`・`og:image` を出力します。未設定ならこの2つを出しません。リンクプレビューはクローラーが未認証でページと画像を取得できる場合だけ表示されます（IAPを有効にすると表示されません）。
-- **未決**：releaseをgitに含めるか、どこに置いてイメージへ入れるか（Issue #9 7章）。今はビルド引数 `ACCIDENT_RELEASE`（ビルドコンテキスト内のパス）で渡し、`accidents.csv.gz`・`metadata.json`・`syukujitsu.csv` が無ければビルドを止めます。中身の検証（hash・schema・件数）は起動時に `data::load_*` が行います。
+- **未決**：releaseをgitに含めるか、どこに置いてイメージへ入れるか（Issue #9 7章）。今はビルド引数 `ACCIDENT_RELEASE`（ビルドコンテキスト内のパス）で渡し、`accidents.csv.gz`・`metadata.json`・`syukujitsu.csv` が無ければビルドを止めます。中身の検証（hash・schema・件数）は起動時に `data::load_*` が行います。`ACCIDENT_RELEASE` には schema 3 の11ファイル（3ファイル＋8つの `.bin`）を揃えてください。Dockerfileが存在を検査するのは3ファイルだけなので、`.bin` の欠落はビルドでは検出されず、起動時の `data::load_engine` で失敗します。
 
 ローカルでの確認（偽上流は `cargo run --example dev_stack` で起動。コンテナからホストのループバックへは届かないので `--network host` を使う）：
 
@@ -36,7 +36,7 @@ docker run --rm --network host \
   -e OPEN_METEO_BASE_URL=… -e EXTERNAL_USER_AGENT=… \
   -e ROUTING_ATTRIBUTION=… -e GEOCODING_ATTRIBUTION='[{"text":"Powered by Geoapify","url":"https://www.geoapify.com/"}]' \
   -v /path/to/dummy.key:/secrets/geoapify/key:ro \
-  $SERVICE:local
+  $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/$SERVICE:$RELEASE_ID
 curl -s http://127.0.0.1:8080/api/health
 ```
 
@@ -104,6 +104,7 @@ gcloud run deploy $SERVICE \
 ```
 
 - 環境変数はarchitecture.md 6章の表のとおりです。必須の不足・不正は起動に失敗し、ログには変数名だけが出ます（値は出しません）。`BACKEND_BIND`・`UPSTREAM_GATE` は設定しません（`0.0.0.0:$PORT`、`firestore`）。
+- `OSRM_*_BASE_URL` と `ROUTING_ATTRIBUTION` は起動時に必須ですが、新方式（schema 3）の経路探索では呼ばれず、`ROUTING_ATTRIBUTION` は応答に使われません（表示はビルド時の `VITE_ROUTING_ATTRIBUTION`）。
 - `GEOCODING_ATTRIBUTION` はカンマを含むので、区切り文字を変える記法（`^@^`）か `--env-vars-file` を使います。`"`・`[`・`{` をシェルに解釈させないよう、引数全体を単引用符で囲みます。
 - `WEATHER_CACHE_TTL_SEC=0` で気象応答のキャッシュを無効にします。リクエスト課金（要求の処理外はCPUが割り当てられない）では、無通信の間にキャッシュの期限切れの削除が動く保証がなく、architecture.md 8章の「最大10分保持」を守れないためです。キャッシュを使うには、インスタンス課金（`--no-cpu-throttling`）への変更が必要で、費用の判断を伴います（**未決**、Issue #9で扱う）。無効にしても、Open-Meteoの分/時/日/月の上限は上流ゲートで守ります。
 - 有償のOpen-Meteoでは `--set-secrets=/secrets/open-meteo/key=open-meteo-api-key:latest` と `OPEN_METEO_API_KEY_FILE=/secrets/open-meteo/key` を足します。

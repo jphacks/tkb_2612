@@ -33,9 +33,9 @@ export interface paths {
          *     候補が取得済みでも全体期限後に200を返さない。
          *     gzipを許可するAccept-Encodingなら応答圧縮必須、Content-Encoding: gzipとVary: Accept-Encodingを返す。
          *     identity要求は非圧縮。サイズ・スキーマ検査は展開後のJSONに適用する。
-         *     全応答は概ね11〜12MB、負荷基準は非圧縮12000000バイト。圧縮率は保証しない。
+         *     全応答は概ね16MB、負荷基準は非圧縮16,100,000バイト。圧縮率は保証しない。
          *     クライアント期限180秒はfetch開始から本文全受信・展開・解析/検査完了まで。ヘッダーで解除しない。
-         *     想定下り1Mbps以上・RTT 300ms以下。非圧縮12MBは転送96秒、サーバ等を含む見積り138秒。
+         *     想定下り1Mbps以上・RTT 300ms以下。非圧縮16.1MBは転送129秒、サーバ等を含む見積り171秒。
          *     サーバの転送待ちは送信開始から120秒、Cloud Run要求タイムアウトは180秒以上。
          *     Cloud Run＋IAP経由の圧縮/ヘッダー/期限は要確認。途中切断は本文不完了として失敗扱い。
          *     詳細と回線制限下の本文受信完了の受け入れはbehavior.md 7章。
@@ -514,9 +514,9 @@ export interface components {
             /** @description 経路距離、メートル（新方式は通った辺の長さの和、旧方式はOSRM） */
             distance: number;
             geometry: components["schemas"]["LineString"];
-            /** @description 集合B（新方式は経路の辺・交差点に割り当てた事故と72m以内の帰属不明の事故、旧方式は72m以内。移動手段・時間帯・曜日区分で絞り、天候では絞らない）の事故件数、間引き前 */
+            /** @description 集合B（新方式は経路の辺・交差点への割り当て、歩道の親の車道への割り当て（72m以内）、72m以内の帰属不明の事故、旧方式は72m以内。移動手段・時間帯・曜日区分で絞り、天候では絞らない）の事故件数、間引き前 */
             accident_count: components["schemas"]["Count"];
-            /** @description 経路に結び付いた事故の総件数。移動手段・時間帯・曜日区分・天候のどれでも絞る前の件数で、新方式は集合Bを作るときの経路の辺・交差点への割り当てと72m以内の帰属不明の事故を合わせた事故IDの数（同じ事故を二重に数えない）。旧方式はこの値を作らないのでnull。 */
+            /** @description 経路に結び付いた事故の総件数。移動手段・時間帯・曜日区分・天候のどれでも絞る前の件数で、新方式は集合Bを作るときの割り当て（経路の辺・交差点）と、歩道の親の車道・帰属不明の事故（72m以内）を合わせた事故IDの数（同じ事故を二重に数えない）。旧方式はこの値を作らないのでnull。 */
             total_accident_count: number | null;
             /** @description 死者1人以上の事故件数 */
             fatal_accidents: components["schemas"]["Count"];
@@ -531,7 +531,8 @@ export interface components {
             /**
              * @description 経路の推定リスク、小数2桁に丸め。候補の選定に使用。
              *     新方式：経路の辺と交差点のモデルの値の和（道路種別ごとの平均で補正した期待件数×深刻度。
-             *     自動車は生活道路の係数、雨・霧・雪の指定時は同じ天候の事故の割合に応じた倍率を含む）。
+             *     自動車は道路区分ごとの曝露の係数（car_exposure。ない release では生活道路の係数c）を含み、
+             *     雨・霧・雪の指定時は同じ天候の事故の割合に応じた倍率を含む）。
              *     集合Bが空でも正になり得る。帰属不明の事故は含めない（behavior.md 7章）。
              *     旧方式：Σ exp(-d²/(2·24²)) × 天候倍率 × (10×死者+負傷者)。
              *     天候倍率は指定天候が雨で一致なら2、霧/雪で一致なら4、それ以外1。
@@ -539,7 +540,7 @@ export interface components {
             weighted_risk: number;
             /** @description 丸めたweighted_risk/max(distance/1000,0.001)、重み点/km、小数3桁に丸め。選定に使わない。 */
             risk_per_km: number;
-            /** @description 最短時間経路のweighted_risk（小数2桁）に対する削減率（%、小数1桁）。最短時間経路のweighted_riskが0ならnull。最短時間経路自身は0。負の値はリスクが高いことを表す。 */
+            /** @description 最短時間経路のweighted_risk（小数2桁）に対する削減率（%、小数1桁）。最短時間経路のweighted_risk（基準リスク）が0なら全候補（最短時間経路を含む）でnull。基準リスクが0より大きいとき、最短時間経路自身は0。負の値はリスクが高いことを表す。 */
             risk_reduction_percent: number | null;
             accident_points: components["schemas"]["AccidentCollection"];
             /** @description accident_points.features.length=min(accident_count,250)。表示点数。 */
@@ -604,7 +605,7 @@ export interface components {
             /** @description 集計・選定・ナビデータ構築時間（新方式は経路探索を含む。旧方式は候補取得後から）、ミリ秒、小数2桁。外部通信と転送を除く。 */
             aggregation_ms: number;
             data_years: components["schemas"]["Years"];
-            /** @description 推定指標の説明と、曝露補正した事故確率ではない旨。文面はbehavior.md 8章 */
+            /** @description 推定指標の説明と、交通量や通行回数で補正した事故確率ではない旨。文面はbehavior.md 8章 */
             risk_note: string;
         };
         GeocodeResult: {
@@ -673,7 +674,7 @@ export interface components {
             weather: components["schemas"]["Weather"] | null;
             /**
              * @description ok=取得済み、no_location=lat/lonなし、out_of_range=予報範囲外、
-             *     past=基準時刻が現在より15分超前、unavailable=上流失敗・期限超過・形式不正・未知コード。
+             *     past=基準時刻が現在より15分を超えて過去（現在−15分より前）、unavailable=上流失敗・期限超過・形式不正・未知コード。
              * @enum {string}
              */
             weather_status: "ok" | "no_location" | "out_of_range" | "past" | "unavailable";
