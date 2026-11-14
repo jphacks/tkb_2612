@@ -17,20 +17,21 @@
 
 ### 製品説明（具体的な製品の説明）
 
-**AcciLessNavi** は、出発地と目的地を入力すると、次の2つのルートを地図上に並べて表示・比較できるWebアプリケーションです。
+**AcciLessNavi** は、出発地と目的地を入力すると、最大3つのルート（最短・バランス・安全）を地図上に並べて表示・比較できるWebアプリケーションです。
 
 - **最短ルート**：取得した経路候補のうち、所要時間がもっとも短いルート
+- **バランスルート**：所要時間と事故リスクの中間にあるルート。条件を満たすときだけ表示されます。
 - **安全ルート**：許容できる遠回りの時間内で、指定した移動条件における過去の事故リスク（重み）がもっとも小さいルート
 
 使い方はシンプルな3ステップです。
 
 1. **出発地と目的地を設定**：住所・駅名・施設名で検索するか、「現在地を使う」からGPSで出発地を設定します。
 2. **移動条件を設定**：移動手段（徒歩・自転車・自動車）、出発日時、天気、時間帯、曜日区分、許容できる遠回りの時間（0〜30分）を選びます。時間帯・曜日区分・天気は出発日時と地域から自動で設定され、手動で変更することも可能です。
-3. **ルートを比較**：地図上のカードで、2つのルートの所要時間・距離・追加時間・過去の事故件数を見比べながら、納得して経路を選べます。
+3. **ルートを比較**：地図上のカードで、各ルートの所要時間・追加時間・過去の事故件数・推定リスクの減少率を見比べながら、納得して経路を選べます。
 
 事故の重み（リスクスコア）は、移動手段・時間帯・曜日区分が一致する過去の事故を対象に、次のロジックで算出します。
 
-- ルートから約72m以内の事故を対象とし、ルートに近い事故ほど重く評価する
+- ルートが通る道路の区間・交差点に結び付けた事故をもとに、道路ごとに推定した事故リスクを合計する（どの道路の事故か判断できない事故は、ルートから約72m以内なら件数にだけ数える）
 - 死者1人を負傷者10人分として換算し、事故の深刻度を重みに反映する
 - 雨・霧・雪を指定した際は、同じ天候で起きた事故をさらに重く評価する（雨：2倍、霧・雪：4倍）
 
@@ -105,7 +106,7 @@ https://github.com/user-attachments/assets/9fa12b72-b40f-47f4-bb0c-326380478c1c
 ### 活用した技術
 #### API・データ
 * [警察庁 交通事故統計オープンデータ](https://www.npa.go.jp/publications/statistics/koutsuu/opendata/index_opendata.html)（本票 2019〜2025年、約218万件）と、内閣府「国民の祝日」CSV
-* OSRM：徒歩・自転車・自動車の経路候補の取得
+* OSRM：旧方式（schema 2）の経路候補の取得。現行の新方式（schema 3）はrelease同梱の道路グラフ上で自前に探索し、OSRMを呼びません。`OSRM_*_BASE_URL` と `ROUTING_ATTRIBUTION` は起動時に必須ですが、新方式の経路探索では呼ばれません（`ROUTING_ATTRIBUTION` は応答に使われません）。
 * Geoapify Geocoding API：住所検索
 * Open-Meteo：出発日時・地点の天気予報
 * OpenFreeMap：地図タイル
@@ -114,7 +115,7 @@ https://github.com/user-attachments/assets/9fa12b72-b40f-47f4-bb0c-326380478c1c
 #### フレームワーク・ライブラリ・モジュール
 * フロントエンド：React、TypeScript、Vite、openapi-typescript
 * バックエンド：Rust、Axum
-* 基盤：Docker、GitHub Actions、Cloudflare Tunnel
+* 基盤：Docker、GitHub Actions
 
 #### デバイス
 * スマートフォン
@@ -122,7 +123,7 @@ https://github.com/user-attachments/assets/9fa12b72-b40f-47f4-bb0c-326380478c1c
 
 ### 独自技術
 #### ハッカソンで開発した独自機能・技術
-* **事故リスクで経路を比べる計算エンジン**：OSRM の候補経路ごとに、経路からの距離でガウス重み（σ=24m）を付けて周辺の事故を集計します。移動手段・時間帯・曜日区分で事故を絞り込み、雨・霧・雪の日は天候が一致する事故の重みを上げます。そのうえで「遠回りの許容時間」の範囲で最も安全な経路を選びます。
+* **事故リスクで経路を比べる計算エンジン**：新方式（schema 3）では、事故を道路の区間・交差点へ割り当て、移動手段・時間帯・曜日区分で絞り込み、天候も重みに反映した推定リスクで候補を比べます。そのうえで「遠回りの許容時間」の範囲で最も安全な経路を選びます。詳しい条件と計算は [behavior.md](docs/api/behavior.md) を参照してください。旧方式（schema 2）のOSRM候補と距離のガウス重みは、behavior.md の付録Aに残しています。
   [`backend/src/domain/`](backend/src/domain/)、[`docs/route-scoring-decision.md`](docs/route-scoring-decision.md)、commit [`5e72f0b`](https://github.com/jphacks/tkb_2612/commit/5e72f0b)
 * **往復・重複区間に強い GPS の照合**：経路が往復したり重なったりする区間でも、進行方向の複数の仮説を並行して追い、取り違えずに現在地を経路に合わせます。実機 GPS と模擬走行が同じ判定器を通ります。
   [`frontend/src/navigation/matcher.ts`](frontend/src/navigation/matcher.ts)、commit [`87bbbc7`](https://github.com/jphacks/tkb_2612/commit/87bbbc7)
@@ -133,16 +134,18 @@ https://github.com/user-attachments/assets/9fa12b72-b40f-47f4-bb0c-326380478c1c
 
 ### Dockerで起動してlocalhostで確認する
 
-APIサーバ・フロントエンド・事故データを1つのイメージに入れ、手元の `http://localhost:8080/` で確認します。経路・住所検索・天気は外部のサービスに接続します。
+APIサーバ・フロントエンド・事故データを1つのイメージに入れ、手元の `http://localhost:8080/` で確認します。経路はサーバ内の道路グラフで計算します。住所検索と天気は外部のサービス（Geoapify・Open-Meteo）に接続します。OSRMのURL設定は起動検査のために必要ですが、新方式の経路探索では呼びません。
 
-必要なもの：Docker、Rust 1.88以上（事故データの前処理に使用）、[Geoapify](https://www.geoapify.com/) のAPIキー（住所検索に使用）。
+必要なもの：Docker、Rust 1.88以上（事故データの前処理に使用）、日本全国のOpenStreetMapデータ（PBF。道路グラフの作成に使用）、[Geoapify](https://www.geoapify.com/) のAPIキー（住所検索に使用）。
 
-1. 事故データの前処理を行い、releaseを作ります。リポジトリの `accident/` を読み、`backend/data/releases/<release_id>/` に出力します。最後に出力される `release_id` を控えてください。
+1. 事故データの前処理を行い、releaseを作ります。まず `prepare_release` で schema 2 のbase releaseを作ります。続いて `routing_prep` の `osm-graph`→`restrictions`→`topology`→`accident-attrs`→`accident-snap`→`risk-fit`→`od-index`→`alt`→`package` を実行し、schema 3 のrelease（11ファイル）を作ります。`package` の `--base-release` にはbase releaseを、`--output` には `backend/data` を渡します。`package` が標準出力に出す `release_id` を控え、次の手順の `$RELEASE_ID` に使ってください。各サブコマンドの引数は `backend/src/bin/routing_prep.rs` の説明に従います。
 
    ```bash
    cargo run --release --manifest-path backend/Cargo.toml --bin prepare_release -- \
        --accident-dir accident --holidays accident/syukujitsu.csv --output backend/data
-   RELEASE_ID=$(basename "$(ls -d backend/data/releases/*)")
+   # 続いて routing_prep の osm-graph → restrictions → topology → accident-attrs →
+   # accident-snap → risk-fit → od-index → alt → package を実行する。
+   # package が標準出力に出すJSONの release_id を RELEASE_ID に設定する
    ```
 
 2. イメージをビルドします。`VITE_ENABLE_SIMULATION=true` を付けると、実際に移動しなくてもナビを試せる模擬走行を使えます。
@@ -151,7 +154,7 @@ APIサーバ・フロントエンド・事故データを1つのイメージに�
    docker build \
      --build-arg ACCIDENT_RELEASE=backend/data/releases/$RELEASE_ID \
      --build-arg VITE_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/liberty \
-     --build-arg VITE_ROUTING_ATTRIBUTION="© OpenStreetMap contributors / Routing: FOSSGIS (routing.openstreetmap.de)" \
+     --build-arg VITE_ROUTING_ATTRIBUTION="© OpenStreetMap contributors" \
      --build-arg VITE_MAP_ATTRIBUTION="OpenFreeMap © OpenMapTiles Data from OpenStreetMap" \
      --build-arg VITE_ENABLE_SIMULATION=true \
      -t acciless-navi:local .
@@ -172,10 +175,12 @@ APIサーバ・フロントエンド・事故データを1つのイメージに�
    GEOAPIFY_API_KEY_FILE=/secrets/geoapify/key
    OPEN_METEO_BASE_URL=https://api.open-meteo.com/
    EXTERNAL_USER_AGENT=acciless-navi-local/0.1 (+https://github.com/jphacks/tkb_2612)
-   ROUTING_ATTRIBUTION=© OpenStreetMap contributors / Routing: FOSSGIS (routing.openstreetmap.de)
+   ROUTING_ATTRIBUTION=© OpenStreetMap contributors
    GEOCODING_ATTRIBUTION=[{"text":"Powered by Geoapify","url":"https://www.geoapify.com/"}]
    EOF
    ```
+
+   `OSRM_*_BASE_URL` と `ROUTING_ATTRIBUTION` は起動時の設定検査で必須のため書いておきますが、現行の新方式（schema 3）の経路探索ではOSRMに接続せず、`ROUTING_ATTRIBUTION` も応答に使いません。
 
 4. コンテナを起動します。キーのファイルを読めるように、自分のユーザーIDで実行します。
 

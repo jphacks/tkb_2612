@@ -14,7 +14,7 @@
 | 期限・キャンセル `CancelToken`・`Interrupt`・`CancelGuard` | `src/contract/cancel.rs` | ③が作り、②とアダプタが確認する |
 | 経路取得 `Router`・`RoutingRequest`・`RoutedPath`・`ProviderRoute`・`MalformedRoute`・`RoutingError` | `src/contract/routing.rs` | 実装は③、呼び出すのは② |
 | 計算の入口 `RouteEngine`、入力 `RouteQuery`、結果 `RouteOutcome`、`EngineError`、`DatasetInfo` | `src/contract/engine.rs` | 実装は②、呼び出すのは③ |
-| releaseの読込 `data::load_calendar`・`data::load_engine` | `src/data/mod.rs` | 実装は②（現在は常に失敗する仮実装）、呼び出すのは③ |
+| releaseの読込 `data::load_calendar`・`data::load_engine` | `src/data/mod.rs` | 実装は②（`load_calendar` は祝日表、`load_engine` は `metadata.json` の `schema_version` で schema 2/3 を選ぶ）、呼び出すのは③ |
 | スタブとfixtureの読込 | `src/testing/` | 共有（テスト専用） |
 
 ## 担当・依存方向・編集責任
@@ -40,7 +40,7 @@ providers ──> contract
 
 - 座標は名前付きフィールドで持ちます。入力と住所候補は `LatLon`、経路geometryと事故点は `LonLat` です。GeoJSONの `[lon, lat]` 配列への変換は、③のDTOとアダプタだけが行います。
 - 単位はフィールド名の接尾辞で示します。`duration_s` は秒、`distance_m`・`length_m`・`start_m` はm、`max_detour_min`・`extra_minutes` は分、`aggregation_ms` はミリ秒です。
-- `RouteOutcome` の候補は添字で参照します（`fastest`・`safest`）。添字iのIDは `route-(i+1)` です。`route-N`、`route-N:segment-S`、`route-N:nav-S-E` の文字列、`api_version`、`exact_condition_count`、`points_shown`、`effective_conditions` の表記（全時間帯・全曜日・全天候）は、③がDTOへの変換時に組み立てます。
+- `RouteOutcome` の候補は添字で参照します（`fastest`・`safest`・`middle`）。`middle` は新方式で中間案を出すときだけ `Some` です。添字iのIDは `route-(i+1)` です。`route-N`、`route-N:segment-S`、`route-N:nav-S-E` の文字列、`api_version`、`exact_condition_count`、`points_shown`、`effective_conditions` の表記（全時間帯・全曜日・全天候）は、③がDTOへの変換時に組み立てます。
 - 数値の丸め、件数、順序、選定、`reason`・`warnings`・`risk_note` の文言は②が決めます。③はこれらを再計算しません。
 
 ## 責任の分担
@@ -55,10 +55,10 @@ providers ──> contract
 
 ## 呼出し例
 
-起動時の処理です。③は `data/current` を一度だけresolveし、同じreleaseを両方に渡します。
+起動時の処理です。③は `ACCIDENT_DATA_DIR`（既定 `backend/data/current`）を一度だけresolveし、同じreleaseを両方に渡します。
 
 ```rust
-let release_dir = std::fs::canonicalize(data_dir.join("current"))?;
+let release_dir = std::fs::canonicalize(&data_dir)?;
 let calendar: Arc<dyn Calendar> = data::load_calendar(&release_dir)?; // 先に読む（conditionsは事故データの準備を待たない）
 let engine: Arc<dyn RouteEngine> = data::load_engine(&release_dir)?;
 ```
@@ -123,7 +123,7 @@ conditionsでは、天候の取得が失敗・期限切れ・混雑になって�
 | ③のDTO変換の期待値 | `testing::fixtures::route_response_json(name)`（openapi.yamlの応答例そのもの） |
 | 両方 | `testing::fixtures::check_outcome_invariants`（件数・null・navigationの相関制約） |
 
-fixtureの例は `singleRoute`・`noAccidents`・`twoSelected` です。入力は [route-example-inputs.json](../docs/api/fixtures/route-example-inputs.json)、期待値はopenapi.yamlの応答例から生成した `tests/fixtures/route-responses.json` です。ナビ区間だけの期待値は [navigation-cases.json](../docs/api/fixtures/navigation-cases.json) にあり、②が使います。期待値の `dataset_id` の0埋めと `aggregation_ms=0` は人工の値です。
+fixtureの例は `singleRoute`・`noAccidents`・`twoSelected`・`weatherAll`・`noWeatherMatch`・`thinnedPoints` です。入力は [route-example-inputs.json](../docs/api/fixtures/route-example-inputs.json)、期待値はopenapi.yamlの応答例から生成した `tests/fixtures/route-responses.json` です。ナビ区間だけの期待値は [navigation-cases.json](../docs/api/fixtures/navigation-cases.json) にあり、②が使います。期待値の `dataset_id` の0埋めと `aggregation_ms=0` は人工の値です。
 
 ## Cargo設定とlockfile
 
@@ -152,7 +152,7 @@ python3 -B backend/scripts/extract_route_examples.py          # openapi.yamlの�
 
 ## API・外部通信・基盤（③）
 
-Issue #9 の実装です。設定は環境変数（architecture.md 6章）だけから読み、表にない変数は作りません。
+Issue #9 の実装です。設定は環境変数（architecture.md 6章の表と、口コミ保存先の `COMMUNITY_STORE`）から読みます。
 
 | パス | 内容 |
 |---|---|
@@ -224,8 +224,8 @@ UPDATE_API_FIXTURES=1 cargo test --manifest-path backend/Cargo.toml --test api_c
 
    - `ACCIDENT_DATA_DIR` の既定は `backend/data/current` だが、前処理・`make_test_release` は `current` を作らない（`current` の実体と置き場所は未決）。C4ではこの既定に頼らず必ず明示する。未指定だと `ACCIDENT_DATA_DIR のreleaseを開けません` で終了コード1になる。相対パスはrepo rootが基準。
    - `curl -s http://127.0.0.1:8000/api/health` が `"status":"ok"` と、手順1の出力と一致する `release_id`・`dataset_id`、`data_years:[2025]` を返せば準備完了（それまで `/api/health`・`/api/route` は503）。
-   - **Viteのプロキシ先は `http://127.0.0.1:8000` に固定**（`frontend/vite.config.ts`。環境変数では変えられない）。8000番が他のプロセスに使われている環境では、`BACKEND_BIND=127.0.0.1:18000` などで別ポートに起動してもフロントからは届かない。8000番を空けるか、vite.config.ts のプロキシ先を変える必要がある（frontendの変更は①の担当）。別ポートで起動するときは `BACKEND_BIND` を指定する。この場合はフロントを使わず、下の `curl` で確かめる。
-4. 端末C：`(cd frontend && VITE_API_MODE=live npm run dev)`。`VITE_API_MODE=live` が無いとデモ応答になる。`/api` は `http://127.0.0.1:8000` へ転送される。
+   - **Viteのプロキシ先は既定で `http://127.0.0.1:8000`**（`frontend/vite.config.ts`）。`DEV_API_PROXY_TARGET`（Vite開発サーバー専用、ブラウザbundleには公開しない）で変更できます。8000番が他のプロセスに使われている環境では、`BACKEND_BIND=127.0.0.1:18000` と `DEV_API_PROXY_TARGET=http://127.0.0.1:18000` を揃えて起動してください（frontendの変更は不要）。
+4. 端末C：`(cd frontend && VITE_API_MODE=live npm run dev)`。`VITE_API_MODE=live` が無いとデモ応答になる。`/api` は Vite のプロキシ先（既定 `http://127.0.0.1:8000`）へ転送されます。
 5. ブラウザで `http://127.0.0.1:5173` を開き、実際に検索する。
 
 例を切り替えるときは、端末AとBを止め、手順1から別の例の名前（と別の出力先）でやり直す。
@@ -256,7 +256,7 @@ curl -s 'http://127.0.0.1:8000/api/geocode?q=test'
 ```sh
 cargo run --manifest-path backend/Cargo.toml --example dev_stack -- --simple            # 例 twoSelected
 cargo run --manifest-path backend/Cargo.toml --example dev_stack -- --simple noAccidents
-# 8000番が使用中なら BACKEND_BIND=127.0.0.1:18000 を付けて起動する
+# 8000番が使用中なら BACKEND_BIND=127.0.0.1:18000 を付けて起動する（フロントも使うなら DEV_API_PROXY_TARGET も同じ値にする）
 ```
 
 ### CI・配備
@@ -291,29 +291,51 @@ Issue #8 の実装です。計算は [behavior.md](../docs/api/behavior.md) 2〜
 
 `ACCIDENT_DATA_DIR`（既定 `backend/data/current`）はこのディレクトリそのものを指します（`current` をさらに付けません）。
 
+releaseのファイル構成はschemaで異なります。schema 2（旧方式）は次の3ファイルです。
+
 | ファイル | 内容 |
 |---|---|
 | `accidents.csv.gz` | UTF-8・gzip（レベル3）の17列CSV（behavior.md 2章の列順）。緯度経度は小数7桁。行番号0始まりが事故ID |
 | `syukujitsu.csv` | 前処理に使った内閣府の祝日表（原本のバイト列のまま） |
 | `metadata.json` | 下表 |
 
-`metadata.json` のキー（③のコードは読まない。`/api/health` は `RouteEngine::dataset()` の `DatasetInfo` から作る）：
+schema 3（現行）は、この3ファイルに次の8つの `.bin` を加えた合計11ファイルです。
+
+| ファイル | 内容 |
+|---|---|
+| `graph.bin` | 道路グラフ（ノード・辺・形状・所要時間モデル） |
+| `restrictions.bin` | 右左折禁止などの通行制約 |
+| `topology.bin` | 吸着可能な辺・交差点クラスタなどの位相 |
+| `odindex.bin` | 出発地・目的地を辺に吸着するための格子 |
+| `accident_attrs.bin` | 事故の道路属性（路線コード・道路形状・車道幅員など） |
+| `assignment.bin` | 事故の道路区間・交差点への割り当て |
+| `risk.bin` | リスクモデルの係数 |
+| `alt.bin` | ALTのランドマークからの距離表（探索の下界に使う） |
+
+`metadata.json` のキー（③のコードは読まない。`/api/health` は `RouteEngine::dataset()` の `DatasetInfo` から作る）。schema 2（旧方式）と schema 3（現行）で異なるキーは次のとおりです。
+
+| キー | schema 2（旧方式） | schema 3（現行） | ロード時の検証 |
+|---|---|---|---|
+| `schema_version` | 2 | 3 | 2または3であること |
+| `release_id` | `dataset_id` と祝日表のSHA-256を `\n` で連結した文字列のSHA-256 | `dataset_id`・祝日表のSHA-256・8つの `.bin` のファイル名とSHA-256を形式書4.2節の順に連結した文字列のSHA-256 | 実ファイルから再計算して一致 |
+| `processor` | `name`（`prepare_release`）・`version`（crateの版） | `name`（`routing_prep`）・`version`（crateの版） | — |
+| `elapsed_seconds` | 前処理の秒数 | 含まない | — |
+
+共通のキー：
 
 | キー | 内容 | ロード時の検証 |
 |---|---|---|
-| `schema_version` | 2 | 2であること |
 | `dataset_id` | `accidents.csv.gz` 全バイトのSHA-256（小文字hex） | 実ファイルから再計算して一致 |
-| `release_id` | `dataset_id` と祝日表のSHA-256を `\n` で連結した文字列のSHA-256 | 実ファイルから再計算して一致 |
 | `rows` | 保持行数（modes=0を含む） | ロード行数と一致 |
 | `holiday_table` | `file`・`sha256`・`first_date`・`last_date`（表中の最小・最大日付）・`rows`・`coverage_start`・`coverage_end`（収録範囲） | `sha256` が実ファイルと一致（`load_calendar` も照合） |
 | `holiday_uncovered_rows` | 祝日表の収録範囲外の日付で、土日と年末年始だけで判定した行数 | — |
-| `processor` | `name`（`prepare_release`）・`version`（crateの版） | — |
 | `generated_at` | 前処理の日時（タイムゾーン付きRFC 3339） | — |
 | `columns`・`gzip_bytes`・`data_years` | 17列の名前、gzipのバイト数、source_yearの昇順 | — |
 | `files` | 年度ごとの `source_year`・`file`・`sha256`（原本）・`encoding`・`input_rows`・`retained_rows`・`excluded_rows`・`excluded_by_reason`・`no_target_mode` | — |
 | `totals` | 全年度の `input_rows`・`retained_rows`・`excluded_rows` | — |
 | `codebooks_xlsx`・`codebooks_pdf` | 照合したコード表の `source_year`・`file`・`sha256` | — |
-| `elapsed_seconds` | 前処理の秒数 | — |
+
+schema 3 では、これに加えて `base_release` と `routing`（`files`・`rules_version`・`inputs`・`graph`・`risk`・`audit`）を持ちます。
 
 ロードでは、あわせてヘッダの17列の完全一致、先頭10列の型と範囲（緯度経度の範囲、modes 0〜7、period 0〜4、weather 1〜5、day_type 0〜1、人数は各0〜999で合計1以上、実在する8桁の日付で1900 ≦ 発生年 ≦ source_year かつ発生年は9999以下）、空でないことを検証します。失敗は `LoadError` で、メッセージに位置や原本行を含めません。
 
@@ -321,7 +343,7 @@ Issue #8 の実装です。計算は [behavior.md](../docs/api/behavior.md) 2〜
 
 ### 前処理コマンド
 
-バイナリ名は `prepare_release` です（`default-run` とDockerfileの `--bin` は③が決めます）。
+base releaseのバイナリ名は `prepare_release` です（`default-run` とDockerfileの `--bin` は③が決めます）。
 
 ```sh
 cargo run --release --manifest-path backend/Cargo.toml --bin prepare_release -- \
@@ -329,6 +351,7 @@ cargo run --release --manifest-path backend/Cargo.toml --bin prepare_release -- 
 ```
 
 - 原本（`honhyo_2019.csv`〜`honhyo_2025.csv`、`codebook_2019〜2021.pdf`、`codebook_2022〜2025.xlsx`）は読むだけです。コード表は常に実ファイルで照合します（省略するオプションはありません）。
+- schema 3 のreleaseは、`prepare_release` が作ったschema 2のbase releaseから、`routing_prep` の `osm-graph`→`restrictions`→`topology`→`accident-attrs`→`accident-snap`→`risk-fit`→`od-index`→`alt`→`package` を実行して作ります（合計11ファイル）。
 - `<output>/staging/` で3ファイルを作ってから `<output>/releases/<release_id>/` へ移し、読み取り専用にします。同じ `release_id` が既にあれば上書きせず失敗します。`current` は変更しません。
 - 成果物（`backend/data/releases/`・`staging/`・`current`）は置き場所とgit管理が決まるまでコミットしません（`backend/data/.gitignore`）。
 - 標準出力に件数・ID・年度別の除外理由をJSONで出します。
@@ -345,7 +368,7 @@ cargo run --release --manifest-path backend/Cargo.toml --bin prepare_release -- 
 
 ### 追加したテスト
 
-`calendar`（時間帯・曜日区分・祝日表）、`preprocess_rows`・`preprocess_files`・`preprocess_release`（前処理・コード表）、`release_load`（起動時検証）、`test_release`（人工release）、`candidates`・`corridor`・`scoring`・`navigation`（`navigation-cases.json` の全ケース）・`selection`、`engine_fixtures`（人工release＋実エンジン＋固定経路がopenapi.yamlの全応答例と一致。比較規則は共通前提のC3と同じ）、`engine_cancel`（中断）。実コード表・実祝日表の試験はリポジトリの `accident/` を使い、なければ失敗します（省略しません）。実releaseの確認は `real_release` で、既定では `ignored` と数えます。`ACCIDENT_REAL_RELEASE_DIR` を指定し、`-- --ignored` を付けて実行します。
+`calendar`（時間帯・曜日区分・祝日表）、`preprocess_rows`・`preprocess_files`・`preprocess_release`（前処理・コード表）、`release_load`（起動時検証）、`test_release`（人工release）、`candidates`・`corridor`・`scoring`・`navigation`（`navigation-cases.json` の全ケース）・`selection`、`engine_fixtures`（人工release＋実エンジン＋固定経路がopenapi.yamlの全応答例と一致。比較規則は共通前提のC3と同じ）、`engine_cancel`（中断）。実コード表・実祝日表の試験はリポジトリの `accident/` を使い、なければ失敗します（省略しません）。実releaseの確認は、旧方式が `real_release`（`ACCIDENT_REAL_RELEASE_DIR`）、新方式が `routing_real_release`（`ROUTING_REAL_RELEASE_DIR`）です。どちらも既定では `ignored` で、`-- --ignored` を付けて実行します。
 
 ## 範囲外
 

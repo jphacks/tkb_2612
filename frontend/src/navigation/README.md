@@ -7,7 +7,7 @@ UI、通信、事故集計、位置履歴の保存を持たないTypeScriptモ�
 ## 時刻・距離・結果の契約
 
 - 位置の `timestamp` と `Clock.now()` はミリ秒。同じ時間軸を使う。実機は端末のepoch時計、模擬は0からの仮想時計。タイマー駆動の `realNow` は実時間の単調時計で、倍率を掛けない。
-- 進捗 `p` はAPIの局所平面累積距離、m。R=6,371,008.8m、`navigation.projection_lat_deg`、geometry先頭原点を使用。OSRMのdistanceは残量の割合換算と基準速度にだけ使用する。
+- 進捗 `p` はAPIの局所平面累積距離、m。R=6,371,008.8m、`navigation.projection_lat_deg`、geometry先頭原点を使用。経路の`distance`（旧方式ではOSRM由来）は残量の割合換算と基準速度にだけ使用する。
 - `MatchResult.status` は `waiting`（測位待ち）、`matching-hold`（初回/再確認/曖昧/経路外で照合保留）、`tracking`（進行中）、`poor-accuracy`（精度不足/無効/古い/欠測）、`arrived`、`paused`、`stopped`。
 - `p` は今回確定した進捗、未確定ならnull。`updated` は新規確定の有無。到着時も測定したpを返し、Lへ置換しない。残量の表示を0にするのは到着表示側の責務。
 - `lastConfirmedP` / `lastConfirmedTimestamp` は更新停止表示用の旧確定値と時点。`lastAccepted` と `accuracy` / `timestamp` は最後に受理した測位を保持する。`accepted` は**今回**の受理位置であり、無効・欠測時はnull。

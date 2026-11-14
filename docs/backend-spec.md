@@ -8,19 +8,24 @@
 
 - Rust/Axumをクラウドで動かし、React/TypeScript/Vite/MapLibre GL JSの画面と連携する。警察庁の事故原本を使い、徒歩・自転車・自動車の経路を比較する。一般ユーザー向けには公開しない。実演はCloud Run上のアプリへIAPで許可したGoogleアカウントから直接アクセスして行う（利用者決定）。
 - 時間帯・曜日区分・移動手段は事故の対象条件として維持する。**天候は除外条件にせず、一致する事故を評価で重く扱う。** 全天候と指定天候一致の件数/死傷者数を分け、0件でも条件を自動解除しない。死傷者は該当事故全体の人数。
-- 外部の経路/住所提供元による座標/住所の運用ログは許容する。提供元まで含めた完全な無保存を要件にしない。利用規約の免除や、自アプリでの位置/検索履歴の永続保存機能の追加には拡張しない。
+- 外部の経路/住所提供元による座標/住所の運用ログは許容する。提供元まで含めた完全な無保存を要件にしない。利用規約の免除や、自アプリでの位置/検索履歴の永続保存機能の追加には拡張しない。安全危険情報は例外で、利用者が明示して投稿した地点の座標は保存する。ルート・現在地・検索履歴は保存しない。
 - 経路探索の式・係数・候補生成・周辺事故の空間判定・選定・区間抽出と、フロントエンド実装は別検証の対象。本書はそれらの旧案を無条件には確定しない。
 
 ## 2. APIの共通契約【委任判断】
 
 | API | 契約 |
 |---|---|
-| POST `/api/route` | 条件を検証し、別検証で確定する経路処理へ渡す。候補geometry、集計値、比較対象ID、追加時間、説明、warningsと、選定候補だけのnavigationを返す。 |
+| POST `/api/route` | 条件を検証し、別検証で確定する経路処理へ渡す。候補geometry、集計値、比較対象ID（`fastest_id`・`safest_id`・`middle_id`）、追加時間、説明、warningsと、選定候補だけのnavigationを返す。 |
 | GET `/api/geocode?q=...` | 明示操作による住所/地点検索。trim後Unicode2〜200文字、qは1個。提供元順で最大5件の`{lat,lon,label,detail}`と、`{text,url}`の配列のattributionを返す。0件は200/空配列。 |
 | GET `/api/conditions` | 出発日時と任意の地域座標から時間帯・曜日区分・天候候補を返す。事故データを参照せず、気象失敗でも時間帯・曜日区分を200で返す。 |
-| GET `/api/health` | ロード済みデータの準備状態、`api_version / release_id / dataset_id / accidents / data_years / load_seconds`を返す。grid_cellsはグリッド索引を採用した場合だけ追加し、このフィールドから索引方式を強制しない。上流へ疎通しない。`/api/status`は同じ応答の非推奨エイリアス。 |
+| GET `/api/health` | ロード済みデータの準備状態、`status`（常に`"ok"`）、`api_version / release_id / dataset_id / accidents / data_years / load_seconds`を返す。grid_cellsはグリッド索引を採用した場合だけ追加し、このフィールドから索引方式を強制しない。上流へ疎通しない。`/api/status`は同じ応答の非推奨エイリアス。 |
+| GET `/api/reports?bbox=minLon,minLat,maxLon,maxLat` | 範囲内の安全危険情報の地点を新しい順に最大500件返す。bboxは緯度・経度とも1度以内で、超えたら400。送られた`X-Voter-Id`の票を`my_vote`で返す。保存先の失敗は503 service_busy。 |
+| POST `/api/reports` | 地点と投稿者の1票、任意の口コミを作成する。201。`X-Voter-Id`（匿名ID）は必須。保存先の失敗は503 service_busy。 |
+| POST `/api/reports/{id}/votes` | 既存地点へ1票と任意の口コミを追加する。200。同一投票者の再投票は409 already_voted、地点の票の上限は409 vote_limit。地点がないときは404 not_found、保存先の失敗は503 service_busy。 |
 
-統合契約版は`api_version: "2.0"`。GPSナビ用データも未リリースの2.0に含め、前処理スキーマ2は変更しない。新フロントは日本語条件値と`all`を送る。routeの必須入力は`origin/dest={lat,lon}`。`mode`省略はwalk、`period/day_type/weather`省略はall、`max_detour_min`省略は10分。PR #1のperiod/weather整数・null、`hour`・`時間帯`の互換入力は入口で正規化し、優先順も同PRに従う。day_typeは整数を受理せず、routeへ出発日時を追加しない。
+`/api/reports`系の投票者は`X-Voter-Id`（ブラウザーごとの匿名ID）で区別し、保存先の失敗・期限切れは503 service_busyとする。統合契約版は`api_version: "2.0"`。GPSナビ用データも未リリースの2.0に含め、前処理スキーマ2は変更しない。新フロントは日本語条件値と`all`を送る。routeの必須入力は`origin/dest={lat,lon}`。`mode`省略はwalk、`period/day_type/weather`省略はall、`max_detour_min`省略は10分。PR #1のperiod/weather整数・null、`hour`・`時間帯`の互換入力は入口で正規化し、優先順も同PRに従う。day_typeは整数を受理せず、routeへ出発日時を追加しない。
+
+以下はroute・geocode・conditionsの入力規則で、`/api/reports`系には当てはまらない。`/api/reports`系の本文は8,192バイトまでで、未知キーは400 invalid_requestとする。
 
 入力はUTF-8のJSONオブジェクト、`application/json`（charset付き可）。有限数値だけを受理し、数値文字列/boolを数値へ変換しない。整数値の12.0表記は受理する。JSON重複キーと既知GETキー重複は400、未知キーは無視。本文は1〜16,384バイト。不正入力は外部呼出し前に400へ統一する。
 
@@ -33,27 +38,28 @@ GeoJSONはWGS84の`[lon,lat]`、入力/住所候補は名前付きlat/lon。緯�
 | 候補内のフィールド | 意味 |
 |---|---|
 | `accident_count` | Bの事故件数。表示点の間引き前。 |
+| `total_accident_count` | 経路に結び付いた事故の総件数（移動手段・時間帯・曜日区分・天候で絞る前）。新方式は経路の辺・交差点への割り当て（歩道の親車道を含む）と72m以内の帰属不明の合計、旧方式はnull。 |
 | `fatal_accidents / injury_accidents` | Bのうち死者1人以上の事故数/それ以外の人身事故数。合計はaccident_count。 |
 | `deaths / injuries` | Bの事故全体の死者/負傷者合計。死亡事故内の負傷者も含む。 |
-| `weather_match` | 天候指定時は上記5フィールドを持つ一致事故だけの集計オブジェクト。該当なしはすべて0。天候all時はnull。常にキーを返す。 |
+| `weather_match` | 天候指定時はaccident_count・fatal_accidents・injury_accidents・deaths・injuriesの5フィールドを持つ一致事故だけの集計オブジェクト。該当なしはすべて0。天候all時はnull。常にキーを返す。 |
 | `accident_points / points_shown` | Bから抽出したPoint FeatureCollectionと表示件数。集計値を変更しない。 |
 | `exact_condition_count` | 非推奨の互換値。天候指定時はweather_match.accident_count、all時はaccident_count。 |
 
 件数/人数は非負整数、内部加算はu64。JSONではJavaScriptの安全な整数範囲を検証する。`effective_conditions`は正規化した指定条件を表し、`relaxed_conditions`は常に`[]`。天候一致0件や全候補0件を理由に他条件を変えない。事故0件を安全の証明として扱わない。
 
-事故点は最大250点。死亡事故を優先し、各群の元順から等間隔に抽出する。GeoJSONのID・発生日・source_year・時間帯・天候・day_type・事故全体の人数を返し、`points_shown == features.length`を満たす。事故点がない場合は空FeatureCollection。事故IDは`(dataset_id, feature.id)`で識別する。
+事故点は最大250点。死亡事故を優先し、各群の元順から等間隔に抽出する。GeoJSONのID・発生日・source_year・時間帯・天候・day_type・事故全体の人数・`attribution`（`edge`/`intersection`/`unattributed`。旧方式は常に`unattributed`）を返し、`points_shown == features.length`を満たす。事故点がない場合は空FeatureCollection。事故IDは`(dataset_id, feature.id)`で識別する。
 
-**選定スコア、削減率、高リスク区間の式/型/閾値はBやweather_matchの生集計と別契約**。別検証の結論は[route-scoring-decision.md](route-scoring-decision.md)で暫定決定し、`api/behavior.md` 6〜8章へ統合した（Bの経路周辺条件は72m以内）。フロントで集計値から独自にスコアを再計算しない。経路ID/区間IDは当該検索応答内だけで有効とする。
+**選定スコア、削減率、高リスク区間の式/型/閾値はBやweather_matchの生集計と別契約**。別検証の結論は[route-scoring-decision.md](route-scoring-decision.md)で暫定決定し、`api/behavior.md` 6〜8章へ統合した（新方式のBは、経路の辺・交差点への割り当て事故と、経路から72m以内の帰属不明事故。歩道の親車道への割り当ても72m以内。72mは全B共通の条件ではなく、帰属不明等にだけ適用する。旧方式は全件72m以内）。フロントで集計値から独自にスコアを再計算しない。経路ID/区間IDは当該検索応答内だけで有効とする。応答の`unattributed_radius_m`は、帰属不明の事故を数える経路からの範囲（72m）を表す。旧方式では事故を数える半径そのもの。
 
 ### ナビ用データ（移行追加・GPT-6 Astraの委任判断）
 
-利用者決定のA＋B＋模擬走行に必要なデータを、既存route応答に同梱する。`RouteCandidate.navigation` は必須nullableで、fastest_idとnullでないsafest_idの候補だけに返す。同じIDは1個を共用、未選定はnull、対象0件はsections=[]。サーバにナビセッション・経路キャッシュ/保存・追跡APIを追加しない。
+利用者決定のA＋B＋模擬走行に必要なデータを、既存route応答に同梱する。`RouteCandidate.navigation` は必須nullableで、fastest_id、nullでないsafest_id、nullでないmiddle_idの候補だけに返す。同じIDは1個を共用、未選定はnull、対象0件はsections=[]。応答の`middle_id`は新方式で中間案を出すときだけ非null、旧方式は常にnull。サーバにナビセッション・経路キャッシュ/保存・追跡APIを追加しない。
 
-`NavigationData` はprojection_lat_deg・length_m・vertex_distances_m・sections。behavior 6章の局所平面で累積距離を作り、深刻度3以上の全sidを経路順に並べ、連続sidの最大列だけ結合する。距離減衰・天候倍率を加えない。数値・結合・順序はbackend一か所に置き、表示用high_risk_sectionsの上位100件・非結合・high_risk_totalは維持する。正確な計算と相関制約は [api/behavior.md](api/behavior.md) 7章、判断理由は [navigation-delegated-decisions.md](navigation-delegated-decisions.md) に従う。
+`NavigationData` はprojection_lat_deg・length_m・vertex_distances_m・sections。behavior 6章の局所平面で累積距離を作り、深刻度3以上の全sidを経路順に並べ（新方式は事故3件未満のsidの重みを先に0にするので、事故3件以上のsidだけが対象になる）、連続sidの最大列だけ結合する。距離減衰・天候倍率を加えない。数値・結合・順序はbackend一か所に置き、表示用high_risk_sectionsの上位100件・非結合・high_risk_totalは維持する。正確な計算と相関制約は [api/behavior.md](api/behavior.md) 7章、判断理由は [navigation-delegated-decisions.md](navigation-delegated-decisions.md) に従う。
 
 80km/15,000頂点から保守的に局所全長110,000m、小線分16,466本、結合後8,233区間/経路。3経路のnavigationは10,200,000バイト以下を検証し、全route応答の小計は16,030,836バイト、メタデータ込み概ね16MBのケースでサイズ・RAM・gzip圧縮を含む全体35秒期限を測る。圧縮率は保証せず、送信形式は区間オブジェクトを維持する。1Mbps・RTT 300msでgzip/identityとも本文全受信・展開・解析/検査まで180秒以内を受け入れとする（behavior 7章）。navigation構築もaggregation_msへ含む。区間を切り捨てた部分成功にはしない。
 
-ナビ生成・開始・進行でOSRM呼出しを増やさない。公共OSRM全利用者合計1req/秒・ROUTING_MIN_INTERVAL_MS=1050・1検索最大3呼出し・steps=falseを維持する。進行方向の案内（`navigation.guidance`）は新方式のグラフから作り（behavior 7章）、OSRMには問い合わせない。旧方式は `arrive` 1件だけを返す。現在地を使う再検索は明示ボタンによる通常route検索であり、既存ゲート・上限・503を適用する。ナビの位置はブラウザ内だけで処理し、再検索と既存conditions規則以外では送信しない。実機/模擬とも同じ無保存・ログ除外を適用する。ブラウザ内の照合はfrontend-spec 7.3と [navigation-matching-cases.md](navigation-matching-cases.md) の条件・テストで規定し、方式は実装時に選び記録する。サーバの累積距離・区間生成手順はこの照合方式の選定とは別に維持する。
+ナビ生成・開始・進行でOSRM呼出しを増やさない。公共OSRM全利用者合計1req/秒・ROUTING_MIN_INTERVAL_MS=1050・1検索最大3呼出し・steps=falseは、旧方式（schema 2）の規定として維持する。追加候補だけの失敗を警告にする規則も旧方式の規定である。新方式（schema 3）はrelease同梱の道路グラフで探索し、外部経路呼出しは0回、OSRM用の上流ゲートも通らない。進行方向の案内（`navigation.guidance`）は新方式のグラフから作り（behavior 7章）、OSRMには問い合わせない。旧方式は `arrive` 1件だけを返す。現在地を使う再検索は明示ボタンによる通常route検索であり、要求期限・受付枠・503を適用する。新方式はOSRM用ゲートを通らず、旧方式は通常検索としてOSRM用ゲートを通る。ナビの位置はブラウザ内だけで処理し、再検索と既存conditions規則以外では送信しない。実機/模擬とも同じ無保存・ログ除外を適用する。ブラウザ内の照合はfrontend-spec 7.3と [navigation-matching-cases.md](navigation-matching-cases.md) の条件・テストで規定し、方式は実装時に選び記録する。サーバの累積距離・区間生成手順はこの照合方式の選定とは別に維持する。
 
 ## 4. 時間帯・曜日・気象【PR #1合意と委任判断】
 
@@ -74,8 +80,8 @@ WMO変換はPR #1の対応表を自動初期値用の近似として採用する
 - `honhyo_2019.csv`〜`honhyo_2025.csv`の7年を年昇順/原本行順で扱い、原本を変更しない。UTF-8 BOM/UTF-8/cp932とCSVの引用/改行を扱う。空白正規化した列名で参照し、必須列欠損/重複は全体失敗。
 - 座標/日時の欠損・不正はその行を除外して続行する。人数/必須分類の型不正・年度コード表外も補完せず理由別に除外する。コード表で検査する分類は当事者種別・天候・人身損傷程度・昼夜で、事故類型は整数変換だけを検査する（behavior 2章）。読込不能、CSV構文、途中復号、必須ファイル欠損、コード表不一致、全行除外は全体失敗。一部年度だけで成功扱いにしない。理由の優先順は読込・必須列→座標→日時→人数→分類値。
 - DMSから十進度へ変換し、保存時だけ緯経度を小数7桁にする。source_yearと実発生年を区別する。当事者A/Bのいずれかが対象手段なら該当とし、二輪/原付/特定小型原付43を自転車へ混ぜない。年度別コード表で対応を照合し、対象手段なしのmodes=0は保持して別計数する。道路スナップや真の事故IDを推測した重複行削除は行わない。
-- 成果物はPR #1の17列UTF-8 gzip CSV（weather直後にday_type）と`schema_version=2`のmetadata。同梱祝日表のハッシュ/収録年、原本ハッシュ、処理版、年度別入力/保持/除外理由を記録する。入力=保持+除外を検証し、複数不正は最初の理由に1回だけ計上する。原本行そのものはWebへ返さない。
-- gzipのSHA-256をdataset_id、出力行0始まりを事故IDとする。gzipとmetadataは同じ不変releaseへ置き、起動時にhash/schema/件数/値を検証して全件ロードする。旧16列成果物は流用しない。失敗は起動停止。新イメージのロード確認後に切替え、失敗時は旧イメージへ戻す。ホットリロードは初期対象外。
+- `prepare_release`はPR #1の17列UTF-8 gzip CSV（weather直後にday_type）と`schema_version=2`のmetadataからなるschema 2のbaseを作る。`routing_prep package`が8つの`.bin`（`graph.bin`・`restrictions.bin`・`topology.bin`・`odindex.bin`・`accident_attrs.bin`・`assignment.bin`・`risk.bin`・`alt.bin`）と`schema_version=3`のmetadataを加えて11ファイルにする。同梱祝日表のハッシュ/収録年、原本ハッシュ、処理版、年度別入力/保持/除外理由を記録する。入力=保持+除外を検証し、複数不正は最初の理由に1回だけ計上する。原本行そのものはWebへ返さない。
+- gzipのSHA-256をdataset_id、出力行0始まりを事故IDとする。gzipとmetadata、8つの`.bin`は同じ不変releaseへ置き、起動時にhash/schema/件数/値を検証して全件ロードする。旧16列成果物は流用しない。失敗は起動停止。新イメージのロード確認後に切替え、失敗時は旧イメージへ戻す。ホットリロードは初期対象外。
 
 ## 6. 外部提供元・通信制御【委任判断】
 
@@ -89,7 +95,7 @@ WMO変換はPR #1の対応表を自動初期値用の近似として採用する
 
 **全インスタンス共通の上流ゲートはFirestore Standardのトランザクションで管理する。** 保存するのは提供元/アカウントの識別子、呼出し開始時刻・期限、同時通信のリース/世代番号と集計件数だけ。住所・座標・経路・利用者ID・リクエストIDを保存しない。全呼出しが同じゲートを通り、開始間隔・同時数・提供元の集計期間別上限を満たしてから送信する。通信をトランザクション内で実行せず、共有状態が読めない/競合が解消しない場合は呼び出さず失敗させる。送信前にリースの期限/世代を確認し、失効した処理は送信せず、古い処理の終了で新しいリースを解放しない。再配備・再起動時も制御が継続することを結合試験する。[原子的更新](https://docs.cloud.google.com/firestore/native/docs/manage-data/transactions)
 
-Firestoreは事故DBではなく少数の運用レコードだけに用い、期間終了時の件数は上書き、終了後は削除する。クライアントからの直接アクセスを許可しない。要求ごとの読書き・競合時の再実行も課金見積もりに含め、無料枠に収まると断定しない。[Firestore料金](https://cloud.google.com/firestore/pricing)
+Firestoreは事故DBではなく、上流ゲートの少数の運用レコードと、安全危険情報の`community_reports`に用いる。上流ゲートの期間終了時の件数は上書き、終了後は削除する。`community_reports`には投稿地点の座標・投稿日時・票の種類・口コミ本文・匿名投票者IDのハッシュを保存し、ルート・現在地・検索履歴は保存しない。クライアントからの直接アクセスを許可しない。要求ごとの読書き・競合時の再実行も課金見積もりに含め、無料枠に収まると断定しない。[Firestore料金](https://cloud.google.com/firestore/pricing)
 
 経路提供元・自己ホスト要否はアルゴリズム側の結論を接続する。ルーティングはorigin/dest/mode等を受け、候補geometry・秒・mを返すアダプタ境界に置く。提供元URL・識別UA/連絡先・帰属・制限値はサーバ設定にし、無設定で公共サーバへ流さない。徒歩/自転車を自動車経路へ代替しない。
 
