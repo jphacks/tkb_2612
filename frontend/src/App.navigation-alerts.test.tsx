@@ -1,5 +1,6 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NO_FIX_GRACE_MS } from "./navigation/thresholds";
 import { createDemoRouteResponse } from "./api/demo";
 import type { RouteRequest } from "./lib/types";
 import { api, resetApi } from "./test/apiMock";
@@ -109,7 +110,7 @@ describe("接近通知の画面表示（手順10・7.5・7.9）", () => {
     feed(section.start_m - 75);
     feed(section.start_m - 71);
     expect(screen.getByLabelText("接近通知")).toHaveTextContent(AHEAD);
-    advance(7000);
+    advance(NO_FIX_GRACE_MS + 2000);
     expect(screen.queryByLabelText("接近通知")).not.toBeInTheDocument();
     for (let i = 0; i < 8; i++) feed(section.start_m - 70 + i);
     expect(screen.getByLabelText("接近通知")).toHaveTextContent(AHEAD);

@@ -1,6 +1,7 @@
 import { createFetchCounter } from "./test/fetchCounter";
 import { fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ACCURACY_LIMIT_M, CONFIRM_MS, NO_FIX_GRACE_MS, ROUTE_CORRIDOR_MIN_M } from "./navigation/thresholds";
 import { api, resetApi } from "./test/apiMock";
 import {
   openNavigationSidebar,
@@ -73,16 +74,21 @@ describe("ナビの状態表示（手順10・5章）", () => {
     const counter = createFetchCounter(() => Promise.reject(new Error("通信しない")));
     vi.stubGlobal("fetch", counter.fetch);
     gps.fail(code);
+    if (code === 3) {
+      // timeoutは猶予の間は進行中を保つ。
+      expect(phase()).toHaveTextContent("進行中");
+      advance(NO_FIX_GRACE_MS + 1000);
+    }
     expect(phase()).toHaveTextContent("精度不足");
     expect(screen.getByText("位置を取得できないため判定を停止中")).toBeVisible();
     expect(screen.getByText("更新停止")).toBeVisible();
     expect(metrics().textContent).toBe(before);
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < CONFIRM_MS / 1000; i++) {
       feed(110 + i * 1.4);
       expect(phase()).toHaveTextContent("照合保留");
       expect(metrics().textContent).toBe(before);
     }
-    feed(117);
+    feed(110 + (CONFIRM_MS / 1000) * 1.4);
     expect(phase()).toHaveTextContent("進行中");
     expect(gps.watchPosition).toHaveBeenCalledTimes(1);
     expect(gps.clearWatch).not.toHaveBeenCalled();
@@ -94,20 +100,21 @@ describe("ナビの状態表示（手順10・5章）", () => {
     const { feed } = await startDevice();
     for (let i = 0; i < 7; i++) feed(100 + i * 1.4);
     const before = metrics().textContent;
-    feed(120, 0, 50);
+    const poor = ACCURACY_LIMIT_M + 10;
+    for (let i = 0; i <= NO_FIX_GRACE_MS / 1000; i++) feed(120, 0, poor);
     expect(phase()).toHaveTextContent("精度不足");
     expect(screen.getByText("位置精度が低いため判定を停止中")).toBeVisible();
-    expect(screen.getByText("約50m")).toBeVisible();
+    expect(screen.getByText(`約${poor}m`)).toBeVisible();
     expect(screen.getByText("最後の位置")).toBeVisible();
     expect(screen.getByText("更新停止")).toBeVisible();
-    feed(400, 0, 50);
+    feed(400, 0, poor);
     expect(metrics().textContent).toBe(before);
   });
 
-  it("5秒を超えて測位がなければ精度不足の原因を受信なしとして表示する", async () => {
+  it("猶予を超えて測位がなければ精度不足の原因を受信なしとして表示する", async () => {
     const { feed } = await startDevice();
     for (let i = 0; i < 7; i++) feed(100 + i * 1.4);
-    advance(6000);
+    advance(NO_FIX_GRACE_MS + 1000);
     expect(phase()).toHaveTextContent("精度不足");
     expect(screen.getByText("位置を受信できないため判定を停止中")).toBeVisible();
   });
@@ -116,14 +123,14 @@ describe("ナビの状態表示（手順10・5章）", () => {
     const { feed } = await startDevice();
     for (let i = 0; i < 7; i++) feed(100 + i * 1.4);
     const before = metrics().textContent;
-    feed(110, 25);
+    feed(110, ROUTE_CORRIDOR_MIN_M + 5);
     expect(phase()).toHaveTextContent("照合保留");
     expect(screen.getByText("経路上の位置を確認中")).toBeVisible();
     expect(metrics().textContent).toBe(before);
     for (let i = 0; i < 12; i++) feed(110, 120);
     expect(phase()).toHaveTextContent("経路から外れています");
     expect(screen.getByText("安全な場所で停止してから、現在地から再検索できます")).toBeVisible();
-    for (let i = 0; i < 4; i++) feed(110, 0);
+    for (let i = 0; i < CONFIRM_MS / 1000; i++) feed(110, 0);
     expect(phase()).toHaveTextContent("経路から外れています");
     for (let i = 0; i < 8; i++) feed(112 + i, 0);
     expect(phase()).not.toHaveTextContent("経路から外れています");

@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CONFIRM_MS } from "./navigation/thresholds";
 import { createDemoRouteResponse } from "./api/demo";
 import { NavigationSimulator } from "./navigation/simulator";
 import { NavigationSession } from "./navigation/session";
@@ -90,7 +91,7 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
     vi.useFakeTimers();
     beginNavigation("最短ルート", "模擬走行で開始");
     openNavigationSidebar();
-    advance(3_000);
+    advance(CONFIRM_MS / 2);
     expect(phase()).toHaveTextContent("照合保留");
     expect(screen.queryByRole("button", { name: RESEARCH })).not.toBeInTheDocument();
   });

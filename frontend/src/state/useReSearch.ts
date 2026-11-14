@@ -8,6 +8,7 @@ import type { PositionFix } from "../navigation/source";
 import type { NavigationControl } from "./useNavigation";
 import type { useConditions } from "./useConditions";
 import type { useRouteSearch } from "./useRouteSearch";
+import { ACCURACY_LIMIT_M } from "../navigation/thresholds";
 
 export type ReSearchStage = "locating" | "conditions" | "route";
 export type ReSearchState =
@@ -93,7 +94,7 @@ function validated(fix: PositionFix, now: number): PositionFix {
   if (!finite || !freshTimestamp(fix, now)) throw new Failure("現在地を正しく取得できませんでした。再試行してください");
   if (fix.lat < 20 || fix.lat > 46 || fix.lon < 122 || fix.lon > 154)
     throw new Failure("日本国内の地点ではないため、再検索できません");
-  if (fix.accuracy > 30)
+  if (fix.accuracy > ACCURACY_LIMIT_M)
     throw new Failure(
       `位置の精度が低い（約${Math.round(fix.accuracy)}m）ため、再検索できません。見通しのよい場所で再試行してください`,
     );

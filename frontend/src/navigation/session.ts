@@ -335,6 +335,8 @@ export class NavigationSession {
       return;
     }
     this.sourceError = error;
+    // timeoutは停止中に測位が来ないだけのことが多い。判定器の猶予に任せ、切れたらpollが精度不足にする。
+    if (error === "timeout") return this.publish();
     // 欠測を判定器の無効入力の入口へ渡す。watchと最後の実測位置は保持する。
     this.apply(this.matcher.update({ lon: NaN, lat: NaN, accuracy: NaN, timestamp: NaN }), false);
   }

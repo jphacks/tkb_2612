@@ -1,4 +1,5 @@
 import type { Mode, NavigationData } from "../lib/types";
+import { FIX_GAP_RESET_MS } from "./thresholds";
 
 export const ALERT_MESSAGES = {
   ahead: "この先に、過去事故の参考区間があります。周囲に注意してください",
@@ -54,7 +55,7 @@ export function createAlerts(mode: Mode, sections: NavigationData["sections"]): 
         suspend();
         return result();
       }
-      if (previousTime !== null && time - previousTime > 5000) suspend();
+      if (previousTime !== null && time - previousTime > FIX_GAP_RESET_MS) suspend();
       previousTime = time;
       if (!fix.progressing || progress === null || !Number.isFinite(progress) || progress < 0) {
         suspend();

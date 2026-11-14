@@ -7,6 +7,10 @@ import { calculateRemaining } from "./remaining";
 import type { PositionFix } from "./source";
 import { readFileSync } from "node:fs";
 import type { NavigationData } from "../lib/types";
+import { ACCURACY_LIMIT_M, CONFIRM_MS } from "./thresholds";
+
+/** 照合確定に要する秒数。1Hz入力では最初の受理からこの秒数後に確定する。 */
+const C = CONFIRM_MS / 1000;
 
 const audit = new MatchingAudit();
 afterAll(() => { if (process.env.NAV_MATCH_REPORT) console.info("M1〜M11集計", JSON.stringify(audit.summaries())); });
@@ -67,7 +71,7 @@ function run(id: string, jitter: boolean, seed: number, multiplier: 1 | 2 | 4 | 
         // 入力の差し替えでも、模擬位置源が生成した同じtickの揺らぎを残す。
         fix = { ...fix, lon: fix.lon + localPosition(x).lon - localPosition(baseX).lon };
       }
-      return { ...fix, accuracy: id === "M8" || (id === "M9" && t < 45) ? 31 : 10 };
+      return { ...fix, accuracy: id === "M8" || (id === "M9" && t < 45) ? ACCURACY_LIMIT_M + 1 : 10 };
     }
   });
   const matcher = new NavigationMatcher(route.geometry, route.navigation!, sim.clock);
@@ -109,7 +113,7 @@ function run(id: string, jitter: boolean, seed: number, multiplier: 1 | 2 | 4 | 
     expect(confirms).toHaveLength(0); expect(arrivals).toHaveLength(0); expect(results.every(r => r.value.status === "poor-accuracy")).toBe(true);
     expect(sim.state).toBe("stopped"); expect(sim.stopReason).toBe("精度不足"); expect(sim.clock.now()).toBe(65000);
   } else if (id === "M4" || id === "M5") {
-    expect(arrivals).toHaveLength(0); expect(confirms[0].t).toBeGreaterThanOrEqual(5); expect(confirms[0].t).toBeLessThanOrEqual(10);
+    expect(arrivals).toHaveLength(0); expect(confirms[0].t).toBeGreaterThanOrEqual(C); expect(confirms[0].t).toBeLessThanOrEqual(C + 5);
     if (id === "M4") expect(results.filter(r => r.t >= 59).every(r => r.value.status === "tracking")).toBe(true);
     if (id === "M5") {
       expect(confirms.some(r => r.t > 25 && r.t <= 35 && r.value.p! < 240)).toBe(true);
@@ -117,20 +121,20 @@ function run(id: string, jitter: boolean, seed: number, multiplier: 1 | 2 | 4 | 
     }
   } else {
     expect(arrivals.length, `${id} seed=${seed} jitter=${jitter}: 未到着`).toBe(1);
-    const minArrival = id === "M9" ? 55 : duration;
+    const minArrival = id === "M9" ? 50 + C : duration;
     const maxArrival = id === "M9" || id === "M10" || jitter ? duration + 14 : duration + 6;
     expect(arrivals[0].t).toBeGreaterThanOrEqual(minArrival); expect(arrivals[0].t).toBeLessThanOrEqual(maxArrival);
     if (id === "M1" || id === "M2") {
       const deadline = jitter ? 59 : duration + 1;
       expect(results.filter(r => r.t >= deadline).every(r => ["tracking", "arrived"].includes(r.value.status))).toBe(true);
     } else if (id === "M9") {
-      expect(results.filter(r => r.t < 45).every(r => r.value.p === null)).toBe(true); expect(confirms[0].t).toBeGreaterThanOrEqual(50); expect(confirms[0].t).toBeLessThanOrEqual(55);
+      expect(results.filter(r => r.t < 45).every(r => r.value.p === null)).toBe(true); expect(confirms[0].t).toBeGreaterThanOrEqual(45 + C); expect(confirms[0].t).toBeLessThanOrEqual(50 + C);
       expectContinuousConfirmation(results, confirms[0].t);
     } else {
-      expect(confirms[0].t).toBeGreaterThanOrEqual(5); expect(confirms[0].t).toBeLessThanOrEqual(10);
+      expect(confirms[0].t).toBeGreaterThanOrEqual(C); expect(confirms[0].t).toBeLessThanOrEqual(C + 5);
     }
-    if (id === "M10") { expect(results.filter(r => r.t >= 100 && r.t <= 104).every(r => r.value.p === null)).toBe(true); expect(confirms.find(r => r.t >= 100)!.t).toBeGreaterThanOrEqual(105); expect(confirms.find(r => r.t >= 100)!.t).toBeLessThanOrEqual(110); }
-    if (id.startsWith("M11")) { expect(results.filter(r => r.t >= 21 && r.t <= 25).every(r => r.value.p === null)).toBe(true); expect(confirms.find(r => r.t >= 21)!.t).toBeGreaterThanOrEqual(26); expect(confirms.find(r => r.t >= 21)!.t).toBeLessThanOrEqual(31); }
+    if (id === "M10") { expect(results.filter(r => r.t >= 100 && r.t < 100 + C).every(r => r.value.p === null)).toBe(true); expect(confirms.find(r => r.t >= 100)!.t).toBeGreaterThanOrEqual(100 + C); expect(confirms.find(r => r.t >= 100)!.t).toBeLessThanOrEqual(105 + C); }
+    if (id.startsWith("M11")) { expect(results.filter(r => r.t >= 21 && r.t < 21 + C).every(r => r.value.p === null)).toBe(true); expect(confirms.find(r => r.t >= 21)!.t).toBeGreaterThanOrEqual(21 + C); expect(confirms.find(r => r.t >= 21)!.t).toBeLessThanOrEqual(26 + C); }
     expect(results.filter(r => r.t >= arrivals[0].t - 5).every(r => ["tracking", "arrived"].includes(r.value.status))).toBe(true);
   }
   // 保留を短く繰り返しながら期限だけ通す実装も検出する。
