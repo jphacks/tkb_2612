@@ -142,6 +142,16 @@ describe("useReSearch: 現在地からの明示的再検索（7.6）", () => {
     expect(state(view)).toEqual({ status: "idle" });
   });
 
+  it("自動の許容時間は計算済みの値ではなく自動のまま引き継ぐ", async () => {
+    const view = setup();
+    view.refresh.mockResolvedValue({ ...values, max_detour_min: "auto" });
+    await act(async () => view.result.current.reSearch.start());
+    await waitFor(() => expect(client.searchRoutes).toHaveBeenCalledTimes(1));
+    const requested = client.searchRoutes.mock.calls[0][0];
+    expect(requested).not.toHaveProperty("max_detour_min");
+    expect(requested.mode).toBe(values.mode);
+  });
+
   it("測位が古いと実機は新しく1回測位する（7.1のオプション）。経路上の位置は使わない", async () => {
     const geo = geolocation();
     const view = setup({ fixFresh: false });

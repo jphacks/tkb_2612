@@ -11,7 +11,7 @@ use accident_route_backend::domain::engine::{
 };
 use accident_route_backend::testing::fixtures::check_outcome_invariants;
 
-use common::{Acc, engine, path, query};
+use common::{Acc, auto_query, engine, path, query};
 
 const KX35: f64 =
     accident_route_backend::contract::geo::METERS_PER_DEGREE * 0.819_152_044_288_991_8;
@@ -52,6 +52,55 @@ fn run(
         .unwrap();
     check_outcome_invariants(&outcome).unwrap();
     outcome
+}
+
+#[test]
+fn test_auto_detour_limit_from_fastest_duration() {
+    // 旧方式の自動：最短600秒（10分）→ D=6×floor(600/20)=180秒（3分）。
+    let routes = vec![
+        lane(0, 600.0, 1000.0),
+        lane(1, 700.0, 1000.0),
+        lane(2, 900.0, 1000.0),
+    ];
+    let accidents = [on_lane(0, 10), on_lane(1, 4), on_lane(2, 1)];
+    let e = engine(&accidents);
+    let o = e
+        .evaluate(
+            &auto_query(Mode::Walk, ConditionFilter::default()),
+            CandidateSet {
+                routes: routes.clone(),
+                warnings: vec![],
+            },
+            &CancelToken::unbounded(),
+        )
+        .unwrap();
+    check_outcome_invariants(&o).unwrap();
+    assert!(o.detour_limit_auto);
+    assert_eq!(o.detour_limit_min, 3.0);
+    assert_eq!(
+        o.candidates
+            .iter()
+            .map(|c| c.within_detour)
+            .collect::<Vec<_>>(),
+        [true, true, false]
+    );
+    assert_eq!(o.safest, Some(1));
+    assert!(o.reason.contains("最短時間経路から+3分以内"));
+
+    // 手動の0・7.5・10分は要求の値そのままで、自動ではない。
+    for minutes in [0.0, 7.5, 10.0] {
+        let o = run(routes.clone(), &accidents, minutes, None, vec![]);
+        assert!(!o.detour_limit_auto, "{minutes}分");
+        assert_eq!(o.detour_limit_min, minutes);
+        let fastest = &o.candidates[o.fastest];
+        for c in &o.candidates {
+            assert_eq!(
+                c.within_detour,
+                c.path.duration_s <= fastest.path.duration_s + minutes * 60.0 + 1e-6,
+                "{minutes}分"
+            );
+        }
+    }
 }
 
 #[test]

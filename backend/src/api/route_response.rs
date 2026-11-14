@@ -87,14 +87,13 @@ impl io::Write for ByteCounter {
     }
 }
 
-/// `within_detour` が `duration <= fastest.duration + max_detour_min*60 + 1e-6` と一致するか。
-/// 要求の `max_detour_min` が要るので、[`render_route_response`] とは別に呼ぶ。
-pub fn check_detour(outcome: &RouteOutcome, max_detour_min: f64) -> Result<(), InvalidOutcome> {
+/// `within_detour` が `duration <= fastest.duration + detour_limit_min*60 + 1e-6` と一致するか。
+pub fn check_detour(outcome: &RouteOutcome) -> Result<(), InvalidOutcome> {
     let fastest = outcome
         .candidates
         .get(outcome.fastest)
         .ok_or_else(|| InvalidOutcome("fastestが候補にない".to_owned()))?;
-    let limit = fastest.path.duration_s + max_detour_min * 60.0 + DETOUR_EPSILON_S;
+    let limit = fastest.path.duration_s + outcome.detour_limit_min * 60.0 + DETOUR_EPSILON_S;
     for (i, c) in outcome.candidates.iter().enumerate() {
         if c.within_detour != (c.path.duration_s <= limit) {
             return violation(format!(
@@ -210,6 +209,10 @@ pub fn check_outcome(outcome: &RouteOutcome) -> Result<(), InvalidOutcome> {
         }
     }
     finite_non_negative(outcome.aggregation_ms, "aggregation_ms")?;
+    finite(outcome.detour_limit_min, "detour_limit_min")?;
+    if !(0.0..=30.0).contains(&outcome.detour_limit_min) {
+        return violation("detour_limit_minが0〜30分の範囲外");
+    }
     if outcome.reason.is_empty() || outcome.risk_note.is_empty() {
         return violation("reason・risk_noteが空");
     }
@@ -806,6 +809,8 @@ struct RouteResponseDto<'a> {
     risk_reduction_percent: Option<f64>,
     reason: &'a str,
     warnings: &'a [String],
+    detour_limit_min: f64,
+    detour_limit_auto: bool,
     relaxed_conditions: [&'static str; 0],
     effective_conditions: EffectiveConditionsDto,
     unattributed_radius_m: f64,
@@ -834,6 +839,8 @@ impl<'a> RouteResponseDto<'a> {
             risk_reduction_percent: outcome.risk_reduction_percent,
             reason: &outcome.reason,
             warnings: &outcome.warnings,
+            detour_limit_min: outcome.detour_limit_min,
+            detour_limit_auto: outcome.detour_limit_auto,
             relaxed_conditions: [],
             effective_conditions: EffectiveConditionsDto {
                 mode: outcome.mode.as_str(),

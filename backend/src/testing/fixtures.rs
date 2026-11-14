@@ -159,8 +159,7 @@ fn parse_canonical_request(v: &Value) -> RouteQuery {
         v.get("mode").map_or(Mode::Walk, |m| {
             Mode::parse(as_str(m, "mode")).expect("mode")
         }),
-        v.get("max_detour_min")
-            .map_or(10.0, |m| as_f64(m, "max_detour_min")),
+        v.get("max_detour_min").map(|m| as_f64(m, "max_detour_min")),
         conditions,
     )
     .expect("fixtureの要求は有効")
@@ -221,6 +220,10 @@ fn parse_route_response(v: &Value) -> RouteOutcome {
             .iter()
             .map(|w| as_str(w, "warnings[]").to_owned())
             .collect(),
+        detour_limit_min: as_f64(field(v, "detour_limit_min"), "detour_limit_min"),
+        detour_limit_auto: field(v, "detour_limit_auto")
+            .as_bool()
+            .expect("detour_limit_autoはbool"),
         risk_note: as_str(field(v, "risk_note"), "risk_note").to_owned(),
         aggregation_ms: as_f64(field(v, "aggregation_ms"), "aggregation_ms"),
         candidates,

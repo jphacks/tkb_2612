@@ -38,7 +38,14 @@ const DISCLAIMER = "過去事故の参考情報です。現在の危険や安全
 
 async function startDevice(multiple = false) {
   if (multiple) api.searchRoutes.mockImplementationOnce((request: RouteRequest) => {
-    const response = createDemoRouteResponse({ ...request, mode: "car" });
+    // 自動の下限3分では2本目の候補が許容外になるため、この試験用に10分で
+    // 経路を選ばせ、応答は自動（要求は max_detour_min 省略）のまま返す。
+    const response = createDemoRouteResponse({
+      ...request,
+      mode: "car",
+      max_detour_min: 10,
+    });
+    response.detour_limit_auto = true;
     const route = response.candidates.find(item => item.id === response.fastest_id)!;
     const first = route.navigation!.sections[0];
     const index = first.start_segment_index + 2;

@@ -57,6 +57,29 @@ describe("RouteResultNotes", () => {
     }
   });
 
+  it("shows the used detour limit to one decimal with an automatic marker", () => {
+    const autoRequest = { ...request };
+    delete autoRequest.max_detour_min;
+    const result = createDemoRouteResponse(autoRequest);
+    const section = renderNotes(result);
+    expect(result.detour_limit_auto).toBe(true);
+    expect(
+      within(section).getByText(
+        `許容時間 +${result.detour_limit_min.toFixed(1)}分（自動）`,
+      ),
+    ).toBeVisible();
+  });
+
+  it("shows a manual detour limit without the automatic marker", () => {
+    const result = createDemoRouteResponse({ ...request, max_detour_min: 6 });
+    const section = renderNotes(result);
+    expect(result.detour_limit_auto).toBe(false);
+    expect(
+      within(section).getByText("許容時間 +6.0分"),
+    ).toBeVisible();
+    expect(within(section).queryByText(/（自動）/)).not.toBeInTheDocument();
+  });
+
   it("notes the accident-count reversal only when the safest route has more accidents", () => {
     const result = createDemoRouteResponse(request);
     const safest = result.candidates.find(

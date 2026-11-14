@@ -119,7 +119,9 @@ describe("現在地からの明示的再検索の画面（手順12・7.6・7.7�
     const request: RouteRequest = api.searchRoutes.mock.calls.at(-1)![0];
     expect(request.origin).not.toEqual(firstRequest.origin);
     expect(request.dest).toEqual(firstRequest.dest);
-    expect(request).toMatchObject({ mode: firstRequest.mode, max_detour_min: firstRequest.max_detour_min });
+    expect(request).toMatchObject({ mode: firstRequest.mode });
+    // 自動は計算済みの値ではなく「自動」のまま引き継ぐ。
+    expect(request).not.toHaveProperty("max_detour_min");
     // 経路上の位置ではなく、模擬の測位（揺らぎを含む実測相当）をoriginにする。
     const routeStart = firstRequest.origin;
     expect(Math.abs(request.origin.lat - routeStart.lat) + Math.abs(request.origin.lon - routeStart.lon)).toBeGreaterThan(0);

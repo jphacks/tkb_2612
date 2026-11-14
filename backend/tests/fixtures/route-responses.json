@@ -131,6 +131,8 @@
       "warnings": [
         "経路候補が1本のみのため、経路間の比較はできません。"
       ],
+      "detour_limit_min": 10,
+      "detour_limit_auto": false,
       "relaxed_conditions": [],
       "effective_conditions": {
         "mode": "walk",
@@ -222,6 +224,8 @@
         "経路候補が1本のみのため、経路間の比較はできません。",
         "該当する事故が0件でも、安全であることの証明ではありません。"
       ],
+      "detour_limit_min": 10,
+      "detour_limit_auto": false,
       "relaxed_conditions": [],
       "effective_conditions": {
         "mode": "walk",
@@ -683,6 +687,8 @@
       "risk_reduction_percent": 70.2,
       "reason": "取得した3候補のうち、最短時間経路から+10分以内で、距離で重み付けしたリスクが最小の経路を選びました。追加2.5分、リスク70.2%減です。",
       "warnings": [],
+      "detour_limit_min": 10,
+      "detour_limit_auto": false,
       "relaxed_conditions": [],
       "effective_conditions": {
         "mode": "walk",
@@ -1126,6 +1132,8 @@
       "risk_reduction_percent": 70.2,
       "reason": "取得した3候補のうち、最短時間経路から+10分以内で、距離で重み付けしたリスクが最小の経路を選びました。追加2.5分、リスク70.2%減です。",
       "warnings": [],
+      "detour_limit_min": 10,
+      "detour_limit_auto": false,
       "relaxed_conditions": [],
       "effective_conditions": {
         "mode": "walk",
@@ -1587,6 +1595,8 @@
       "risk_reduction_percent": 70.2,
       "reason": "取得した3候補のうち、最短時間経路から+10分以内で、距離で重み付けしたリスクが最小の経路を選びました。追加2.5分、リスク70.2%減です。",
       "warnings": [],
+      "detour_limit_min": 10,
+      "detour_limit_auto": false,
       "relaxed_conditions": [],
       "effective_conditions": {
         "mode": "walk",
@@ -7226,6 +7236,8 @@
       "warnings": [
         "経路候補が1本のみのため、経路間の比較はできません。"
       ],
+      "detour_limit_min": 10,
+      "detour_limit_auto": false,
       "relaxed_conditions": [],
       "effective_conditions": {
         "mode": "walk",

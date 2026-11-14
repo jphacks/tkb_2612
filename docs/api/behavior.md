@@ -149,7 +149,21 @@ HTTP JSONはUTF-8、有限数値だけ。JSONオブジェクトの重複キー�
 - origin/destは必須の `{lat,lon}`。数値文字列は不可。緯度20〜46、経度122〜154（両端含む）。
 - 地球半径 `R=6,371,008.8m`、`K=πR/180`（1度あたりのm）。直線距離は `K * hypot(lat1-lat2, (lon1-lon2)*cos((lat1+lat2)/2 * π/180))`。測地線距離に置換しない。`20 <= d`（上限なし。当初の30,000mはissue #39の計測を受けて撤廃した）。同一点は拒否。
 - modeはwalk/bike/car、省略walk。null不可。
-- max_detour_minは有限数値0〜30分、省略10。小数可、null不可。
+- max_detour_minは有限数値0〜30分、小数可、null不可。**省略したら許容時間を自動で決める**（下記「許容時間」）。省略時の10分は廃止した（api_version 2.0は未リリースのため、互換の段階を設けない）。
+
+### 許容時間
+
+経路を選ぶときの遠回りの上限を「許容時間」と呼び、`D` で表す。`D` は最短時間経路 p0 の時間 `T0` が決まってから求める。
+
+- **手動**（要求に `max_detour_min` がある）：新方式は `D = floor(600 × max_detour_min)` デシ秒。旧方式は `D = max_detour_min × 60` 秒。応答の `detour_limit_min` は要求の値そのまま、`detour_limit_auto=false`。
+- **自動**（`max_detour_min` を省略）：最短時間の `r=0.3` 倍を0.1分（6秒）単位で切り捨て、下限 `a=3分`、上限30分に収める。
+  - 新方式（T0はデシ秒）：`D = min(18000, max(1800, 60 × floor(T0 / 200)))` デシ秒。
+  - 旧方式（T0は fastest.duration の秒）：`D = min(1800, max(180, 6 × floor(T0 / 20)))` 秒。
+  - 応答の `detour_limit_min` は `round(D/600, 1)`（新方式）または `round(D/60, 1)`（旧方式）、`detour_limit_auto=true`。0.1分単位の値なので、丸めで判定が変わらない。
+  - 例：徒歩5分→3分（下限）、自転車20分→6分、自動車45分→13.5分、自動車120分→30分（上限）。
+- 自動で0分にはならない。最短時間経路だけを見たいときは、手動で0を送る。
+- 値（r=0.3、a=3分、上限30分）は仮置きで、M5と同じ評価（手段ごとの追加時間と削減率の曲線）で見直す。根拠：一律10分では、自動車の追加時間が最短時間の平均50%になる一方（[M5.md](../routing-reports/M5.md) 0.3節の4.）、徒歩の短い移動では、許容時間が最短時間そのものを上回ることがある（徒歩の直線0.5kmは最短で約6〜8分）。比率だけにすると短い移動の余地がなくなり、長い移動では楕円が大きくなりすぎるため、下限と上限を分で持つ。
+- 以下、本書の `max_detour_min` を使う式（上限B、`within_detour`、中間案、reasonの `{d}`）は、`detour_limit_min`（新方式の上限Bは `D`）で読み替える。
 - periodは早朝/昼/夕/夜/深夜、整数0〜4（2.の新しい内部コード）、all、null。省略all。キー `period` が存在すれば `時間帯` より優先（nullでも優先）。`時間帯` は互換エイリアス。旧Pythonクライアントが送る整数3は新しい意味（19〜23時）で解釈し、0〜3時を含めない。
 - hourは省略/nullなら無視。指定時は整数0〜23、該当する時間帯全体へ変換（0〜3は深夜、19〜23は夜）。periodがall/nullならhourで具体化、具体値と矛盾すれば400。hourがあっても先に不正periodを検査する。12.1やbool不可。
 - weatherは晴/曇/雨/霧/雪、整数1〜5、all、null。省略all。
@@ -184,12 +198,12 @@ APIの正規表記を日本語にする理由：現行UI/READMEが既に日本�
    1. ノード単位の双方向A*で、辺の時間だけの最短時間 `T_lb` を求める（右左折禁止・ノードの加算・右左折コストを含まない。形式書8章の下界）。到達できなければ `NoRoute`。
    2. 始点からの辺の時間だけの下界 `df` と、終点までの下界 `db` について、`df(v) + db(v) ≤ T_lb + m` のノードだけからなる部分グラフで、「直前の有向辺＋右左折禁止の照合器の状態」を状態に持つ探索を行い、右左折禁止を守り、ノードの加算と右左折コストを含めた最短時間の経路を求める。見つかった経路の時間が `T_lb + m` 以下なら、それが全体での合法な最短時間経路である（それより速い合法な経路は、すべてのノードでこの条件を満たすため）。見つからないか、時間が `T_lb + m` を超えたら、mを2倍にしてやり直す。mの初期値は `max(600デシ秒, 0.1×T_lb)`。部分グラフのノード数が楕円の上限（`SearchParams.ellipse_node_limit`）を超えたら、全体グラフで同じ探索を行う。
    3. p0の距離が250,000mを超えたら `RouteTooLong`（422）。
-3. **上限**：`T0` をp0の時間（デシ秒）として、`B = T0 + floor(600 × max_detour_min)`。これを満たす経路は、8章の `within_detour` の判定でも必ず真になる。
+3. **上限**：`T0` をp0の時間（デシ秒）として、`B = T0 + D`（`D` は4章「許容時間」のデシ秒の値。手動なら `floor(600 × max_detour_min)`）。これを満たす経路は、8章の `within_detour` の判定でも必ず真になる。
 4. **楕円の切り出し**：`df(u) + t(e) + db(v) ≤ B` を満たす有向辺 e=(u→v) だけを残し、局所番号の部分グラフ H を作る（`df`・`db`・`t` は辺の時間だけの値。右左折禁止とコストは時間を増やす方向にしか働かないので、この切り出しは上限を満たす経路を落とさない。計画書3.4節）。出発・到着の吸着点は H の仮想ノードにする。確定したノード数が上限を超えたら、6.4節（下記「探索範囲が大きすぎる場合」）へ進む。探索の作業領域は H の大きさで確保する。
 5. **リスク最小の経路** pc：H 上で、`(risk_fx, 時間)` の辞書順で最小の経路を、手順2.2と同じ状態の探索で求める。pc の時間が B 以下なら、pc を事故考慮経路 best とする（最適）。
 6. **LARAC**：pc が B を超えたら、H 上で「時間＋λ×リスク」の探索を、λを更新しながら最大 `SearchParams.larac_iterations` 回（初期値10）行う。上限を満たす最良の解 pd、最適リスクの下界 lb、途中で得た凸包上の解を記録する。
 7. **時間予算付きRCSP**：pd を暫定解、lb を下界として、H 上で時間とリスクの多ラベル探索を行う。ラベルの状態は「局所ノード、直前の有向辺、照合器の状態」で、同じ状態のラベルどうしだけを優越判定で比べる。時間が B を超えるラベルと、リスクが暫定解以上になるラベルは捨てる。`SearchParams.rcsp_budget_ms`（初期値2,000ms）かラベル数の上限に達したら、その時点の最良解を best として返し、最適とは記録しない。完了すれば、best はこのグラフとモデルの範囲で最適である。
-8. **中間案** m（Issue #26 の後の追加。[設計書](../multi-route-design.md) 3章）：`T = floor(max_detour_min)` が4以上で、候補が p0 だけになっていないとき、上限 `Bm = T0 + 600 × floor(T/2)` で手順4〜7を行い、その best を m とする。楕円は Bm で切り出し直し、大きすぎれば下記「探索範囲が大きすぎる場合」の1.と同じ縮小を行い、それでも大きすぎるか到達できなければ m は作らない（エラーにしない）。m が p0 または best と有向辺の列・吸着点まで同じなら作らない。中断されたら手順2〜7と同じく `Interrupted` を返す。m を画面に出すかは8章で決める。
+8. **中間案** m（Issue #26 の後の追加。[設計書](../multi-route-design.md) 3章）：`T = floor(detour_limit_min)` が4以上で、候補が p0 だけになっていないとき、上限 `Bm = T0 + 600 × floor(T/2)` で手順4〜7を行い、その best を m とする。楕円は Bm で切り出し直し、大きすぎれば下記「探索範囲が大きすぎる場合」の1.と同じ縮小を行い、それでも大きすぎるか到達できなければ m は作らない（エラーにしない）。m が p0 または best と有向辺の列・吸着点まで同じなら作らない。中断されたら手順2〜7と同じく `Interrupted` を返す。m を画面に出すかは8章で決める。
 9. **候補の整理**（下記）。
 
 手順5〜8の状態の扱いは、右左折禁止（via-way型を含む）を必ず守る。返す経路に、禁止された有向辺の列が連続して現れてはいけない（M0.6の「右左折禁止」）。
@@ -372,12 +386,12 @@ Bを事故ID昇順（gzip CSVの行順）で走査して、死者ありFとそ�
 
 - fastestは `(duration, distance)` の辞書順で最小。同値は候補順先頭。名称「最短」は**最短時間**を意味し、最短距離ではない。
 - 候補extra_minutes=`round((duration−fastest.duration)/60,3)` 分。
-- within_detourは `duration <= fastest.duration + max_detour_min*60 + 1e-6` 秒。丸めたextra_minutesで判定しない。
+- within_detourは `duration <= fastest.duration + detour_limit_min*60 + 1e-6` 秒（`detour_limit_min` は4章「許容時間」）。丸めたextra_minutesで判定しない。
 - **全候補でBが空**なら（旧方式だけ。新方式は下記「新方式（schema 3）での扱い」による）、`safest_id=null`、トップレベル `extra_minutes=null`、`risk_reduction_percent=null` とする。経路候補は返す。判定はBが空かどうかで行う（丸めたスコアでは判定しない）。
 - それ以外では、safestはwithin_detour=trueの中から `(weighted_risk（小数2桁に丸めた値）, duration, distance)` が最小、完全同値は候補順先頭。fastestは必ず対象になるので対象空にはならない。
 - トップレベルextra_minutesはsafestの同名値。
 - `risk_reduction_percent=round(100*(fastest.weighted_risk−safest.weighted_risk)/fastest.weighted_risk,1)`（丸めたweighted_riskから計算）。基準リスク0ならnull（0%と区別）。同一経路で基準リスク正なら0%。最短時間経路のスコアが0で他候補にBがある場合は、safest=fastest、削減率nullになる。
-- reasonは次の文面を使う。`{N}` は候補数、`{d}` はmax_detour_min、`{x}` は追加分（小数1桁）、`{y}` は削減率。場面が重なる場合は「通常」または「最短時間経路と同じ」の後に「基準リスクが0」を連結する。
+- reasonは次の文面を使う。`{N}` は候補数、`{d}` は `detour_limit_min`（自動のときも同じ文面）、`{x}` は追加分（小数1桁）、`{y}` は削減率。場面が重なる場合は「通常」または「最短時間経路と同じ」の後に「基準リスクが0」を連結する。
 
 | 場面 | 文面 |
 |---|---|
@@ -547,6 +561,7 @@ JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-
 | test_filters_casualties_normalization_and_hotspots                  | 時間帯・曜日区分・手段のAND、天候で除外しないこと、全天候集計とweather_match、ガウス重み・天候倍率込みのweighted_risk（小数2桁）とrisk_per_km、severity_weightの高リスク区間 |
 | test_diagonal_bbox_does_not_include_distant_point                   | bbox内でも斜線から離れた点を除外。空間距離で判定                                                                                                                   |
 | test_safest_obeys_detour_and_uses_weighted_total                    | 600/900/1300秒、許容5分の境界、丸めた値での比較と同点規則（所要時間→距離）、削減率、0分ならfastest。返却全候補のwithin_detourも比較                                 |
+| test_auto_detour_limit_from_fastest_duration                        | max_detour_min省略で自動。T0=5分→3分（下限）、20分→6分、45分→13.5分、120分→30分（上限）、6秒単位の切り捨ての境界。両方式で `detour_limit_min`・`detour_limit_auto`・`within_detour`・reasonの `{d}` が一致する。手動の0・10・7.5は従来どおりで `detour_limit_auto=false` |
 | test_fallback_is_shared_by_all_candidates_preserving_mode           | **緩和の試験は廃止**。全候補で天候一致0件でも条件を解除せず、`relaxed_conditions=[]`、weather_matchが全項目0、手段維持                                             |
 | test_time_fallback_and_all_zero_have_no_false_percentage            | **緩和部分は廃止**。旧方式で全候補でBが空なら `safest_id / extra_minutes / risk_reduction_percent` がnull、reasonと警告。同一経路の文面                                      |
 | test_no_relaxation_if_another_candidate_has_exact_match             | 最短時間経路のスコア0で他候補にBあり→safest=fastest、削減率null                                                                                                    |

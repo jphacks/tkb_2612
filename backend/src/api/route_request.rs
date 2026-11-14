@@ -11,7 +11,7 @@ use serde::de::{self, Deserialize, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Number, Value};
 
 use crate::api::route_response::MAX_SAFE_INTEGER;
-use crate::contract::engine::{DEFAULT_MAX_DETOUR_MIN, validate_endpoints, validate_max_detour};
+use crate::contract::engine::{validate_endpoints, validate_max_detour};
 use crate::contract::{
     ConditionFilter, DayType, LatLon, Mode, Period, QueryError, RouteQuery, Weather,
 };
@@ -74,10 +74,12 @@ pub fn parse_route_request(body: &[u8]) -> Result<RouteQuery, &'static str> {
         Some(v) => v.as_str().and_then(Mode::parse).ok_or(INVALID_MODE)?,
     };
     let max_detour_min = match object.get("max_detour_min") {
-        None => DEFAULT_MAX_DETOUR_MIN,
-        Some(v) => number(v).ok_or(QueryError::MaxDetour.message())?,
+        None => None,
+        Some(v) => Some(number(v).ok_or(QueryError::MaxDetour.message())?),
     };
-    validate_max_detour(max_detour_min).map_err(QueryError::message)?;
+    if let Some(minutes) = max_detour_min {
+        validate_max_detour(minutes).map_err(QueryError::message)?;
+    }
     // キー `period` が存在すれば `時間帯` より優先する（nullでも優先）
     let period = match object.get("period").or_else(|| object.get("時間帯")) {
         None => None,

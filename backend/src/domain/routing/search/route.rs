@@ -8,6 +8,7 @@
 use std::time::Instant;
 
 use crate::contract::{CancelToken, Interrupt};
+use crate::domain::rounding::py_round;
 use crate::domain::routing::graph::Graph;
 use crate::domain::routing::snap::SnapPoint;
 
@@ -39,6 +40,64 @@ impl From<Interrupt> for RouteError {
     fn from(_value: Interrupt) -> Self {
         RouteError::Interrupted
     }
+}
+
+/// 新方式の許容時間 D（デシ秒）の決め方。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DetourLimit {
+    /// 手動の指定（分）。
+    Manual(f64),
+    /// 固定のD（デシ秒）。
+    Fixed(u64),
+    /// 最短時間経路 p0 の時間 T0（デシ秒）から自動で決める。
+    Auto,
+}
+
+impl DetourLimit {
+    /// 時間の上限 B に足す D（デシ秒）。
+    pub fn detour_ds(self, t0_ds: u64) -> u64 {
+        match self {
+            Self::Manual(max_detour_min) => manual_detour_ds(max_detour_min),
+            Self::Fixed(detour_ds) => detour_ds,
+            Self::Auto => auto_detour_ds(t0_ds),
+        }
+    }
+
+    /// 応答の `detour_limit_min`（分）。手動なら要求の値そのまま。
+    pub fn detour_limit_min(self, t0_ds: u64) -> f64 {
+        match self {
+            Self::Manual(max_detour_min) => max_detour_min,
+            Self::Fixed(detour_ds) => detour_limit_min_from_ds(detour_ds),
+            Self::Auto => detour_limit_min_from_ds(auto_detour_ds(t0_ds)),
+        }
+    }
+}
+
+/// 手動の許容時間 D（デシ秒）。`D = floor(600 × max_detour_min)`。
+pub fn manual_detour_ds(max_detour_min: f64) -> u64 {
+    (600.0 * max_detour_min).floor() as u64
+}
+
+/// 自動の許容時間 D（デシ秒）。`D = min(18000, max(1800, 60 × floor(T0 / 200)))`。
+pub fn auto_detour_ds(t0_ds: u64) -> u64 {
+    60_u64.saturating_mul(t0_ds / 200).clamp(1800, 18000)
+}
+
+/// 新方式のD（デシ秒）を応答の分（小数1桁）へ丸める。
+pub fn detour_limit_min_from_ds(detour_ds: u64) -> f64 {
+    py_round(detour_ds as f64 / 600.0, 1)
+}
+
+/// 中間案を探す許容時間の下限（分）。仮置き。docs/multi-route-design.md 4.1節
+pub const MIDDLE_MIN_DETOUR_MIN: f64 = 4.0;
+
+/// 中間案を探す遠回りの上限（デシ秒）。許容時間の分単位の切り捨てが4分未満なら `None`。
+pub fn middle_search_detour_ds(detour_limit_min: f64) -> Option<u64> {
+    let whole_min = detour_limit_min.floor();
+    if whole_min < MIDDLE_MIN_DETOUR_MIN {
+        return None;
+    }
+    Some(600 * (whole_min / 2.0).floor() as u64)
 }
 
 /// 段階ごとの記録（計測と内部ログ用。利用者には出さない）。
@@ -84,6 +143,10 @@ pub struct RouteSearch {
     pub middle: Option<Path>,
     /// 時間の上限 B（デシ秒）。
     pub budget_ds: u64,
+    /// 使った遠回りの上限 D（デシ秒）。
+    pub detour_ds: u64,
+    /// 応答の `detour_limit_min`（分）。
+    pub detour_limit_min: f64,
     /// 候補（`select_candidates` の結果。所要時間の昇順、最大6本、すべて `time_ds ≤ B`）。
     pub candidates: Vec<Path>,
     /// 候補の整理で250,000mを超えるために外した候補の数（評価用）。
@@ -160,8 +223,15 @@ pub fn find_routes(
     max_detour_min: u32,
     cancel: &CancelToken,
 ) -> Result<RouteSearch, RouteError> {
-    let detour_ds = 600_u64.saturating_mul(u64::from(max_detour_min));
-    find_routes_ds(ctx, cost, start, end, detour_ds, cancel)
+    find_routes_core(
+        ctx,
+        cost,
+        start,
+        end,
+        DetourLimit::Manual(f64::from(max_detour_min)),
+        MiddleDetour::None,
+        cancel,
+    )
 }
 
 /// behavior.md 5章 手順2〜8を1回で行う。`detour_ds` は遠回りの上限（デシ秒）。
@@ -175,25 +245,19 @@ pub fn find_routes_ds(
     detour_ds: u64,
     cancel: &CancelToken,
 ) -> Result<RouteSearch, RouteError> {
-    find_routes_with_middle_ds(ctx, cost, start, end, detour_ds, None, cancel)
+    find_routes_core(
+        ctx,
+        cost,
+        start,
+        end,
+        DetourLimit::Fixed(detour_ds),
+        MiddleDetour::None,
+        cancel,
+    )
 }
 
 /// behavior.md 5章 手順2〜8を1回で行う。`detour_ds` は本体の遠回りの上限（デシ秒）。
 /// `middle_detour_ds` が `Some(dm)` なら、`dm` を遠回りの上限にして中間案も探す。
-///
-/// 1. 2点が同じ位置なら [`RouteError::NoRoute`]。
-/// 2. 最短時間経路 p0 を求める。到達できなければ [`RouteError::NoRoute`]、距離が250,000m超なら
-///    [`RouteError::RouteTooLong`]。
-/// 3. p0 のリスクを [`path_risk_fx`] で計算する。
-/// 4. `B = T0 + detour_ds`。
-/// 5. 楕円の部分グラフを作る。大きすぎれば縮小し、それでも大きすぎる（または到達できない）なら
-///    p0 だけにする。
-/// 6. 部分グラフがあれば [`search_subgraph`] で事故考慮経路と代替経路を求める。見つからなければ
-///    p0 だけにする。
-/// 7. p0 だけにしていなければ、`middle_detour_ds` があれば `Bm = T0 + dm` で楕円を切り出し直し、
-///    [`search_best`] で中間案を探す。切り出しは大きすぎれば縮小し、作れなければ中間案なし。
-/// 8. [`select_candidates_with_middle`] で候補を整理する。
-/// 9. すべての候補が `time_ds ≤ B` であることを `debug_assert!` で確かめる。
 pub fn find_routes_with_middle_ds(
     ctx: &SearchContext<'_>,
     cost: &mut dyn ArcCost,
@@ -201,6 +265,73 @@ pub fn find_routes_with_middle_ds(
     end: &SnapPoint,
     detour_ds: u64,
     middle_detour_ds: Option<u64>,
+    cancel: &CancelToken,
+) -> Result<RouteSearch, RouteError> {
+    find_routes_core(
+        ctx,
+        cost,
+        start,
+        end,
+        DetourLimit::Fixed(detour_ds),
+        MiddleDetour::Fixed(middle_detour_ds),
+        cancel,
+    )
+}
+
+/// behavior.md 5章 手順2〜8を1回で行う。`detour` が [`DetourLimit::Auto`] なら、
+/// p0 の時間 T0 からDを決めてから楕円の切り出し以降を行う。中間案も同じDから決める。
+pub fn find_routes_with_detour(
+    ctx: &SearchContext<'_>,
+    cost: &mut dyn ArcCost,
+    start: &SnapPoint,
+    end: &SnapPoint,
+    detour: DetourLimit,
+    cancel: &CancelToken,
+) -> Result<RouteSearch, RouteError> {
+    find_routes_core(
+        ctx,
+        cost,
+        start,
+        end,
+        detour,
+        MiddleDetour::FromLimit,
+        cancel,
+    )
+}
+
+/// 中間案を探すときの上限。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MiddleDetour {
+    /// 探さない。
+    None,
+    /// 固定の上限（デシ秒）。
+    Fixed(Option<u64>),
+    /// 本体の許容時間（分）から [`middle_search_detour_ds`] で決める。
+    FromLimit,
+}
+
+/// behavior.md 5章 手順2〜8を1回で行う。
+///
+/// 1. 2点が同じ位置なら [`RouteError::NoRoute`]。
+/// 2. 最短時間経路 p0 を求める。到達できなければ [`RouteError::NoRoute`]、距離が250,000m超なら
+///    [`RouteError::RouteTooLong`]。
+/// 3. p0 のリスクを [`path_risk_fx`] で計算する。
+/// 4. `B = T0 + D`。
+/// 5. 楕円の部分グラフを作る。大きすぎれば縮小し、それでも大きすぎる（または到達できない）なら
+///    p0 だけにする。
+/// 6. 部分グラフがあれば [`search_subgraph`] で事故考慮経路と代替経路を求める。見つからなければ
+///    p0 だけにする。
+/// 7. p0 だけにしていなければ、中間案の上限があれば `Bm = T0 + dm` で楕円を切り出し直し、
+///    [`search_best`] で中間案を探す。切り出しは大きすぎれば縮小し、作れなければ中間案なし。
+/// 8. [`select_candidates_with_middle`] で候補を整理する。
+/// 9. すべての候補が `time_ds ≤ B` であることを `debug_assert!` で確かめる。
+fn find_routes_core(
+    ctx: &SearchContext<'_>,
+    cost: &mut dyn ArcCost,
+    start: &SnapPoint,
+    end: &SnapPoint,
+    detour: DetourLimit,
+    middle: MiddleDetour,
     cancel: &CancelToken,
 ) -> Result<RouteSearch, RouteError> {
     let graph = ctx.graph;
@@ -219,8 +350,15 @@ pub fn find_routes_with_middle_ds(
     let fastest_ms = elapsed_ms(fastest_start);
     cancel.check()?;
 
-    // 手順4：時間の上限。
+    // 手順4：時間の上限。自動なら p0 の時間からDを決める。
+    let detour_ds = detour.detour_ds(p0.time_ds);
+    let detour_limit_min = detour.detour_limit_min(p0.time_ds);
     let budget_ds = p0.time_ds.saturating_add(detour_ds);
+    let middle_detour_ds = match middle {
+        MiddleDetour::None => None,
+        MiddleDetour::Fixed(value) => value,
+        MiddleDetour::FromLimit => middle_search_detour_ds(detour_limit_min),
+    };
 
     // 手順5：楕円の切り出しと縮小。
     let ellipse_start = Instant::now();
@@ -355,6 +493,8 @@ pub fn find_routes_with_middle_ds(
         best,
         middle,
         budget_ds,
+        detour_ds,
+        detour_limit_min,
         candidates,
         dropped_too_long: select.dropped_too_long as u64,
         stats: RouteStats {

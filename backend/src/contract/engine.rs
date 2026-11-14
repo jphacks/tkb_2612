@@ -18,8 +18,6 @@ use super::routing::{RoutedPath, Router, RoutingError};
 pub const MIN_STRAIGHT_DISTANCE_M: f64 = 20.0;
 /// 最短時間経路からの追加許容時間（分、両端を含む）。
 pub const MAX_DETOUR_RANGE_MIN: RangeInclusive<f64> = 0.0..=30.0;
-/// `max_detour_min` 省略時の値（分）。
-pub const DEFAULT_MAX_DETOUR_MIN: f64 = 10.0;
 /// 返す候補の上限。
 pub const MAX_CANDIDATES: usize = 6;
 /// 集合Bの経路周辺半径（m）。応答の `unattributed_radius_m`。新方式（schema 3）では、
@@ -95,7 +93,8 @@ pub struct RouteQuery {
     origin: LatLon,
     dest: LatLon,
     mode: Mode,
-    max_detour_min: f64,
+    /// 省略（`None`）なら許容時間を最短時間経路から自動で決める。
+    max_detour_min: Option<f64>,
     conditions: ConditionFilter,
 }
 
@@ -104,11 +103,13 @@ impl RouteQuery {
         origin: LatLon,
         dest: LatLon,
         mode: Mode,
-        max_detour_min: f64,
+        max_detour_min: Option<f64>,
         conditions: ConditionFilter,
     ) -> Result<Self, QueryError> {
         validate_endpoints(origin, dest)?;
-        validate_max_detour(max_detour_min)?;
+        if let Some(minutes) = max_detour_min {
+            validate_max_detour(minutes)?;
+        }
         Ok(Self {
             origin,
             dest,
@@ -130,7 +131,7 @@ impl RouteQuery {
         self.mode
     }
 
-    pub fn max_detour_min(&self) -> f64 {
+    pub fn max_detour_min(&self) -> Option<f64> {
         self.max_detour_min
     }
 
@@ -393,6 +394,10 @@ pub struct RouteOutcome {
     pub risk_reduction_percent: Option<f64>,
     pub reason: String,
     pub warnings: Vec<String>,
+    /// この応答で使った許容時間（分）。手動なら要求の値そのまま。
+    pub detour_limit_min: f64,
+    /// 許容時間を自動で決めたか。
+    pub detour_limit_auto: bool,
     pub risk_note: String,
     /// 小数2桁のミリ秒。
     pub aggregation_ms: f64,

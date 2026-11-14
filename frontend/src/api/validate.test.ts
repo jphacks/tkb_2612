@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  autoDetourLimitMin,
   createDemoConditions,
   createDemoRouteResponse,
   DEMO_PLACES,
@@ -21,6 +22,16 @@ const request: RouteRequest = {
   weather: "雨",
   day_type: "平日",
   max_detour_min: 10,
+};
+
+// max_detour_min を省略した自動の要求。
+const autoRequest: RouteRequest = {
+  origin: request.origin,
+  dest: request.dest,
+  mode: request.mode,
+  period: request.period,
+  weather: request.weather,
+  day_type: request.day_type,
 };
 
 describe("API 2.0 contract and cross-field validation", () => {
@@ -117,6 +128,91 @@ describe("API 2.0 contract and cross-field validation", () => {
     );
     expect(result.safest_id).toBe(result.fastest_id);
     expect(result.candidates[1].within_detour).toBe(false);
+  });
+
+  it("accepts an automatic detour limit and echoes a manual one", () => {
+    const auto = validateRouteResponse(
+      createDemoRouteResponse(autoRequest),
+      autoRequest,
+    );
+    expect(auto.detour_limit_auto).toBe(true);
+    expect(auto.detour_limit_min).toBeGreaterThanOrEqual(3);
+    expect(auto.detour_limit_min).toBeLessThanOrEqual(30);
+    expect(auto.detour_limit_min).toBe(
+      autoDetourLimitMin(auto.candidates[0].duration),
+    );
+
+    const manual = validateRouteResponse(
+      createDemoRouteResponse({ ...request, max_detour_min: 7.5 }),
+      { ...request, max_detour_min: 7.5 },
+    );
+    expect(manual.detour_limit_auto).toBe(false);
+    expect(manual.detour_limit_min).toBe(7.5);
+  });
+
+  it.each<[string, (result: RouteResponse) => void, RouteRequest]>([
+    [
+      "manual limit not echoed",
+      (result) => {
+        result.detour_limit_min = 9;
+      },
+      request,
+    ],
+    [
+      "manual response marked automatic",
+      (result) => {
+        result.detour_limit_auto = true;
+      },
+      request,
+    ],
+    [
+      "automatic response marked manual",
+      (result) => {
+        result.detour_limit_auto = false;
+      },
+      autoRequest,
+    ],
+    [
+      "automatic limit below 3 minutes",
+      (result) => {
+        result.detour_limit_min = 2.9;
+      },
+      autoRequest,
+    ],
+    [
+      "automatic limit above 30 minutes",
+      (result) => {
+        result.detour_limit_min = 30.1;
+      },
+      autoRequest,
+    ],
+  ])("rejects %s", (_, mutate, source) => {
+    const result = createDemoRouteResponse(source);
+    mutate(result);
+    expect(() => validateRouteResponse(result, source)).toThrow(/API契約/);
+  });
+
+  it("judges within_detour with the limit in the response, not the request", () => {
+    const result = createDemoRouteResponse(autoRequest);
+    result.safest_id = result.fastest_id;
+    result.middle_id = null;
+    result.extra_minutes = 0;
+    result.risk_reduction_percent = 0;
+    // 自動要求でも、応答が3分と言えば3分で判定する（旧来の10分ではない）。
+    result.detour_limit_min = 3;
+    const fastest = result.candidates[0];
+    for (const route of result.candidates) {
+      route.within_detour =
+        route.duration <= fastest.duration + result.detour_limit_min * 60 + 1e-6;
+      if (route.id !== result.fastest_id) route.navigation = null;
+    }
+    expect(result.candidates[1].within_detour).toBe(false);
+    expect(validateRouteResponse(result, autoRequest)).toBe(result);
+
+    result.candidates[1].within_detour = true;
+    expect(() => validateRouteResponse(result, autoRequest)).toThrow(
+      /API契約/,
+    );
   });
 
   it("uses null weather_match for all-weather and a count object for specified weather", () => {

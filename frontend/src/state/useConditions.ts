@@ -9,6 +9,7 @@ import type {
   LatLon,
   Scenario,
 } from "../lib/types";
+import { readDetourSetting, saveDetourSetting } from "./detourSetting";
 
 export type Departure = "now" | "custom";
 
@@ -37,7 +38,7 @@ const initialValues: ConditionValues = {
   period: "all",
   day_type: "all",
   weather: "all",
-  max_detour_min: 10,
+  max_detour_min: "auto",
 };
 
 const weatherReasons = {
@@ -60,7 +61,11 @@ type Options = {
  * Manual values are never overwritten, and older responses are discarded by generation.
  */
 export function useConditions({ origin, dest, scenario, onEdit }: Options) {
-  const [values, setValues] = useState<ConditionValues>(initialValues);
+  // 前回選んだ許容時間の設定だけを復元する。不正・読取不能なら自動。
+  const [values, setValues] = useState<ConditionValues>(() => ({
+    ...initialValues,
+    max_detour_min: readDetourSetting(),
+  }));
   const valuesRef = useRef(values);
   const [auto, setAuto] = useState<AutoFields>({
     period: true,
@@ -93,6 +98,8 @@ export function useConditions({ origin, dest, scenario, onEdit }: Options) {
       if (key in patch) nextAuto[key] = false;
     autoRef.current = nextAuto;
     setAuto(nextAuto);
+    if (patch.max_detour_min !== undefined)
+      saveDetourSetting(patch.max_detour_min);
     updateValues({ ...valuesRef.current, ...patch });
   }
 

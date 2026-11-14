@@ -111,6 +111,9 @@ const noLocation = conditionsExamples.noLocation.value as ConditionsResponse;
 const routeExample = openapi.paths["/api/route"].post.responses["200"].content[
   "application/json"
 ].examples.thinnedPoints.value as RouteResponse;
+// 初期値は自動なので、要求は max_detour_min を省略する。契約例の10分を
+// 自動で決めた値として扱い、応答の検証と表示を確認する。
+routeExample.detour_limit_auto = true;
 const c2 = JSON.parse(
   read("../../backend/tests/fixtures/api-responses.json"),
 ).responses;
@@ -281,8 +284,8 @@ describe("live App wiring (frontend-spec 3, 4, 5, 11)", () => {
       period: "昼",
       day_type: "休日",
       weather: "雨",
-      max_detour_min: 10,
     });
+    expect(lastRequest()).not.toHaveProperty("max_detour_min");
     const options = counter.fetch.mock.calls.find(
       ([input]) => input === "/api/route",
     )![1]!;
@@ -337,7 +340,9 @@ describe("live App wiring (frontend-spec 3, 4, 5, 11)", () => {
     await user.click(screen.getByRole("radio", { name: "平日" }));
     await user.click(screen.getByRole("radio", { name: "日時を指定" }));
     await ready();
-    expect(screen.queryAllByText("手動")).toHaveLength(0);
+    expect(
+      screen.queryAllByText("手動", { selector: ".source-tag" }),
+    ).toHaveLength(0);
     // モード切替だけでなく、日時指定のまま時刻を編集した場合も自動に戻す。
     await user.click(screen.getByRole("radio", { name: "雪" }));
     await user.click(screen.getByRole("radio", { name: /夕 16:00/ }));
@@ -346,7 +351,9 @@ describe("live App wiring (frontend-spec 3, 4, 5, 11)", () => {
       target: { value: "2026-11-03T14:30" },
     });
     await ready();
-    expect(screen.queryAllByText("手動")).toHaveLength(0);
+    expect(
+      screen.queryAllByText("手動", { selector: ".source-tag" }),
+    ).toHaveLength(0);
     expect(screen.getByRole("radio", { name: "雨" })).toHaveAttribute(
       "aria-checked",
       "true",
@@ -712,6 +719,7 @@ describe("live Appの地図初期化との競合", () => {
           ].examples.singleRoute.value,
         ) as RouteResponse;
         latest.effective_conditions = { ...routeExample.effective_conditions };
+        latest.detour_limit_auto = true;
         const next = deferred<Response>();
         routeHandler = () => next.promise;
         await user.click(screen.getByRole("button", { name: "再検索" }));

@@ -90,7 +90,7 @@ async fn prepare(
         tokio::task::spawn_blocking(move || -> Result<Vec<u8>, ApiError> {
             let _permit = permit;
             let outcome = engine.evaluate(&query, candidates, &cancel)?;
-            let body = check_detour(&outcome, query.max_detour_min())
+            let body = check_detour(&outcome)
                 .and_then(|()| render_route_response(&outcome))
                 .map_err(|e| {
                     tracing::error!(problem = %e.0, "route応答の検査に失敗しました");

@@ -78,6 +78,11 @@ export function RouteResultNotes({ result }: Props) {
   return (
     <section className="route-result-notes" aria-label="検索結果の説明">
       <p>{COMPARISON_NOTICE}</p>
+      <p>
+        {`許容時間 +${result.detour_limit_min.toFixed(1)}分${
+          result.detour_limit_auto ? "（自動）" : ""
+        }`}
+      </p>
       {result.safest_id === null && (
         <p>全候補で該当する事故がないため、{SAFE_LABEL}の経路は選んでいません。</p>
       )}

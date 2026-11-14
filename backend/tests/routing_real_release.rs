@@ -102,7 +102,7 @@ impl QueryFixture {
             LatLon::new(self.origin.lat, self.origin.lon),
             LatLon::new(self.dest.lat, self.dest.lon),
             mode,
-            self.max_detour_min,
+            Some(self.max_detour_min),
             conditions,
         )
         .unwrap_or_else(|e| panic!("{}: 問い合わせが不正: {e:?}", self.id));
@@ -352,7 +352,7 @@ fn run_query(
             if let Err(reason) = check_guidance(&outcome) {
                 reasons.push(format!("check_guidance: {reason}"));
             }
-            if let Err(reason) = check_detour(&outcome, query.query.max_detour_min()) {
+            if let Err(reason) = check_detour(&outcome) {
                 reasons.push(format!("check_detour: {}", reason.0));
             }
             let render_bytes = match render_route_response(&outcome) {

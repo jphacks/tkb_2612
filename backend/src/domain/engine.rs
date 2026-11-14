@@ -50,6 +50,16 @@ impl AccidentEngine {
     }
 }
 
+/// 旧方式の手動の許容時間 D（秒）。`D = max_detour_min × 60`。
+pub fn manual_detour_s(max_detour_min: f64) -> f64 {
+    max_detour_min * 60.0
+}
+
+/// 旧方式の自動の許容時間 D（秒）。`D = min(1800, max(180, 6 × floor(T0 / 20)))`。
+pub fn auto_detour_s(fastest_duration_s: f64) -> f64 {
+    (6.0 * (fastest_duration_s / 20.0).floor()).clamp(180.0, 1800.0)
+}
+
 /// `{d}` の表記。整数ならそのまま（10）、それ以外は最短の表記（7.5）。
 pub fn format_minutes(minutes: f64) -> String {
     if minutes.fract() == 0.0 {
@@ -132,7 +142,12 @@ impl RouteEngine for AccidentEngine {
             })
             .expect("候補は1本以上");
         let fastest_duration = routes[fastest].duration_s;
-        let limit_s = fastest_duration + query.max_detour_min() * 60.0 + DETOUR_EPSILON_S;
+        let detour_limit_min = match query.max_detour_min() {
+            Some(max_detour_min) => max_detour_min,
+            None => py_round(auto_detour_s(fastest_duration) / 60.0, 1),
+        };
+        let detour_limit_auto = query.max_detour_min().is_none();
+        let limit_s = fastest_duration + detour_limit_min * 60.0 + DETOUR_EPSILON_S;
         let extra: Vec<f64> = routes
             .iter()
             .map(|r| py_round((r.duration_s - fastest_duration) / 60.0, 3))
@@ -169,7 +184,7 @@ impl RouteEngine for AccidentEngine {
                     format!(
                         "取得した{}候補のうち、最短時間経路から+{}分以内で、距離で重み付けしたリスクが最小の経路を選びました。追加{:.1}分、リスク{:.1}%減です。",
                         routes.len(),
-                        format_minutes(query.max_detour_min()),
+                        format_minutes(detour_limit_min),
                         extra[s],
                         // 2経路が異なるなら基準リスクは正で、削減率は必ずある
                         risk_reduction_percent.unwrap_or(0.0),
@@ -234,6 +249,8 @@ impl RouteEngine for AccidentEngine {
             risk_reduction_percent,
             reason,
             warnings,
+            detour_limit_min,
+            detour_limit_auto,
             risk_note: risk_note(conditions.weather),
             aggregation_ms,
         })

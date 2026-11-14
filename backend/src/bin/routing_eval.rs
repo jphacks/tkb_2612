@@ -2471,19 +2471,24 @@ impl EngineRunner<'_> {
         rec.insert("detour_min".into(), json!(detour_min));
         rec.insert("conditions".into(), conditions_json(filter));
 
-        let query =
-            match RouteQuery::new(od.origin, od.dest, od.mode, f64::from(detour_min), filter) {
-                Ok(query) => query,
-                Err(error) => {
-                    rec.insert("status".into(), json!("contract_violation"));
-                    rec.insert("error".into(), json!(format!("{error:?}")));
-                    rec.insert(
-                        "total_ms".into(),
-                        json!(started.elapsed().as_secs_f64() * 1e3),
-                    );
-                    return Self::finish_error(rec);
-                }
-            };
+        let query = match RouteQuery::new(
+            od.origin,
+            od.dest,
+            od.mode,
+            Some(f64::from(detour_min)),
+            filter,
+        ) {
+            Ok(query) => query,
+            Err(error) => {
+                rec.insert("status".into(), json!("contract_violation"));
+                rec.insert("error".into(), json!(format!("{error:?}")));
+                rec.insert(
+                    "total_ms".into(),
+                    json!(started.elapsed().as_secs_f64() * 1e3),
+                );
+                return Self::finish_error(rec);
+            }
+        };
         let cancel = CancelToken::with_timeout(self.timeout);
         let result = self.engine.evaluate_with_report(&query, &cancel);
         rec.insert(

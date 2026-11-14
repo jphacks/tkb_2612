@@ -215,7 +215,8 @@ M5で、区分ごとの事故率（国交省の走行台キロあたりの値）
 
 ```text
 T0 = 最短時間経路の所要時間
-B  = T0 + 60 · max_detour_min        // max_detour_min は0〜30分（behavior.md）
+B  = T0 + D                         // D は許容時間。手動は 60 · max_detour_min（0〜30分）、
+                                     // 自動は clamp(0.3 · T0, 3分, 30分)（behavior.md 4章「許容時間」）
 min_P  R(P)   subject to  T(P) ≤ B
 ```
 
