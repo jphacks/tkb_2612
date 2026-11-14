@@ -16,7 +16,7 @@ export interface paths {
         /**
          * 最短時間経路と事故考慮経路を比較する
          * @description 候補1〜6本を返す。最短は所要時間最小で、最短距離ではない。
-         *     直線距離20〜30000m、候補distanceは80000m以下（最短時間経路が超えたら422、他の候補は外す）。
+         *     直線距離20m以上（上限なし）、候補distanceは250000m以下（最短時間経路が超えたら422、他の候補は外す）。
          *     リクエストはUTF-8 JSON、1〜16384バイト。大きすぎる場合も400。
          *     Content-Type不正・JSON不正・値不正は外部呼出し前に400。
          *     unknownキーは無視。hour/period整合と距離等の相関制約はbehavior.mdを参照。
@@ -33,11 +33,10 @@ export interface paths {
          *     候補が取得済みでも全体期限後に200を返さない。
          *     gzipを許可するAccept-Encodingなら応答圧縮必須、Content-Encoding: gzipとVary: Accept-Encodingを返す。
          *     identity要求は非圧縮。サイズ・スキーマ検査は展開後のJSONに適用する。
-         *     全応答は概ね16MB、負荷基準は非圧縮16,100,000バイト。圧縮率は保証しない。
+         *     全応答は理論上限で概ね17MB、負荷基準は非圧縮17300000バイト。圧縮率は保証しない。
          *     クライアント期限180秒はfetch開始から本文全受信・展開・解析/検査完了まで。ヘッダーで解除しない。
-         *     想定下り1Mbps以上・RTT 300ms以下。非圧縮16.1MBは転送129秒、サーバ等を含む見積り171秒。
-         *     サーバは本文の送信開始から120秒（ROUTE_TRANSFER_TIMEOUT_MS）で接続を切る。既定値のままでは非圧縮16.1MBを1Mbpsで送り切れない。
-         *     Cloud Run要求タイムアウトは180秒以上。
+         *     想定下り1Mbps以上・RTT 300ms以下。非圧縮17.3MBは転送138.4秒、サーバ等を含む見積り180.4秒で、この理論上限の最悪の組合せでは180秒で打ち切られうる。
+         *     サーバの転送待ちは送信開始から140秒、Cloud Run要求タイムアウトは180秒以上。
          *     Cloud Run＋IAP経由の圧縮/ヘッダー/期限は要確認。途中切断は本文不完了として失敗扱い。
          *     詳細と回線制限下の本文受信完了の受け入れはbehavior.md 7章。
          */
@@ -478,8 +477,8 @@ export interface components {
         /**
          * @description 移行追加。選定1〜3経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。
          *     距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。
-         *     110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。
-         *     選定経路分のnavigation合計は空白なしUTF-8 JSONで10200000バイト以下を検証する。
+         *     340000m/9767区間は250km・15000頂点からの保守上限で、候補受付の250km制限を変更しない。
+         *     選定経路分のnavigation合計は空白なしUTF-8 JSONで11400000バイト以下を検証する。
          */
         NavigationData: {
             /** @description 元geometry全頂点の緯度の算術平均φ、度。behavior.md 6章の局所平面投影に使用。 */
@@ -774,7 +773,7 @@ export interface components {
                  * @example {
                  *       "error": {
                  *         "code": "invalid_request",
-                 *         "message": "出発地と目的地の直線距離は20m〜30kmにしてください。"
+                 *         "message": "出発地と目的地の直線距離は20m以上にしてください。"
                  *       }
                  *     }
                  */
@@ -821,7 +820,7 @@ export interface components {
                 "application/json": components["schemas"]["ErrorResponse"];
             };
         };
-        /** @description 422 route_too_long。最短時間経路のdistanceが80000m超（旧方式は初回の候補distanceまたはgeometry_lengthが80000m超）。 */
+        /** @description 422 route_too_long。最短時間経路のdistanceが250000m超、または出発地と目的地の直線距離が265000m超（探索せずに返す）（旧方式は初回の候補distanceまたはgeometry_lengthが250000m超）。 */
         RouteTooLong: {
             headers: {
                 "Cache-Control": components["headers"]["NoStore"];
@@ -833,7 +832,7 @@ export interface components {
                  * @example {
                  *       "error": {
                  *         "code": "route_too_long",
-                 *         "message": "候補経路が80kmを超えました。近い地点を指定してください。"
+                 *         "message": "候補経路が250kmを超えました。近い地点を指定してください。"
                  *       }
                  *     }
                  */

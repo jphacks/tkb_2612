@@ -11,18 +11,14 @@ const text = (code: string, message = "サーバーの説明", status?: number) 
   );
 
 describe("describeError (frontend-spec 5 error table)", () => {
-  it("keeps the 400 message and separates the 30km straight-line limit from the 80km route limit", () => {
+  it("keeps the 400 message and adds the input hint", () => {
     const shown = text(
       "invalid_request",
-      "出発地と目的地の直線距離は20m〜30kmにしてください。",
+      "出発地と目的地の直線距離は20m以上にしてください。",
       400,
     );
-    expect(shown).toContain(
-      "出発地と目的地の直線距離は20m〜30kmにしてください。",
-    );
-    expect(shown).toContain("入力を見直してください");
-    expect(shown).toMatch(
-      /直線距離の上限30km.*候補経路の長さの上限80km.*別の制限/,
+    expect(shown).toBe(
+      "出発地と目的地の直線距離は20m以上にしてください。 入力を見直してください。",
     );
   });
 
@@ -41,7 +37,7 @@ describe("describeError (frontend-spec 5 error table)", () => {
   });
 
   it("guides each known code by code, not by the message text", () => {
-    expect(text("route_too_long", "x", 422)).toMatch(/80km.*近づけて/);
+    expect(text("route_too_long", "x", 422)).toMatch(/250km.*近づけて/);
     expect(text("no_route", "x", 502)).toMatch(/道路に近い地点/);
     expect(text("external_api_error", "x", 502)).toMatch(
       /外部サービス.*再試行/,

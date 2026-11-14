@@ -739,7 +739,7 @@ edge-severity（深刻度を事故単位、sev_i = 10×死者 + 負傷者）：
   risk_v = 同じ形（ℓ=1、β の代わりに β_cluster、c_k は掛けない）
 ```
 
-固定小数点は `RISK_SCALE=1e6` のまま。長さは最大80,000m なので、`length` の固定小数点は最大 8e10、`random` でも最大 1.6e11 で `u64` に収まり、0.1m は 1e5 なので長さの丸めで0にならない。
+固定小数点は `RISK_SCALE=1e6` のまま。長さは最大250,000m なので、`length` の固定小数点は最大 2.5e11、`random` でも最大 5e11 で `u64` に収まり、0.1m は 1e5 なので長さの丸めで0にならない。
 
 ### 18.2 `routing_eval` の評価サブコマンド（M5.5・M5.8）
 
@@ -757,7 +757,7 @@ cargo run --release --manifest-path backend/Cargo.toml --bin routing_eval -- eng
 - 1件ごとに `id`・`mode`・`detour_min`・`conditions`・`straight_m`・`status`・エラーのメッセージ・`total_ms`（`evaluate` の壁時計）・`aggregation_ms`・`invariants_ok`（`check_outcome_invariants` の結果と、通らなければメッセージ）・`fastest`・`safest`・`candidate_count`・`risk_reduction_percent`・`dropped_too_long` を記録する。`status` は `ok`・`no_route`・`route_too_long`・`interrupted`・`contract_violation`・`timeout` のいずれかである。
 - 候補ごとに `distance_m`・`duration_s`・`extra_minutes`・`accident_count`・`fatal_accidents`・`deaths`・`injuries`・`weighted_risk`・`high_risk_total`・`high_risk_sections`（数）・`vertex_count`・`full_vertex_count`（間引く前の頂点数）・`simplified`・`accident_point_count` を記録する。
 - 高リスク区間のしきい値の比較のため、候補ごとに、75mのsidごとの集合Bの事故の件数と深刻度の合計から、`t3`（件数3以上、`HIGH_RISK_MIN_ACCIDENTS`）と `t2`（件数2以上かつ深刻度の合計3以上）の「高リスクのsidの数」（`t3_sids`・`t2_sids`）と「表示用の区間の数」（`t3_sections`・`t2_sections`、`display_sections_checked` と同じ組み立て）を記録する。`t3` が応答の `high_risk_total`・`high_risk_sections` と一致しなければ、記録に `t3_mismatch: true` を入れる。
-- `dropped_too_long` は、候補の整理で80,000mを超えるために外した候補の数（探索の結果から数える）。
+- `dropped_too_long` は、候補の整理で250,000mを超えるために外した候補の数（探索の結果から数える）。
 - 処理の前後にVmRSS・VmHWM・読込の時間を標準エラーに出す。記録とは別に、`--out` の拡張子を `.meta.json` にしたファイルへ `release_id`・`load_seconds`・`process_seconds`・`vm_hwm_mb`・`threads`・`records` を書く。
 
 `engine-summary`：

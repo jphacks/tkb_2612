@@ -100,11 +100,9 @@ fn straight_distance_bounds_are_inclusive() {
         Err(QueryError::StraightDistance)
     );
     assert_eq!(validate_endpoints(o, east_of(o, 20.01)), Ok(()));
-    assert_eq!(validate_endpoints(o, east_of(o, 29_999.9)), Ok(()));
-    assert_eq!(
-        validate_endpoints(o, east_of(o, 30_000.1)),
-        Err(QueryError::StraightDistance)
-    );
+    // 上限はない（issue #39）
+    assert_eq!(validate_endpoints(o, east_of(o, 30_000.1)), Ok(()));
+    assert_eq!(validate_endpoints(o, east_of(o, 1_000_000.0)), Ok(()));
     assert_eq!(
         validate_endpoints(LatLon::new(50.0, 139.0), o),
         Err(QueryError::InvalidOrigin)

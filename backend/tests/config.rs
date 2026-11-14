@@ -96,7 +96,7 @@ fn defaults_follow_chapter_6() {
     assert_eq!(config.request_timeout, Duration::from_millis(35_000));
     assert_eq!(
         config.route_transfer_timeout,
-        Duration::from_millis(120_000)
+        Duration::from_millis(140_000)
     );
     assert_eq!(config.upstream_gate, GateBackend::Firestore);
     assert_eq!(config.open_meteo_api_key, None);

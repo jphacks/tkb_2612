@@ -191,7 +191,7 @@ fn more_than_100_targets_are_all_navigation_sections() {
 
 #[test]
 fn large_routes_are_not_truncated() {
-    // 15,000頂点・約80km・0長辺多数。対象と非対象を交互にして区間数を最大にする
+    // 15,000頂点・約80km・0長辺多数（250kmにする前の上限の大きさ）。対象と非対象を交互にして区間数を最大にする
     let kx = METERS_PER_DEGREE * (35f64 * std::f64::consts::PI / 180.0).cos();
     let mut route = Vec::with_capacity(15_000);
     for i in 0..15_000 {
@@ -237,29 +237,29 @@ fn all_zero_length_route_has_zero_length() {
 
 #[test]
 fn maximum_section_count_at_the_schema_bound() {
-    // 関数単体の上限試験：behavior.md 7章の保守的な上限（元辺14,999本、小線分16,466本、
-    // 結合後8,233区間）に届く入力。1,467本の辺は100m（2分割）、残りは0長辺（1本）にする。
-    // 有効な経路（80km以下）ではここまで届かないため、経路の検証を通さずに関数へ渡す
+    // 関数単体の上限試験：behavior.md 7章の保守的な上限（元辺14,999本、小線分19,533本、
+    // 結合後9,767区間）に届く入力。4,534本の辺は100m（2分割）、残りは0長辺（1本）にする。
+    // 有効な経路（250km以下）ではここまで届かないため、経路の検証を通さずに関数へ渡す
     let kx = METERS_PER_DEGREE * (35f64 * std::f64::consts::PI / 180.0).cos();
     let mut route = vec![LonLat::new(139.0, 35.0)];
     let mut lon = 139.0;
     for edge in 0..14_999 {
-        if edge < 1_467 {
+        if edge < 4_534 {
             lon += 100.0 / kx;
         }
         route.push(LonLat::new(lon, 35.0));
     }
     let subdivision = Subdivision::new(&route);
     assert_eq!(subdivision.edge_lengths.len(), 14_999);
-    assert_eq!(subdivision.segments.len(), 16_466);
-    let weights: Vec<u64> = (0..16_466)
+    assert_eq!(subdivision.segments.len(), 19_533);
+    let weights: Vec<u64> = (0..19_533)
         .map(|sid| if sid % 2 == 0 { 3 } else { 2 })
         .collect();
     let (display, total) = display_sections(&subdivision, &weights);
-    assert_eq!(total, 8_233);
+    assert_eq!(total, 9_767);
     assert_eq!(display.len(), 100);
     let nav = navigation_data(&subdivision, &weights);
-    assert_eq!(nav.sections.len(), 8_233);
+    assert_eq!(nav.sections.len(), 9_767);
     assert_eq!(nav.vertex_distances_m.len(), 15_000);
     check_correlation(&nav, total, &subdivision);
 }

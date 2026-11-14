@@ -190,7 +190,7 @@ impl Config {
             request_timeout: env.millis("REQUEST_TIMEOUT_MS", 35_000, 1, MAX_DURATION_MS)?,
             route_transfer_timeout: env.millis(
                 "ROUTE_TRANSFER_TIMEOUT_MS",
-                120_000,
+                140_000,
                 1,
                 MAX_ROUTE_TRANSFER_TIMEOUT_MS,
             )?,

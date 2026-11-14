@@ -357,14 +357,14 @@ fn od_sample_rejects_bad_arguments() {
         args.extend_from_slice(extra);
         eval(&args)
     };
-    // 距離帯が契約の範囲（20〜30,000m）の外、または逆
+    // 距離帯が契約の下限（20m）未満、有限でない、または逆
     assert!(
         !base(&["--mode", "car", "--min-m", "5", "--max-m", "100"])
             .status
             .success()
     );
     assert!(
-        !base(&["--mode", "car", "--min-m", "500", "--max-m", "40000"])
+        !base(&["--mode", "car", "--min-m", "500", "--max-m", "inf"])
             .status
             .success()
     );

@@ -1,8 +1,7 @@
 import { ApiError } from "./errors";
 
-/** Route-search hint for 400: the 30km straight-line limit is not the 80km route limit. */
-export const ROUTE_INPUT_HINT =
-  "入力を見直してください。出発地と目的地の直線距離の上限30kmは、候補経路の長さの上限80kmとは別の制限です。";
+/** Route-search hint for 400. The route-length limit (250km) is a separate 422 error. */
+export const ROUTE_INPUT_HINT = "入力を見直してください。";
 
 const RELOAD =
   "安全な場所で止まってから、ページを再読み込みしてログインし直してください。";
@@ -10,7 +9,7 @@ const RELOAD =
 /** Messages for codes the frontend handles itself (frontend-spec 5, loading/empty/error table). */
 const messages: Record<string, string> = {
   route_too_long:
-    "候補経路の長さが80kmを超えました。出発地と目的地を近づけて再検索してください。",
+    "候補経路の長さが250kmを超えました。出発地と目的地を近づけて再検索してください。",
   no_route:
     "経路が見つかりませんでした。出発地や目的地を道路に近い地点へ変更してください。",
   external_api_error:

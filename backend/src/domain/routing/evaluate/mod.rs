@@ -10,6 +10,7 @@ pub mod guidance;
 use std::time::Instant;
 
 use crate::contract::engine::{MAX_ACCIDENT_POINTS, MAX_HIGH_RISK_SECTIONS};
+use crate::contract::geo::straight_distance_m;
 use crate::contract::{
     AccidentPoint, AccidentTotals, CancelToken, EngineError, EvaluatedRoute, GuidanceStep,
     HighRiskSegment, Interrupt, Maneuver, Mode, NavigationData, RouteEngine, RouteOutcome,
@@ -106,7 +107,7 @@ pub struct CandidateReport {
 pub struct EvaluationReport {
     /// `RouteOutcome::candidates` と同じ順の候補ごとの値。
     pub candidates: Vec<CandidateReport>,
-    /// 探索の候補の整理で80,000mを超えるために外した候補の数。
+    /// 探索の候補の整理で250,000mを超えるために外した候補の数。
     pub dropped_too_long: u64,
     /// 中間案を探索した場合の `search_best` の状態。探索しなければ `None`。
     pub middle_status: Option<SearchStatus>,
@@ -223,6 +224,16 @@ pub fn evaluate(
     evaluate_with_report(engine, query, cancel).map(|(outcome, _)| outcome)
 }
 
+/// 探索の前に `RouteTooLong` とする、出発地と目的地の直線距離（m、behavior.md 5章 手順1.1）。
+///
+/// 経路の距離は吸着点間の直線距離以上で、吸着は各300m以内なので、直線距離が
+/// 250,000m＋600mを超えれば p0 も250,000mを超えるのが原則である。ただし厳密な保証ではない。
+/// 辺の長さは辺ごとに0.1m単位へ四捨五入され（1辺あたり最大0.05m短くなる）、局所平面近似の
+/// 中央緯度も線分ごとに異なる。余裕の約14.4kmを丸めだけで使い切るには、平均0.9m未満の辺が
+/// 約29万本並び、すべて最大限切り捨てられる必要があり、実際の道路網の経路では起きない。
+/// これがないと、遠い2点でも全国を探索して期限（35秒）やメモリを使い切ってから422を返す。
+pub const EARLY_ROUTE_TOO_LONG_STRAIGHT_M: f64 = 265_000.0;
+
 /// [`evaluate`] と同じ計算を行い、応答に出さない計測用の値も返す（`routing_eval engine-batch`）。
 pub fn evaluate_with_report(
     engine: &RoutingEngine,
@@ -241,6 +252,11 @@ pub fn evaluate_with_report(
     let end = snap(graph, &data.topology, &data.odindex, query.dest(), mode)
         .ok_or(EngineError::NoRoute)?;
     cancel.check()?;
+
+    // 手順1.1：直線距離で明らかに長すぎる要求は、探索せずに `RouteTooLong` にする（issue #39）。
+    if straight_distance_m(query.origin(), query.dest()) > EARLY_ROUTE_TOO_LONG_STRAIGHT_M {
+        return Err(EngineError::RouteTooLong);
+    }
 
     // 手順2〜8：探索。
     let ctx = SearchContext {
@@ -286,7 +302,7 @@ pub fn evaluate_with_report(
             "探索の候補が0本です".to_owned(),
         ));
     }
-    // 中間案と同じ経路の候補の添字（80kmの検査などで落ちていれば `None`）。
+    // 中間案と同じ経路の候補の添字（250kmの検査などで落ちていれば `None`）。
     let matching_middle = search
         .middle
         .as_ref()

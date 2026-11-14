@@ -6,8 +6,8 @@
 //! 長さ×乱数を使う。記録するリスクは、この目的とは別に `RiskView` で計算し直す。
 //!
 //! 固定小数点の倍率は [`crate::domain::routing::RISK_SCALE`]（1e6）をそのまま使う。長さは最大
-//! 80,000m（`candidates::MAX_ROUTE_DISTANCE_DM`）なので、長さの固定小数点は最大 8e10、乱数を
-//! 掛けても 1.6e11 で `u64` に収まる。0.1m は 1e5 になるので、長さの丸めで0になることもない。
+//! 250,000m（`candidates::MAX_ROUTE_DISTANCE_DM`）なので、長さの固定小数点は最大 2.5e11、乱数を
+//! 掛けても 5e11 で `u64` に収まる。0.1m は 1e5 になるので、長さの丸めで0になることもない。
 
 use std::collections::BTreeMap;
 

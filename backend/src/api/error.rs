@@ -75,7 +75,7 @@ impl ApiError {
             ApiError::InvalidRequest(message) | ApiError::ExternalApi(message) => message,
             ApiError::NotFound => "APIが見つかりません。",
             ApiError::MethodNotAllowed(_) => "このAPIでは指定のメソッドを使用できません。",
-            ApiError::RouteTooLong => "候補経路が80kmを超えました。近い地点を指定してください。",
+            ApiError::RouteTooLong => "候補経路が250kmを超えました。近い地点を指定してください。",
             ApiError::NoRoute => {
                 "経路が見つかりませんでした。地点や移動手段を変えて再試行してください。"
             }

@@ -511,25 +511,25 @@
         "start_segment_index": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 16465,
+          "maximum": 19532,
           "description": "結合した最初のsid（75m分割後、0始まり）。"
         },
         "end_segment_index": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 16465,
+          "maximum": 19532,
           "description": "結合した最後のsid、両端を含む。start_segment_index以上。"
         },
         "start_m": {
           "type": "number",
           "minimum": 0,
-          "maximum": 110000,
+          "maximum": 340000,
           "description": "経路先頭から区間先頭までの局所平面累積距離、m。behavior.md 6・7章。丸めなし。"
         },
         "end_m": {
           "type": "number",
           "minimum": 0,
-          "maximum": 110000,
+          "maximum": 340000,
           "description": "区間末尾までの同じ累積距離、m。start_m以上、navigation.length_m以下。0長も残す。"
         },
         "severity_weight": {
@@ -563,7 +563,7 @@
         "at_m": {
           "type": "number",
           "minimum": 0,
-          "maximum": 110000,
+          "maximum": 340000,
           "description": "経路始点から案内地点までの距離、m。vertex_distances_mと同じ軸で、丸めない。"
         }
       }
@@ -588,7 +588,7 @@
         "length_m": {
           "type": "number",
           "minimum": 0,
-          "maximum": 110000,
+          "maximum": 340000,
           "description": "局所平面での経路全長L、m。候補のdistance・geometry_lengthと異なる。0ならナビ開始不可、候補は保持。"
         },
         "vertex_distances_m": {
@@ -598,13 +598,13 @@
           "items": {
             "type": "number",
             "minimum": 0,
-            "maximum": 110000
+            "maximum": 340000
           },
           "description": "元geometryの各頂点までの累積距離、m。頂点数と同数、先頭0、非減少、末尾length_m。重複頂点を残しf64値を丸めず返す。"
         },
         "sections": {
           "type": "array",
-          "maxItems": 8233,
+          "maxItems": 9767,
           "items": {
             "$ref": "#/$defs/NavigationSection"
           },
@@ -620,7 +620,7 @@
           "description": "経路始点からの案内地点をat_m昇順で返す。最後の要素だけがarriveで、そのat_mはlength_mと完全に一致する。\nat_mは有限で0以上length_m以下、非減少。旧方式はarrive 1件だけを返す。\n"
         }
       },
-      "description": "移行追加。選定1〜3経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。\n距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。\n110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。\n選定経路分のnavigation合計は空白なしUTF-8 JSONで10200000バイト以下を検証する。\n"
+      "description": "移行追加。選定1〜3経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。\n距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。\n340000m/9767区間は250km・15000頂点からの保守上限で、候補受付の250km制限を変更しない。\n選定経路分のnavigation合計は空白なしUTF-8 JSONで11400000バイト以下を検証する。\n"
     },
     "WeatherMatch": {
       "type": "object",
@@ -690,7 +690,7 @@
         "distance": {
           "type": "number",
           "exclusiveMinimum": 0,
-          "maximum": 80000,
+          "maximum": 250000,
           "description": "経路距離、メートル（新方式は通った辺の長さの和、旧方式はOSRM）"
         },
         "geometry": {
