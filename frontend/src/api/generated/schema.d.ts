@@ -348,11 +348,8 @@ export interface components {
              * @default all
              */
             day_type: components["schemas"]["DayTypeInput"];
-            /**
-             * @description 最短時間経路からの追加許容時間、分。小数可。
-             * @default 10
-             */
-            max_detour_min: number;
+            /** @description 最短時間経路からの追加許容時間、分。小数可。省略すると自動（最短時間経路の所要時間の0.3倍を0.1分単位で切り捨て、3〜30分に収める。behavior.md 4章）。nullは不可。 */
+            max_detour_min?: number;
         } & {
             [key: string]: unknown;
         };
@@ -557,7 +554,7 @@ export interface components {
             exact_condition_count: components["schemas"]["Count"];
             /** @description (duration-fastest.duration)/60、分、小数3桁に丸め。 */
             extra_minutes: number;
-            /** @description duration<=fastest.duration+max_detour_min*60+1e-6。丸め前で判定。 */
+            /** @description duration<=fastest.duration+detour_limit_min*60+1e-6。丸め前で判定。 */
             within_detour: boolean;
         };
         EffectiveConditions: {
@@ -591,6 +588,10 @@ export interface components {
             reason: string;
             /** @description 追加候補失敗（旧方式のみ）、比較不可、全候補0件等。探索の打ち切りでは出さない。なしは空配列。 */
             warnings: string[];
+            /** @description この応答で使った許容時間、分。手動（要求にmax_detour_minあり）なら要求の値そのまま。自動なら0.1分単位の値（3〜30）。within_detour・reasonの{d}・中間案の上限はこの値から決める。 */
+            detour_limit_min: number;
+            /** @description 許容時間を自動で決めたか。要求でmax_detour_minを省略したときtrue。 */
+            detour_limit_auto: boolean;
             /**
              * @deprecated
              * @description 互換フィールド。条件の自動緩和は行わないため常に空配列。

@@ -102,7 +102,11 @@ pub const ORIGIN: LatLon = LatLon::new(35.0, 139.0);
 pub const DEST: LatLon = LatLon::new(35.0, 139.01);
 
 pub fn query(mode: Mode, max_detour_min: f64, conditions: ConditionFilter) -> RouteQuery {
-    RouteQuery::new(ORIGIN, DEST, mode, max_detour_min, conditions).unwrap()
+    RouteQuery::new(ORIGIN, DEST, mode, Some(max_detour_min), conditions).unwrap()
+}
+
+pub fn auto_query(mode: Mode, conditions: ConditionFilter) -> RouteQuery {
+    RouteQuery::new(ORIGIN, DEST, mode, None, conditions).unwrap()
 }
 
 pub fn path(duration_s: f64, distance_m: f64, coordinates: &[(f64, f64)]) -> RoutedPath {

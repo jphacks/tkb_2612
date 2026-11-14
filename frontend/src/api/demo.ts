@@ -241,6 +241,18 @@ function weatherOf(request: RouteRequest): Weather | "all" {
     : value;
 }
 
+/**
+ * 自動の許容時間（分）。最短時間 T0 秒の0.3倍を0.1分単位で切り捨て、
+ * 3〜30分に収める（behavior.md 4章の旧方式と同じ式）。
+ */
+export function autoDetourLimitMin(fastestDurationSeconds: number): number {
+  const seconds = Math.min(
+    1800,
+    Math.max(180, 6 * Math.floor(fastestDurationSeconds / 20)),
+  );
+  return round(seconds / 60, 1);
+}
+
 export function createDemoRouteResponse(
   request: RouteRequest,
   scenario: "normal" | "same" | "middle" | "zero" = "normal",
@@ -251,12 +263,17 @@ export function createDemoRouteResponse(
   const period = periodOf(request);
   const weather = weatherOf(request);
   const dayType = request.day_type ?? "all";
-  const maxDetour = request.max_detour_min ?? 10;
   const speed = request.mode === "car" ? 9 : request.mode === "bike" ? 4 : 1.3;
   const baseTime = Math.max(
     180,
     Math.round((distance(start, end) * 1.15) / speed),
   );
+  const detourAuto = request.max_detour_min === undefined;
+  // フロントで計算し直さず、この応答が使った許容時間をそのまま返す。
+  const detourLimitMin = detourAuto
+    ? autoDetourLimitMin(baseTime)
+    : request.max_detour_min!;
+  const detourSeconds = detourLimitMin * 60;
 
   const navigations = new Map<string, NavigationData>();
   const indexes = scenario === "middle" ? [0, 1, 2] : [0, 1];
@@ -420,7 +437,7 @@ export function createDemoRouteResponse(
       navigation: null,
       exact_condition_count: count,
       extra_minutes: (duration - baseTime) / 60,
-      within_detour: duration <= baseTime + maxDetour * 60 + 1e-6,
+      within_detour: duration <= baseTime + detourSeconds + 1e-6,
     };
   });
   const fastest = candidates[0];
@@ -481,7 +498,9 @@ export function createDemoRouteResponse(
       ? "全候補で該当する過去の事故がないため、事故を考慮した経路は選んでいません。"
       : safest.id === fastest.id
         ? "今回は最短時間経路が事故を考慮した経路と同じです。"
-        : `取得した${candidates.length}候補のうち、最短時間経路から+${maxDetour}分以内で重みの合計が最小の候補を選びました。`,
+        : `取得した${candidates.length}候補のうち、最短時間経路から+${detourLimitMin}分以内で重みの合計が最小の候補を選びました。`,
+    detour_limit_min: detourLimitMin,
+    detour_limit_auto: detourAuto,
     warnings: [
       "デモデータです。経路の線・事故記録・所要時間は実際の道路や事故を示しません。",
       ...(scenario === "zero"

@@ -32,7 +32,8 @@ use crate::domain::routing::search::SearchStatus;
 use crate::domain::routing::search::candidates::same_route;
 use crate::domain::routing::search::endpoints::path_distance_dm;
 use crate::domain::routing::search::route::RouteError;
-use crate::domain::routing::search::route::find_routes_with_middle_ds;
+use crate::domain::routing::search::route::{DetourLimit, find_routes_with_detour};
+pub use crate::domain::routing::search::route::{MIDDLE_MIN_DETOUR_MIN, middle_search_detour_ds};
 use crate::domain::routing::snap::snap;
 
 use super::engine::RoutingEngine;
@@ -40,8 +41,6 @@ use super::engine::RoutingEngine;
 /// within_detourの判定の許容（秒）。
 const DETOUR_EPSILON_S: f64 = 1e-6;
 
-/// 中間案を探す許容時間の下限（分）。仮置き。docs/multi-route-design.md 4.1節
-pub const MIDDLE_MIN_DETOUR_MIN: f64 = 4.0;
 /// 中間案と事故考慮経路の所要時間の差の下限（秒）。仮置き。docs/multi-route-design.md 4.1節
 pub const MIDDLE_MIN_TIME_GAP_S: f64 = 60.0;
 /// 中間案の削減率が事故考慮経路の削減率に占める割合の下限。仮置き。docs/multi-route-design.md 4.1節
@@ -113,15 +112,6 @@ pub struct EvaluationReport {
     pub middle_status: Option<SearchStatus>,
     /// 中間案の楕円の切り出しと探索。中間案を探索しなければ0。
     pub middle_ms: f64,
-}
-
-/// 中間案を探す遠回りの上限（デシ秒）。許容時間の分単位の切り捨てが4分未満なら `None`。
-pub fn middle_search_detour_ds(max_detour_min: f64) -> Option<u64> {
-    let whole_min = max_detour_min.floor();
-    if whole_min < MIDDLE_MIN_DETOUR_MIN {
-        return None;
-    }
-    Some(600 * (whole_min / 2.0).floor() as u64)
 }
 
 /// 中間案の選定結果。
@@ -276,25 +266,21 @@ pub fn evaluate_with_report(
         mode,
         conditions,
     );
-    let detour_ds = (600.0 * query.max_detour_min()).floor() as u64;
-    let middle_detour_ds = middle_search_detour_ds(query.max_detour_min());
+    let detour = match query.max_detour_min() {
+        Some(max_detour_min) => DetourLimit::Manual(max_detour_min),
+        None => DetourLimit::Auto,
+    };
     let search = {
         let mut cost = RiskArcCost::new(&mut view);
-        find_routes_with_middle_ds(
-            &ctx,
-            &mut cost,
-            &start,
-            &end,
-            detour_ds,
-            middle_detour_ds,
-            cancel,
-        )
+        find_routes_with_detour(&ctx, &mut cost, &start, &end, detour, cancel)
     };
     cancel.check()?;
     let search = match search {
         Ok(search) => search,
         Err(error) => return Err(search_error(error, cancel)),
     };
+    let detour_limit_min = search.detour_limit_min;
+    let detour_limit_auto = query.max_detour_min().is_none();
     let mut candidates = Vec::with_capacity(search.candidates.len());
     let mut reports = Vec::with_capacity(search.candidates.len());
     if search.candidates.is_empty() {
@@ -416,7 +402,7 @@ pub fn evaluate_with_report(
         })
         .expect("候補は1本以上");
     let fastest_duration = candidates[fastest].duration_s;
-    let limit_s = fastest_duration + query.max_detour_min() * 60.0 + DETOUR_EPSILON_S;
+    let limit_s = fastest_duration + detour_limit_min * 60.0 + DETOUR_EPSILON_S;
     let mut extra: Vec<f64> = candidates
         .iter()
         .map(|c| py_round((c.duration_s - fastest_duration) / 60.0, 3))
@@ -486,7 +472,7 @@ pub fn evaluate_with_report(
             format!(
                 "道路網を探索して得た{}候補のうち、最短時間経路から+{}分以内で、推定リスクが最小の経路を選びました。追加{:.1}分、リスク{:.1}%減です。",
                 n,
-                format_minutes(query.max_detour_min()),
+                format_minutes(detour_limit_min),
                 extra[safest_index],
                 // 2経路が異なるなら基準リスクは正で、削減率は必ずある
                 risk_reduction_percent.unwrap_or(0.0),
@@ -553,6 +539,8 @@ pub fn evaluate_with_report(
         risk_reduction_percent,
         reason,
         warnings,
+        detour_limit_min,
+        detour_limit_auto,
         risk_note: routing_risk_note(mode, conditions.weather),
         aggregation_ms,
     };

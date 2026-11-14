@@ -269,29 +269,66 @@ export default function ConditionFields({
       </fieldset>
       <fieldset className="detour-field">
         <legend>何分まで遠回りできますか？</legend>
-        <div className="range-value">
-          <output htmlFor={compact ? "detour-compact" : "detour"}>
-            {values.max_detour_min}
-            <span>分まで</span>
-          </output>
+        <div
+          className="segmented"
+          role="radiogroup"
+          aria-label="許容時間の設定"
+        >
+          <button
+            type="button"
+            role="radio"
+            aria-checked={values.max_detour_min === "auto"}
+            onClick={() => {
+              if (values.max_detour_min !== "auto")
+                onChange({ max_detour_min: "auto" });
+            }}
+          >
+            自動（おすすめ）
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={values.max_detour_min !== "auto"}
+            onClick={() => {
+              // すでに手動ならスライダーの値を変えない（再クリックで10へ戻さない）。
+              if (values.max_detour_min === "auto")
+                onChange({ max_detour_min: 10 });
+            }}
+          >
+            手動
+          </button>
         </div>
-        <input
-          id={compact ? "detour-compact" : "detour"}
-          type="range"
-          min="0"
-          max="30"
-          step="1"
-          aria-label="許容追加時間"
-          value={values.max_detour_min}
-          onChange={(event) =>
-            onChange({ max_detour_min: Number(event.target.value) })
-          }
-        />
-        <div className="range-labels">
-          <span>0分</span>
-          <span>15分</span>
-          <span>30分</span>
-        </div>
+        {values.max_detour_min === "auto" ? (
+          <p className="field-help">
+            最短時間の0.3倍（3〜30分）で自動的に決めます。
+          </p>
+        ) : (
+          <>
+            <div className="range-value">
+              <output htmlFor={compact ? "detour-compact" : "detour"}>
+                {values.max_detour_min}
+                <span>分まで</span>
+              </output>
+            </div>
+            <input
+              id={compact ? "detour-compact" : "detour"}
+              type="range"
+              min="0"
+              max="30"
+              step="1"
+              aria-label="許容追加時間"
+              value={values.max_detour_min}
+              onChange={(event) =>
+                onChange({ max_detour_min: Number(event.target.value) })
+              }
+            />
+            <div className="range-labels">
+              <span>0分</span>
+              <span>15分</span>
+              <span>30分</span>
+            </div>
+          </>
+        )}
       </fieldset>
       {busy && (
         <p className="field-help" role="status">

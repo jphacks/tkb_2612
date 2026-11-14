@@ -24,6 +24,10 @@ use std::time::Duration;
 
 use accident_route_backend::contract::{Calendar, RouteEngine};
 use accident_route_backend::data;
+use accident_route_backend::domain::engine::format_minutes;
+use accident_route_backend::domain::routing::search::route::{
+    auto_detour_ds, detour_limit_min_from_ds,
+};
 use accident_route_backend::providers::gate::{Gate, GatePolicy, LocalGateStore};
 use accident_route_backend::providers::http::UpstreamClient;
 use accident_route_backend::providers::open_meteo::OpenMeteoProvider;
@@ -202,6 +206,50 @@ async fn check_route_example(name: &str) {
     expected.as_object_mut().unwrap().remove("aggregation_ms");
     if let Some(diff) = diff_with_tolerance(&actual, &expected) {
         panic!("{name}: 応答が一致しない: {diff}");
+    }
+}
+
+#[tokio::test]
+async fn auto_detour_over_the_api_uses_the_fastest_duration() {
+    let started = start("twoSelected").await;
+    let mut request = canonical_request("twoSelected");
+    request.as_object_mut().unwrap().remove("max_detour_min");
+    assert!(request.get("max_detour_min").is_none());
+    let response = started
+        .app
+        .post_json("/api/route", request.to_string())
+        .await;
+    assert_eq!(response.status, StatusCode::OK);
+
+    let body = response.json();
+    assert_eq!(body["detour_limit_auto"].as_bool(), Some(true));
+    let candidates = body["candidates"].as_array().unwrap();
+    let fastest_id = body["fastest_id"].as_str().unwrap();
+    let fastest = candidates
+        .iter()
+        .find(|c| c["id"].as_str() == Some(fastest_id))
+        .unwrap();
+    let t0_s = fastest["duration"].as_f64().unwrap();
+    let expected_ds = auto_detour_ds((t0_s * 10.0).round() as u64);
+    let expected_min = detour_limit_min_from_ds(expected_ds);
+    let detour_min = body["detour_limit_min"].as_f64().unwrap();
+    assert_eq!(detour_min, expected_min);
+    assert!(
+        body["reason"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("+{}分以内", format_minutes(expected_min))),
+        "{}",
+        body["reason"]
+    );
+    let limit_s = t0_s + detour_min * 60.0 + 1e-6;
+    for candidate in candidates {
+        assert_eq!(
+            candidate["within_detour"].as_bool().unwrap(),
+            candidate["duration"].as_f64().unwrap() <= limit_s,
+            "{}",
+            candidate["id"]
+        );
     }
 }
 

@@ -46,6 +46,32 @@ fn every_fixture_outcome_renders_to_the_fixture_json() {
 }
 
 #[test]
+fn detour_limit_is_rendered_after_warnings_with_the_auto_flag() {
+    let mut auto = expected_route_outcome("singleRoute");
+    auto.detour_limit_min = 3.0;
+    auto.detour_limit_auto = true;
+    let actual = render(&auto);
+    assert_eq!(actual["detour_limit_min"].as_f64(), Some(3.0));
+    assert_eq!(actual["detour_limit_auto"].as_bool(), Some(true));
+    // JSONの位置は warnings の後、relaxed_conditions の前（Valueのキー順は保存されないので文字列で見る）。
+    let text = String::from_utf8(render_route_response(&auto).unwrap()).unwrap();
+    let warnings = text.find("\"warnings\"").unwrap();
+    let detour = text.find("\"detour_limit_min\"").unwrap();
+    let auto_flag = text.find("\"detour_limit_auto\"").unwrap();
+    let relaxed = text.find("\"relaxed_conditions\"").unwrap();
+    assert!(warnings < detour && detour < auto_flag && auto_flag < relaxed);
+
+    let manual = expected_route_outcome("singleRoute");
+    assert!(!manual.detour_limit_auto);
+    assert_eq!(manual.detour_limit_min, 10.0);
+    assert_eq!(
+        render(&manual)["detour_limit_auto"].as_bool(),
+        Some(false),
+        "手動は要求の値そのまま"
+    );
+}
+
+#[test]
 fn safest_may_exist_without_any_accident_but_not_with_accidents() {
     // 全候補0件でもsafestを選んでよい。
     let mut no_accidents = expected_route_outcome("noAccidents");
@@ -580,13 +606,15 @@ fn top_level_reduction_must_match_safest_candidate() {
     assert!(message.contains("safestの値と一致しない"), "{message}");
 }
 
-/// `within_detour` は要求の `max_detour_min` で判定した値と一致する（ハンドラでは500）。
+/// `within_detour` は応答の `detour_limit_min` で判定した値と一致する（ハンドラでは500）。
 #[tokio::test]
-async fn within_detour_must_match_the_requested_detour() {
+async fn within_detour_must_match_the_rendered_detour() {
     let base = expected_route_outcome("twoSelected");
-    assert!(check_detour(&base, 10.0).is_ok());
+    assert!(check_detour(&base).is_ok());
     // 2分なら750秒の候補は許容外になるはず
-    let message = check_detour(&base, 2.0).expect_err("不一致").0;
+    let mut two_minutes = base.clone();
+    two_minutes.detour_limit_min = 2.0;
+    let message = check_detour(&two_minutes).expect_err("不一致").0;
     assert!(message.contains("within_detour"), "{message}");
     let router = Arc::new(ScriptedRouter::new([valid_routes(
         &route_example("singleRoute").routes,
@@ -594,7 +622,7 @@ async fn within_detour_must_match_the_requested_detour() {
     let app = TestAppBuilder {
         engine: Some(Arc::new(StubEngine::new(
             fixture_dataset_info(),
-            StubEvaluation::Fixed(Box::new(base)),
+            StubEvaluation::Fixed(Box::new(two_minutes)),
         ))),
         router,
         ..Default::default()

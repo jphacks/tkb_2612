@@ -66,7 +66,7 @@ async fn real_release_loads_and_answers_a_fixed_search() {
             LatLon::new(35.6812, 139.7671),
             LatLon::new(35.6840, 139.7745),
             mode,
-            10.0,
+            Some(10.0),
             conditions,
         )
         .unwrap();

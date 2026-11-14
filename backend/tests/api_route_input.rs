@@ -198,7 +198,7 @@ async fn mode_and_max_detour() {
             parse_route_request(body.as_bytes())
                 .unwrap()
                 .max_detour_min(),
-            value
+            Some(value)
         );
     }
 }
@@ -210,15 +210,16 @@ fn conditions(body: &str) -> ConditionFilter {
 }
 
 #[tokio::test]
-async fn defaults_are_walk_all_and_ten_minutes() {
+async fn defaults_are_walk_all_and_auto_detour() {
     let query = parse_route_request(common::valid_route_body().to_string().as_bytes()).unwrap();
+    assert_eq!(query.max_detour_min(), None);
     assert_eq!(
         query,
         RouteQuery::new(
             LatLon::new(35.681, 139.767),
             LatLon::new(35.69, 139.77),
             Mode::Walk,
-            10.0,
+            None,
             ConditionFilter::default(),
         )
         .unwrap()

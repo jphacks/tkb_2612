@@ -346,7 +346,11 @@ fn query(
     max_detour_min: f64,
     conditions: ConditionFilter,
 ) -> RouteQuery {
-    RouteQuery::new(origin, dest, mode, max_detour_min, conditions).expect("入力は妥当")
+    RouteQuery::new(origin, dest, mode, Some(max_detour_min), conditions).expect("入力は妥当")
+}
+
+fn auto_query(origin: LatLon, dest: LatLon, mode: Mode, conditions: ConditionFilter) -> RouteQuery {
+    RouteQuery::new(origin, dest, mode, None, conditions).expect("入力は妥当")
 }
 
 fn evaluate(
@@ -410,6 +414,37 @@ fn normal_search_passes_invariants_with_fractional_detour() {
     assert_no_duplicate_vertices(&outcome);
     assert_eq!(outcome.mode, Mode::Car);
     assert_eq!(outcome.dataset_id, dataset().dataset_id);
+    assert!(!outcome.detour_limit_auto);
+    assert_eq!(outcome.detour_limit_min, 7.5);
+}
+
+#[test]
+fn test_auto_detour_limit_from_fastest_duration() {
+    let (builder, shape) = grid(4, 4, 120.0);
+    let graph = builder.build();
+    let engine = engine(&builder, empty_topology(&graph), &[], snapshot(&[]));
+    let origin = graph.node_coord(shape.node(0, 0)).to_latlon();
+    let dest = graph.node_coord(shape.node(3, 3)).to_latlon();
+    let q = auto_query(origin, dest, Mode::Car, ConditionFilter::default());
+    let outcome = evaluate(&engine, &q).expect("評価できる");
+    check_outcome_invariants(&outcome).expect("相関制約");
+
+    let fastest = &outcome.candidates[outcome.fastest];
+    let t0_ds = (fastest.path.duration_s * 10.0).round() as u64;
+    let expected_ds = accident_route_backend::domain::routing::search::route::auto_detour_ds(t0_ds);
+    let expected_min =
+        accident_route_backend::domain::routing::search::route::detour_limit_min_from_ds(
+            expected_ds,
+        );
+    assert!(outcome.detour_limit_auto);
+    assert_eq!(outcome.detour_limit_min, expected_min);
+    for candidate in &outcome.candidates {
+        assert_eq!(
+            candidate.within_detour,
+            candidate.path.duration_s
+                <= fastest.path.duration_s + outcome.detour_limit_min * 60.0 + 1e-6
+        );
+    }
 }
 
 #[test]
@@ -1231,19 +1266,27 @@ fn evaluate_two_routes(
     specs: &[Spec],
     snapshot: AccidentSnapshot,
     risk: Option<RiskModel>,
+    max_detour_min: Option<f64>,
 ) -> accident_route_backend::contract::RouteOutcome {
     let topology = empty_topology(&two.graph);
     let engine = match risk {
         Some(risk) => engine_with_risk(&two.builder, topology, specs, snapshot, risk),
         None => engine(&two.builder, topology, specs, snapshot),
     };
-    let q = query(
+    let (origin, dest) = (
         two.graph.node_coord(two.origin).to_latlon(),
         two.graph.node_coord(two.dest).to_latlon(),
-        Mode::Car,
-        10.0,
-        ConditionFilter::default(),
     );
+    let q = match max_detour_min {
+        Some(max_detour_min) => query(
+            origin,
+            dest,
+            Mode::Car,
+            max_detour_min,
+            ConditionFilter::default(),
+        ),
+        None => auto_query(origin, dest, Mode::Car, ConditionFilter::default()),
+    };
     evaluate(&engine, &q).expect("評価できる")
 }
 
@@ -1291,7 +1334,7 @@ fn all_zero_accidents_selects_the_lowest_model_risk_route() {
         edge_k[edge as usize] = 1;
     }
     let risk = model_with_edge_risk(&two.graph, &topology, edge_k);
-    let outcome = evaluate_two_routes(&two, &[], snapshot(&[]), Some(risk));
+    let outcome = evaluate_two_routes(&two, &[], snapshot(&[]), Some(risk), Some(10.0));
 
     assert!(outcome.candidates.len() >= 2);
     assert_ne!(outcome.safest, Some(outcome.fastest));
@@ -1337,6 +1380,7 @@ fn accident_candidates_use_the_network_search_reason() {
         &specs,
         snapshot(&[Accident::at(35.6, 139.7).injuries(1)]),
         Some(risk),
+        Some(10.0),
     );
 
     assert!(outcome.candidates.len() >= 2);
@@ -1354,6 +1398,40 @@ fn accident_candidates_use_the_network_search_reason() {
         )
     );
     check_outcome_invariants(&outcome).expect("相関制約");
+}
+
+#[test]
+fn auto_detour_reason_uses_the_auto_limit() {
+    let two = two_route_graph();
+    let topology = empty_topology(&two.graph);
+    let mut edge_k = vec![EDGE_K_NO_RISK; two.graph.edge_count()];
+    for edge in two.fast_edges {
+        edge_k[edge as usize] = 1;
+    }
+    let risk = model_with_edge_risk(&two.graph, &topology, edge_k);
+    let specs = [Spec::edge(two.fast_edges[0], 500, 1.0)];
+    let outcome = evaluate_two_routes(
+        &two,
+        &specs,
+        snapshot(&[Accident::at(35.6, 139.7).injuries(1)]),
+        Some(risk),
+        None,
+    );
+
+    assert!(outcome.detour_limit_auto);
+    let s = outcome.safest.expect("事故があるのでsafestを選ぶ");
+    let extra = outcome.extra_minutes.expect("追加時間");
+    let reduction = outcome.risk_reduction_percent.expect("削減率");
+    assert_eq!(
+        outcome.reason,
+        format!(
+            "道路網を探索して得た{}候補のうち、最短時間経路から+{}分以内で、推定リスクが最小の経路を選びました。追加{extra:.1}分、リスク{reduction:.1}%減です。",
+            outcome.candidates.len(),
+            old_engine::format_minutes(outcome.detour_limit_min),
+        )
+    );
+    check_outcome_invariants(&outcome).expect("相関制約");
+    assert!(outcome.candidates[s].within_detour);
 }
 
 #[test]

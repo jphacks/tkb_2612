@@ -104,6 +104,22 @@ export function validateRouteResponse(
       middle.id === response.safest_id)
   )
     invalid();
+  // behavior.md 4/8: the response states the limit it actually used.
+  // A manual request must be echoed exactly; an automatic request must be 3〜30分.
+  if (request) {
+    if (request.max_detour_min === undefined) {
+      if (
+        response.detour_limit_auto !== true ||
+        response.detour_limit_min < 3 ||
+        response.detour_limit_min > 30
+      )
+        invalid();
+    } else if (
+      response.detour_limit_min !== request.max_detour_min ||
+      response.detour_limit_auto !== false
+    )
+      invalid();
+  }
   // Route selection rules belong to the backend (still under verification).
   // Check only references and invariants that hold for any selection rule.
   if (safest && !safest.within_detour) invalid();
@@ -163,10 +179,9 @@ export function validateRouteResponse(
     )
       invalid();
     if (
-      request &&
       route.within_detour !==
-        route.duration <=
-          fastest.duration + (request.max_detour_min ?? 10) * 60 + 1e-6
+      route.duration <=
+        fastest.duration + response.detour_limit_min * 60 + 1e-6
     )
       invalid();
     if (

@@ -18,6 +18,7 @@ import {
 } from "./api/demo";
 import { ApiError } from "./api/errors";
 import { FASTEST_LABEL, SAFE_LABEL } from "./components/RouteCallouts";
+import { DETOUR_SETTING_KEY } from "./state/detourSetting";
 import type {
   ConditionsResponse,
   LatLon,
@@ -59,6 +60,7 @@ function deferred<T>() {
 
 beforeEach(() => {
   mode.demo = true;
+  localStorage.clear();
   api.getHealth.mockReset().mockResolvedValue(demoHealth);
   api.searchPlaces
     .mockReset()
@@ -375,6 +377,57 @@ describe("App search flow and condition ownership", () => {
     expect(
       screen.getByRole("region", { name: "検索結果の説明" }),
     ).toBeVisible();
+  });
+
+  it("omits max_detour_min for the automatic setting and shows the returned limit", async () => {
+    await openResults();
+    const request: RouteRequest = api.searchRoutes.mock.calls.at(-1)![0];
+    expect(request).not.toHaveProperty("max_detour_min");
+    const response: RouteResponse =
+      await api.searchRoutes.mock.results.at(-1)!.value;
+    expect(response.detour_limit_auto).toBe(true);
+    expect(
+      screen.getByText(
+        `許容時間 +${response.detour_limit_min.toFixed(1)}分（自動）`,
+      ),
+    ).toBeVisible();
+    const sidebar = screen.getByRole("complementary", {
+      name: "検索条件",
+    });
+    expect(
+      within(sidebar).getByRole("radio", { name: "自動（おすすめ）" }),
+    ).toHaveAttribute("aria-checked", "true");
+    expect(
+      within(sidebar).getByRole("radio", { name: "手動" }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("sends and stores a manual detour limit and shows it without the automatic marker", async () => {
+    const user = await openResults();
+    const sidebar = screen.getByRole("complementary", {
+      name: "検索条件",
+    });
+    await user.click(
+      within(sidebar).getByRole("radio", { name: "手動" }),
+    );
+    fireEvent.change(
+      within(sidebar).getByRole("slider", { name: "許容追加時間" }),
+      { target: { value: "5" } },
+    );
+    expect(localStorage.getItem(DETOUR_SETTING_KEY)).toBe("5");
+    await user.click(
+      within(sidebar).getByRole("button", { name: "再検索" }),
+    );
+    await waitFor(() =>
+      expect(api.searchRoutes).toHaveBeenCalledTimes(2),
+    );
+    const request: RouteRequest = api.searchRoutes.mock.calls.at(-1)![0];
+    expect(request.max_detour_min).toBe(5);
+    const notes = await screen.findByRole("region", {
+      name: "検索結果の説明",
+    });
+    expect(within(notes).getByText("許容時間 +5.0分")).toBeVisible();
+    expect(within(notes).queryByText(/（自動）/)).not.toBeInTheDocument();
   });
 
   it("keeps the result explanation visible when the map is unavailable", async () => {

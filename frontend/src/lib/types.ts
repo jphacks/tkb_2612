@@ -43,5 +43,6 @@ export interface ConditionValues {
   period: Period | "all";
   day_type: DayType | "all";
   weather: Weather | "all";
-  max_detour_min: number;
+  /** 許容時間。`"auto"` は要求で max_detour_min を省略する。 */
+  max_detour_min: number | "auto";
 }

@@ -262,7 +262,7 @@ async fn load_engine_routes_schema_3_to_the_routing_loader() {
         query.origin,
         query.dest,
         query.mode,
-        10.0,
+        Some(10.0),
         ConditionFilter::default(),
     )
     .expect("人工releaseの座標は妥当");
@@ -278,7 +278,7 @@ async fn load_engine_routes_schema_3_to_the_routing_loader() {
         .evaluate(&request, candidates, &CancelToken::unbounded())
         .expect("経路を評価できる");
     check_outcome_invariants(&outcome).expect("相関制約");
-    check_detour(&outcome, 10.0).expect("遠回りの上限");
+    check_detour(&outcome).expect("遠回りの上限");
     render_route_response(&outcome).expect("応答JSONにできる");
     assert!(
         outcome

@@ -6,6 +6,7 @@ import type { Place, RouteResponse, Scenario } from "../lib/types";
 import type { NavigationSelection } from "../navigation/preflight";
 import type { NavigationKind, SimulationSettings } from "../navigation/session";
 import type { PositionFix } from "../navigation/source";
+import { routeConditions } from "./detourSetting";
 import type { NavigationControl } from "./useNavigation";
 import type { useConditions } from "./useConditions";
 import type { useRouteSearch } from "./useRouteSearch";
@@ -198,7 +199,7 @@ export function useReSearch(params: Params) {
             {
               origin: { lat: place.lat, lon: place.lon },
               dest: { lat: dest.lat, lon: dest.lon },
-              ...values,
+              ...routeConditions(values),
             },
             signal,
             scenario,

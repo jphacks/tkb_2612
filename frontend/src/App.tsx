@@ -34,6 +34,7 @@ import { RouteMap } from "./components/RouteMap";
 import { MIDDLE_LABEL } from "./components/RouteCallouts";
 import { RouteResultNotes } from "./components/RouteResultNotes";
 import { buildNavigationLayers } from "./map/navigationData";
+import { routeConditions } from "./state/detourSetting";
 import { useConditions } from "./state/useConditions";
 import { useCurrentLocation } from "./state/useCurrentLocation";
 import { useHealth } from "./state/useHealth";
@@ -304,7 +305,7 @@ function NavigationApp({
           {
             origin: { lat: from.lat, lon: from.lon },
             dest: { lat: to.lat, lon: to.lon },
-            ...applied,
+            ...routeConditions(applied),
           },
           signal,
           currentScenario,

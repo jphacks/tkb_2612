@@ -130,20 +130,20 @@ fn max_detour_bounds() {
         o,
         east_of(o, 500.0),
         Mode::Bike,
-        10.0,
+        Some(10.0),
         ConditionFilter::default(),
     )
     .unwrap();
     assert_eq!(
         (q.origin(), q.mode(), q.max_detour_min()),
-        (o, Mode::Bike, 10.0)
+        (o, Mode::Bike, Some(10.0))
     );
     assert_eq!(
         RouteQuery::new(
             o,
             east_of(o, 500.0),
             Mode::Walk,
-            31.0,
+            Some(31.0),
             ConditionFilter::default()
         ),
         Err(QueryError::MaxDetour)
