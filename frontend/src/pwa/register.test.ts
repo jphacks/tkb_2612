@@ -88,6 +88,11 @@ describe("同意した再読込での切替", () => {
     const result = fake.store.applyUpdate(fake.reload);
     expect(fake.worker.postMessage).toHaveBeenCalledWith({ type: "skip-waiting" });
     expect(fake.reload).not.toHaveBeenCalled();
+    // 実際の順序：waitingがnullになり、activatingのstatechangeの後にcontrollerchangeが来る。
+    fake.registration.waiting = null;
+    fake.worker.state = "activating";
+    fake.worker.dispatchEvent(new Event("statechange"));
+    expect(fake.store.getSnapshot().waiting).toBe(false);
     fake.container.dispatchEvent(new Event("controllerchange"));
     await expect(result).resolves.toBe("reloading");
     expect(fake.reload).toHaveBeenCalledTimes(1);
@@ -113,6 +118,9 @@ describe("同意した再読込での切替", () => {
     const fake = await waitingSetup();
     const result = fake.store.applyUpdate(fake.reload);
     fake.store.setUpdateBlocked("navigation", true);
+    fake.registration.waiting = null;
+    fake.worker.state = "activating";
+    fake.worker.dispatchEvent(new Event("statechange"));
     fake.container.dispatchEvent(new Event("controllerchange"));
     await expect(result).resolves.toBe("blocked");
     expect(fake.reload).not.toHaveBeenCalled();

@@ -49,7 +49,8 @@ export function createUpdateStore() {
     // 検索・GPS取得・ナビ中は切り替えない（frontend-spec 8章）。
     async applyUpdate(reload: () => void = () => window.location.reload()): Promise<UpdateOutcome> {
       if (!snapshot.canReload || !apply) return "blocked";
-      return apply(reload, () => snapshot.canReload);
+      // 切替中はwaitingがnullになりcanReloadもfalseになるため、禁止理由だけを見る。
+      return apply(reload, () => reasons.size === 0);
     },
   };
 }
