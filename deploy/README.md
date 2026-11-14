@@ -1,6 +1,6 @@
 # Cloud Run＋IAPへの配備手順（担当：③）
 
-**この手順は未実施です。** GCPプロジェクト・請求・IAPの許可アカウント・Geoapifyの鍵・Open-Meteoのプラン・経路提供元・地図style・実releaseが揃い、利用者が承認するまで実行しません（Issue #9 S18・S20）。コマンドは公式資料に照らした確認をしていない下書きです。実行前に、各リンク先の現行の資料でフラグ名と必要な権限を確かめてください。
+**実施状況（2026-11-14時点）：** 1〜4章（イメージ・Secret Manager・Firestore・Cloud Runサービス）は実施済みで、サービスは稼働しています。5章のIAPは未実施で、サービスは未認証で公開しています（`allUsers` に `roles/run.invoker`）。6章のログの除外は未設定、7章の予算通知は未確認です。コマンドは公式資料に照らした確認をしていない下書きを含みます。実行前に、各リンク先の現行の資料でフラグ名と必要な権限を確かめてください。
 
 前提の仕様：[cloud-selection.md](../docs/cloud-selection.md)、[backend-spec.md](../docs/backend-spec.md) 7・8章、[architecture.md](../docs/architecture.md) 4〜6章。
 
@@ -83,12 +83,13 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 
 ## 4. Cloud Runサービス
 
-初期値（cloud-selection.md）：東京、1 vCPU / 4 GiB（2 GiBでは起動時のデータ読み込み中にメモリ不足で停止する。2026-11-11の実測で、起動直後の最大2.16 GiB、測定中の最大2.25 GiB）、同時受付4、最大1台、通常は最小0台、要求タイムアウトは180秒以上、ingressはall、未認証の公開をしない。startup probeは `/api/health`（全件ロードと検証が終わるまで503）で、起動4分以内に成功させます。
+初期値（cloud-selection.md）：東京、第2世代の実行環境、1 vCPU / 4 GiB（2 GiBでは起動時のデータ読み込み中にメモリ不足で停止する。2026-11-11の実測で、起動直後の最大2.16 GiB、測定中の最大2.25 GiB）、同時受付4、最大1台、通常は最小0台、要求タイムアウトは180秒以上、ingressはall、未認証の公開をしない。startup probeは `/api/health`（全件ロードと検証が終わるまで503）で、起動4分以内に成功させます。
 
 ```sh
 gcloud run deploy $SERVICE \
   --image=$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/$SERVICE:$RELEASE_ID \
   --region=$REGION \
+  --execution-environment=gen2 \
   --cpu=1 --memory=4Gi --concurrency=4 \
   --min-instances=0 --max-instances=1 \
   --timeout=180 \
@@ -103,6 +104,7 @@ gcloud run deploy $SERVICE \
   '--set-env-vars=^@^GEOCODING_ATTRIBUTION=[{"text":"Powered by Geoapify","url":"https://www.geoapify.com/"}]'
 ```
 
+- 実行環境は第2世代（`--execution-environment=gen2`）にします。全件ロード後のサーバのメモリは約2.1 GBですが、起動時の検証でrelease（約2 GB）の全ファイルを読むため、第1世代では読んだファイルの内容（約1.9 GB）もメモリ使用量に数えられ、ロードの終わりに合計が4 GiBを超えて起動に失敗することがありました（実測で4,119〜4,127 MiB）。第2世代ではこの分が数えられず、使用量は約2.1 GB（4 GiBの約51%）で、ロード時間も40秒台から約11秒に短くなりました（2026-11-14に確認）。
 - 環境変数はarchitecture.md 6章の表のとおりです。必須の不足・不正は起動に失敗し、ログには変数名だけが出ます（値は出しません）。`BACKEND_BIND`・`UPSTREAM_GATE` は設定しません（`0.0.0.0:$PORT`、`firestore`）。
 - `GEOCODING_ATTRIBUTION` はカンマを含むので、区切り文字を変える記法（`^@^`）か `--env-vars-file` を使います。`"`・`[`・`{` をシェルに解釈させないよう、引数全体を単引用符で囲みます。
 - `WEATHER_CACHE_TTL_SEC=0` で気象応答のキャッシュを無効にします。リクエスト課金（要求の処理外はCPUが割り当てられない）では、無通信の間にキャッシュの期限切れの削除が動く保証がなく、architecture.md 8章の「最大10分保持」を守れないためです。キャッシュを使うには、インスタンス課金（`--no-cpu-throttling`）への変更が必要で、費用の判断を伴います（**未決**、Issue #9で扱う）。無効にしても、Open-Meteoの分/時/日/月の上限は上流ゲートで守ります。
