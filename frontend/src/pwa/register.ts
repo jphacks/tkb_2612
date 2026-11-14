@@ -6,9 +6,14 @@ export type UpdateSnapshot = Readonly<{
   canReload: boolean;
 }>;
 
+/** reloading: 切替後に再読込する。other-windows: ほかのタブがあり切り替えない。 */
+export type UpdateOutcome = "reloading" | "blocked" | "other-windows" | "unavailable";
+type Apply = (reload: () => void) => Promise<UpdateOutcome>;
+
 export function createUpdateStore() {
   const reasons = new Set<string>();
   const listeners = new Set<() => void>();
+  let apply: Apply | null = null;
   let snapshot: UpdateSnapshot = Object.freeze({
     waiting: false, blockedReasons: Object.freeze([]), canReload: false,
   });
@@ -33,16 +38,52 @@ export function createUpdateStore() {
       publish(snapshot.waiting);
     },
     setWaiting(waiting: boolean): void { publish(waiting); },
+    bindApply(next: Apply): void { apply = next; },
+    // 検索・GPS取得・ナビ中は切り替えない（frontend-spec 8章）。
+    async applyUpdate(reload: () => void = () => window.location.reload()): Promise<UpdateOutcome> {
+      if (!snapshot.canReload || !apply) return "blocked";
+      return apply(reload);
+    },
   };
 }
 
 const updates = createUpdateStore();
-// canReloadは将来の同意UI向けの判定値。解除してもSWはwaitingのまま維持する。
+// 禁止理由が解除されても自動では切り替えず、applyUpdateの呼出しまでwaitingを維持する。
 export const getUpdateSnapshot = updates.getSnapshot;
 export const subscribeUpdates = updates.subscribe;
 export const setUpdateBlocked = updates.setUpdateBlocked;
+export const applyUpdate = updates.applyUpdate;
 
-// 状態を公開するだけで、切替・再読込・利用者への表示は行わない。
+function waitingApplier(registration: ServiceWorkerRegistration, container: ServiceWorkerContainer): Apply {
+  return (reload) => new Promise((resolve) => {
+    const waiting = registration.waiting;
+    if (!waiting) {
+      reload();
+      resolve("reloading");
+      return;
+    }
+    const finish = (outcome: UpdateOutcome) => {
+      container.removeEventListener("controllerchange", onControllerChange);
+      container.removeEventListener("message", onMessage);
+      waiting.removeEventListener("statechange", onStateChange);
+      if (outcome === "reloading") reload();
+      resolve(outcome);
+    };
+    // 要求したタブだけが再読込する。ほかのタブのcontrollerchangeでは何もしない。
+    const onControllerChange = () => finish("reloading");
+    const onMessage = (event: MessageEvent) => {
+      if ((event.data as { type?: unknown } | null)?.type === "skip-waiting-refused") finish("other-windows");
+    };
+    // より新しい版に置き換わった場合は、その版のwaitingで改めて案内する。
+    const onStateChange = () => { if (waiting.state === "redundant") finish("unavailable"); };
+    container.addEventListener("controllerchange", onControllerChange);
+    container.addEventListener("message", onMessage);
+    waiting.addEventListener("statechange", onStateChange);
+    waiting.postMessage({ type: "skip-waiting" });
+  });
+}
+
+// 登録時は状態を公開するだけで、切替・再読込はapplyUpdateの呼出しまで行わない。
 export async function registerServiceWorker(
   production: boolean = import.meta.env.PROD,
   serviceWorker: ServiceWorkerContainer | undefined =
@@ -54,6 +95,7 @@ export async function registerServiceWorker(
     const registration = await serviceWorker.register("/sw.js", {
       scope: "/", updateViaCache: "none",
     });
+    store.bindApply(waitingApplier(registration, serviceWorker));
     const syncWaiting = () => store.setWaiting(registration.waiting !== null);
     const watched = new WeakSet<ServiceWorker>();
     const watch = (worker: ServiceWorker | null) => {

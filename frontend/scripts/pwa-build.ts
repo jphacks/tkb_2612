@@ -73,7 +73,7 @@ export function pwaBuild(): Plugin {
         shell.push(name === "index.html" ? "/" : `/${name}`);
       }
       const current = cacheName(digest.digest("hex"));
-      const source = `// 自動生成：アプリシェルのみ。更新は待機する。\n` +
+      const source = `// 自動生成：アプリシェルのみ。更新は同意した再読込まで待機する。\n` +
         `(${installWorker.toString()})(self, ${JSON.stringify(current)}, ` +
         `${JSON.stringify(shell)}, ${isShellRequest.toString()}, ${oldShellCaches.toString()});\n`;
       await writeFile(resolve(output, "sw.js"), source);

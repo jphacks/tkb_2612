@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { installWorker, type WorkerScope } from "./worker";
 import { isShellRequest, oldShellCaches } from "./policy";
 
-function setup(fail = false) {
+function setup(fail = false, windowIds: string[] = ["self"]) {
   const handlers = new Map<string, (event: never) => void>();
   const entries = new Map<string, Response>();
   const deleted: string[] = [];
@@ -18,6 +18,8 @@ function setup(fail = false) {
       delete: async (name: string) => { deleted.push(name); return true; },
     },
     fetch: vi.fn(async () => fail ? new Response("failed", { status: 503 }) : new Response("shell")),
+    clients: { matchAll: vi.fn(async () => windowIds.map((id) => ({ id }))) },
+    skipWaiting: vi.fn(async () => {}),
   };
   installWorker(scope as unknown as WorkerScope, "acciless-navi-shell-new", ["/", "/assets/app.js", "/assets/acciless-navi.webm"], isShellRequest, oldShellCaches);
   function dispatch(type: string, event: object) { handlers.get(type)!((event as never)); }
@@ -62,7 +64,36 @@ describe("SWのライフサイクル", () => {
     expect(fake.scope.fetch).toHaveBeenCalledTimes(4);
     expect(fake.entries.size).toBe(3);
     expect(fake.put).toHaveBeenCalledTimes(3);
-    expect([...fake.handlers.keys()]).toEqual(["install", "activate", "fetch"]);
+    expect([...fake.handlers.keys()]).toEqual(["install", "activate", "message", "fetch"]);
+  });
+});
+
+describe("同意した再読込による切替", () => {
+  function message(fake: ReturnType<typeof setup>, data: unknown, source: object | null) {
+    let result: Promise<unknown> | undefined;
+    fake.dispatch("message", { data, source, waitUntil: (promise: Promise<unknown>) => { result = promise; } });
+    return result;
+  }
+  it("要求元のタブだけならskipWaitingする", async () => {
+    const fake = setup(false, ["self"]);
+    const source = { id: "self", postMessage: vi.fn() };
+    await message(fake, { type: "skip-waiting" }, source);
+    expect(fake.scope.clients.matchAll).toHaveBeenCalledWith({ type: "window", includeUncontrolled: true });
+    expect(fake.scope.skipWaiting).toHaveBeenCalledTimes(1);
+    expect(source.postMessage).not.toHaveBeenCalled();
+  });
+  it("ほかのタブがあれば切り替えず、要求元へ断りを返す", async () => {
+    const fake = setup(false, ["self", "navigating"]);
+    const source = { id: "self", postMessage: vi.fn() };
+    await message(fake, { type: "skip-waiting" }, source);
+    expect(fake.scope.skipWaiting).not.toHaveBeenCalled();
+    expect(source.postMessage).toHaveBeenCalledWith({ type: "skip-waiting-refused" });
+  });
+  it.each([[{ type: "other" }], [null], ["skip-waiting"]])("ほかのメッセージ %j は無視する", async (data) => {
+    const fake = setup();
+    expect(message(fake, data, { id: "self", postMessage: vi.fn() })).toBeUndefined();
+    expect(message(fake, { type: "skip-waiting" }, null)).toBeUndefined();
+    expect(fake.scope.skipWaiting).not.toHaveBeenCalled();
   });
 });
 
