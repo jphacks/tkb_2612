@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createUpdateStore, registerServiceWorker } from "./register";
+import { SWITCH_TIMEOUT_MS, createUpdateStore, registerServiceWorker } from "./register";
 
 function fakeServiceWorker() {
   const registration = Object.assign(new EventTarget(), {
@@ -7,7 +7,7 @@ function fakeServiceWorker() {
     installing: null as ServiceWorker | null,
   });
   const register = vi.fn().mockResolvedValue(registration);
-  const container = { register, controller: {} } as unknown as ServiceWorkerContainer;
+  const container = Object.assign(new EventTarget(), { register, controller: {} }) as unknown as ServiceWorkerContainer;
   const worker = Object.assign(new EventTarget(), {
     state: "installing", postMessage: vi.fn(),
   });
@@ -71,5 +71,79 @@ describe("SW登録と更新待機", () => {
     const store = createUpdateStore();
     await expect(registerServiceWorker(true, fake.container, store)).resolves.toBeUndefined();
     expect(store.getSnapshot().waiting).toBe(false);
+  });
+});
+
+describe("同意した再読込での切替", () => {
+  async function waitingSetup() {
+    const fake = fakeServiceWorker();
+    fake.worker.state = "installed";
+    fake.registration.waiting = fake.worker as unknown as ServiceWorker;
+    const store = createUpdateStore();
+    await registerServiceWorker(true, fake.container, store);
+    return { ...fake, store, reload: vi.fn() };
+  }
+  it("waitingへskip-waitingを送り、controllerchange後に要求元だけ再読込する", async () => {
+    const fake = await waitingSetup();
+    const result = fake.store.applyUpdate(fake.reload);
+    expect(fake.worker.postMessage).toHaveBeenCalledWith({ type: "skip-waiting" });
+    expect(fake.reload).not.toHaveBeenCalled();
+    // 実際の順序：waitingがnullになり、activatingのstatechangeの後にcontrollerchangeが来る。
+    fake.registration.waiting = null;
+    fake.worker.state = "activating";
+    fake.worker.dispatchEvent(new Event("statechange"));
+    expect(fake.store.getSnapshot().waiting).toBe(false);
+    fake.container.dispatchEvent(new Event("controllerchange"));
+    await expect(result).resolves.toBe("reloading");
+    expect(fake.reload).toHaveBeenCalledTimes(1);
+    fake.container.dispatchEvent(new Event("controllerchange"));
+    expect(fake.reload).toHaveBeenCalledTimes(1);
+  });
+  it("検索・ナビ中は送らない", async () => {
+    const fake = await waitingSetup();
+    fake.store.setUpdateBlocked("navigation", true);
+    await expect(fake.store.applyUpdate(fake.reload)).resolves.toBe("blocked");
+    expect(fake.worker.postMessage).not.toHaveBeenCalled();
+    expect(fake.reload).not.toHaveBeenCalled();
+  });
+  it("ほかのタブがあるとSWに断られ、再読込しない", async () => {
+    const fake = await waitingSetup();
+    const result = fake.store.applyUpdate(fake.reload);
+    fake.container.dispatchEvent(new MessageEvent("message", { data: { type: "skip-waiting-refused" } }));
+    await expect(result).resolves.toBe("other-windows");
+    fake.container.dispatchEvent(new Event("controllerchange"));
+    expect(fake.reload).not.toHaveBeenCalled();
+  });
+  it("要求後に検索・ナビが始まったら、切替後も再読込しない", async () => {
+    const fake = await waitingSetup();
+    const result = fake.store.applyUpdate(fake.reload);
+    fake.store.setUpdateBlocked("navigation", true);
+    fake.registration.waiting = null;
+    fake.worker.state = "activating";
+    fake.worker.dispatchEvent(new Event("statechange"));
+    fake.container.dispatchEvent(new Event("controllerchange"));
+    await expect(result).resolves.toBe("blocked");
+    expect(fake.reload).not.toHaveBeenCalled();
+  });
+  it("応答しない待機中の版（切替に対応する前の版）は時間切れで諦め、後の切替でも再読込しない", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = await waitingSetup();
+      const result = fake.store.applyUpdate(fake.reload);
+      vi.advanceTimersByTime(SWITCH_TIMEOUT_MS);
+      await expect(result).resolves.toBe("timeout");
+      fake.container.dispatchEvent(new Event("controllerchange"));
+      expect(fake.reload).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("waitingが置き換わったら切替を諦める", async () => {
+    const fake = await waitingSetup();
+    const result = fake.store.applyUpdate(fake.reload);
+    fake.worker.state = "redundant";
+    fake.worker.dispatchEvent(new Event("statechange"));
+    await expect(result).resolves.toBe("unavailable");
+    expect(fake.reload).not.toHaveBeenCalled();
   });
 });
