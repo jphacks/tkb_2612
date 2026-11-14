@@ -153,7 +153,28 @@ fn text<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
         .filter(|s| !s.is_empty())
 }
 
+/// 駅として扱うGeoapifyのカテゴリ（Places APIのカテゴリ名、完全一致）。
+/// 出入口（`public_transport.subway.entrance`）・路面電車・バス・線路（`railway.*`）は含めない。
+const STATION_CATEGORIES: [&str; 4] = [
+    "public_transport.train",
+    "public_transport.subway",
+    "public_transport.light_rail",
+    "public_transport.monorail",
+];
+
+/// `category` が駅のカテゴリと完全一致するか。無い・文字列でないならfalse。
+fn is_station(result: &Value) -> bool {
+    result
+        .get("category")
+        .and_then(Value::as_str)
+        .is_some_and(|c| STATION_CATEGORIES.contains(&c))
+}
+
 /// 施設名・地点名。名前が無ければ住所全体を使う。
+///
+/// 日本のOpenStreetMapは駅を「つくば」のように「駅」なしで登録する。柏のように
+/// 「柏駅」という駅舎があれば other_names.name に入るが、つくばのように無い駅もある。
+/// そこで駅のカテゴリの候補は、名前に「駅」も ";"（複数の値）も無ければ「駅」を付ける。
 fn place_label(result: &Value, formatted: &str) -> String {
     let name = text(result, "name");
     let name = match name {
@@ -168,6 +189,9 @@ fn place_label(result: &Value, formatted: &str) -> String {
                 .to_owned();
         }
     };
+    if is_station(result) && !name.contains('駅') && !name.contains(';') {
+        return format!("{name}駅");
+    }
     name.replace(';', " ")
 }
 
@@ -186,7 +210,8 @@ fn place_detail(result: &Value, label: &str) -> Option<String> {
 
 /// `format=json` の応答 `{"results":[{"lat","lon","formatted",…},…]}` を解釈する。
 /// label は name（other_names.name が name で始まればその値）の ";" を空白にしたもの、
-/// 無ければ address_line1、それも無ければ formatted。detail は都道府県・市区町村・地区のうち
+/// 無ければ address_line1、それも無ければ formatted。category が駅で、名前に「駅」も ";" も
+/// 無ければ末尾に「駅」を付ける。detail は都道府県・市区町村・地区のうち
 /// label と異なる値を区切りなしで連結する。
 /// 先頭5件のどれかで lat・lon・formatted が欠落・型不正・日本矩形外なら全体を失敗にする。
 /// それ以外のフィールドの型不正は無視する。
@@ -381,5 +406,104 @@ mod tests {
         }));
         assert_eq!(place.label, "柏");
         assert_eq!(place.detail, None);
+    }
+
+    #[test]
+    fn station_names_get_eki_suffix() {
+        let cases = [
+            // other_names が無い駅（つくば）。市名と同じ文字列で始まっても detail は崩れない
+            (
+                serde_json::json!({
+                    "name": "つくば",
+                    "category": "public_transport.train",
+                    "county": "茨城県",
+                    "city": "つくば市",
+                    "district": "吾妻二丁目",
+                }),
+                "つくば駅",
+                Some("茨城県つくば市吾妻二丁目"),
+            ),
+            (
+                serde_json::json!({"name": "新宿", "category": "public_transport.subway"}),
+                "新宿駅",
+                None,
+            ),
+            (
+                serde_json::json!({"name": "舞浜", "category": "public_transport.light_rail"}),
+                "舞浜駅",
+                None,
+            ),
+            (
+                serde_json::json!({"name": "舞浜", "category": "public_transport.monorail"}),
+                "舞浜駅",
+                None,
+            ),
+            // other_names で既に「駅」が付いていれば二重に付けない
+            (
+                serde_json::json!({
+                    "name": "柏",
+                    "other_names": {"name": "柏駅"},
+                    "category": "public_transport.train",
+                }),
+                "柏駅",
+                None,
+            ),
+            // name 自体に「駅」を含む・";" で複数の値がある
+            (
+                serde_json::json!({"name": "東京駅", "category": "public_transport.train"}),
+                "東京駅",
+                None,
+            ),
+            (
+                serde_json::json!({"name": "東京駅;総武地下4番線", "category": "public_transport.train"}),
+                "東京駅 総武地下4番線",
+                None,
+            ),
+            (
+                serde_json::json!({"name": "A;B", "category": "public_transport.train"}),
+                "A B",
+                None,
+            ),
+        ];
+        for (result, expected_label, expected_detail) in cases {
+            let place = parse_one(result.clone());
+            assert_eq!(place.label, expected_label, "{result}");
+            assert_eq!(place.detail.as_deref(), expected_detail, "{result}");
+        }
+    }
+
+    #[test]
+    fn non_station_categories_keep_name() {
+        let categories = [
+            serde_json::json!("public_transport.tram"),
+            serde_json::json!("public_transport.bus"),
+            serde_json::json!("public_transport.subway.entrance"),
+            serde_json::json!("railway.train"),
+            serde_json::json!(null),
+            serde_json::json!(["public_transport.train"]),
+            serde_json::json!({"k": "public_transport.train"}),
+            serde_json::json!(1),
+        ];
+        for category in categories {
+            let place =
+                parse_one(serde_json::json!({"name": "つくば", "category": category.clone()}));
+            assert_eq!(place.label, "つくば", "{category}");
+        }
+        // category が無い
+        assert_eq!(
+            parse_one(serde_json::json!({"name": "つくば"})).label,
+            "つくば"
+        );
+        // name が無い駅は address_line1・formatted のまま（「駅」を付けない）
+        let place = parse_one(serde_json::json!({
+            "category": "public_transport.train",
+            "address_line1": "吾妻二丁目",
+        }));
+        assert_eq!(place.label, "吾妻二丁目");
+        let place = parse_one(serde_json::json!({
+            "name": "   ",
+            "category": "public_transport.train",
+        }));
+        assert_eq!(place.label, "提供元の住所");
     }
 }

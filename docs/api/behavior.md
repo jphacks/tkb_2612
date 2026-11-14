@@ -498,7 +498,7 @@ WMO天気コードから天候への変換は次の表に固定する（**要確
 
 `q` を前後trimしUnicode文字数2〜200。現行parse_qsは複数qのうち最初の非空値を使うが、移行契約では**qは1個必須**、重複は400とする。検索はユーザーの明示操作だけで行う。
 
-住所提供元は **Geoapify Forward Geocoding** とする（[backend-spec.md](../backend-spec.md) 6章）。サーバから `{GEOAPIFY_BASE_URL}/v1/geocode/search` へ `text=q, lang=ja, filter=countrycode:jp, limit=5, format=json` とapiKey（サーバ専用secret）を送る。外部JSONからlat/lon/label/detailを作る。labelはname（other_names.nameがnameで始まるならそちらを使い、";"は半角空白に置き換える）とし、nameが無ければaddress_line1、それも無ければformatted。detailはcounty（末尾が都・道・府・県のときだけ）、city、district（無ければsuburb）のうち、labelと異なるものを連結した文字列で、空ならnull。lat、lon、formattedの欠落・型不正・日本矩形外は502。その他のフィールドの欠落・型不正は502にしない。提供元順の先頭5件までに限定する。空配列は200でありエラーではない。Geoapify/OpenStreetMapの帰属を `attribution` に `{text, url}` の配列で返す。公開Nominatimへは接続しない。
+住所提供元は **Geoapify Forward Geocoding** とする（[backend-spec.md](../backend-spec.md) 6章）。サーバから `{GEOAPIFY_BASE_URL}/v1/geocode/search` へ `text=q, lang=ja, filter=countrycode:jp, limit=5, format=json` とapiKey（サーバ専用secret）を送る。外部JSONからlat/lon/label/detailを作る。labelはname（other_names.nameがnameで始まるならそちらを使い、";"は半角空白に置き換える）とし、nameが無ければaddress_line1、それも無ければformatted。nameを使う場合で、categoryが鉄道駅（`public_transport.train`・`.subway`・`.light_rail`・`.monorail` のいずれかと完全一致する文字列）で、名前に「駅」も ";" も含まれないときは末尾に「駅」を付ける（日本のOSMは駅名に「駅」を付けず、other_names.nameにも入らない駅があるため）。detailはcounty（末尾が都・道・府・県のときだけ）、city、district（無ければsuburb）のうち、labelと異なるものを連結した文字列で、空ならnull。lat、lon、formattedの欠落・型不正・日本矩形外は502。その他のフィールドの欠落・型不正は502にしない。提供元順の先頭5件までに限定する。空配列は200でありエラーではない。Geoapify/OpenStreetMapの帰属を `attribution` に `{text, url}` の配列で返す。公開Nominatimへは接続しない。
 
 外部通信の共通制限はOSRM同様。全インスタンス共通の上流ゲートで通信開始間隔1.05秒以上・同時1通信・1日2,000要求を初期の上限とし、配備前に同じアカウントの残枠を確認する。有料プランへ自動変更しない。
 
