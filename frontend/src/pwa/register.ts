@@ -6,9 +6,16 @@ export type UpdateSnapshot = Readonly<{
   canReload: boolean;
 }>;
 
-/** reloading: 切替後に再読込する。other-windows: ほかのタブがあり切り替えない。 */
-export type UpdateOutcome = "reloading" | "blocked" | "other-windows" | "unavailable";
-type Apply = (reload: () => void) => Promise<UpdateOutcome>;
+/**
+ * reloading: 切替後に再読込する。blocked: 検索・GPS取得・ナビ中のため再読込しない。
+ * other-windows: ほかのタブがあり切り替えない。unavailable: 待機中の版が置き換わった。
+ * timeout: 待機中の版が応答しない（切替に対応する前の版など）。
+ */
+export type UpdateOutcome = "reloading" | "blocked" | "other-windows" | "unavailable" | "timeout";
+type Apply = (reload: () => void, canReload: () => boolean) => Promise<UpdateOutcome>;
+
+/** 待機中の版がこの時間内に切り替わらなければ諦める。 */
+export const SWITCH_TIMEOUT_MS = 10_000;
 
 export function createUpdateStore() {
   const reasons = new Set<string>();
@@ -42,7 +49,7 @@ export function createUpdateStore() {
     // 検索・GPS取得・ナビ中は切り替えない（frontend-spec 8章）。
     async applyUpdate(reload: () => void = () => window.location.reload()): Promise<UpdateOutcome> {
       if (!snapshot.canReload || !apply) return "blocked";
-      return apply(reload);
+      return apply(reload, () => snapshot.canReload);
     },
   };
 }
@@ -55,7 +62,7 @@ export const setUpdateBlocked = updates.setUpdateBlocked;
 export const applyUpdate = updates.applyUpdate;
 
 function waitingApplier(registration: ServiceWorkerRegistration, container: ServiceWorkerContainer): Apply {
-  return (reload) => new Promise((resolve) => {
+  return (reload, canReload) => new Promise((resolve) => {
     const waiting = registration.waiting;
     if (!waiting) {
       reload();
@@ -63,6 +70,7 @@ function waitingApplier(registration: ServiceWorkerRegistration, container: Serv
       return;
     }
     const finish = (outcome: UpdateOutcome) => {
+      clearTimeout(timer);
       container.removeEventListener("controllerchange", onControllerChange);
       container.removeEventListener("message", onMessage);
       waiting.removeEventListener("statechange", onStateChange);
@@ -70,12 +78,14 @@ function waitingApplier(registration: ServiceWorkerRegistration, container: Serv
       resolve(outcome);
     };
     // 要求したタブだけが再読込する。ほかのタブのcontrollerchangeでは何もしない。
-    const onControllerChange = () => finish("reloading");
+    // 要求後に検索・GPS取得・ナビが始まっていれば、切替だけ受け入れて再読込しない。
+    const onControllerChange = () => finish(canReload() ? "reloading" : "blocked");
     const onMessage = (event: MessageEvent) => {
       if ((event.data as { type?: unknown } | null)?.type === "skip-waiting-refused") finish("other-windows");
     };
     // より新しい版に置き換わった場合は、その版のwaitingで改めて案内する。
     const onStateChange = () => { if (waiting.state === "redundant") finish("unavailable"); };
+    const timer = setTimeout(() => finish("timeout"), SWITCH_TIMEOUT_MS);
     container.addEventListener("controllerchange", onControllerChange);
     container.addEventListener("message", onMessage);
     waiting.addEventListener("statechange", onStateChange);

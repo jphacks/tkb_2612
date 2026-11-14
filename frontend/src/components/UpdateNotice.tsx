@@ -4,6 +4,7 @@ import { applyUpdate, getUpdateSnapshot, subscribeUpdates, type UpdateOutcome } 
 const OUTCOME_MESSAGES: Partial<Record<UpdateOutcome, string>> = {
   "other-windows": "ほかのタブやウィンドウでもこのアプリを開いているため切り替えられません。ほかを閉じてから再読込してください。",
   unavailable: "更新を適用できませんでした。もう一度お試しください。",
+  timeout: "切り替えられませんでした。このアプリのタブとウィンドウをすべて閉じてから開き直してください。",
 };
 
 /**

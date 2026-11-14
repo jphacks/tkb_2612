@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createUpdateStore, registerServiceWorker } from "./register";
+import { SWITCH_TIMEOUT_MS, createUpdateStore, registerServiceWorker } from "./register";
 
 function fakeServiceWorker() {
   const registration = Object.assign(new EventTarget(), {
@@ -108,6 +108,27 @@ describe("同意した再読込での切替", () => {
     await expect(result).resolves.toBe("other-windows");
     fake.container.dispatchEvent(new Event("controllerchange"));
     expect(fake.reload).not.toHaveBeenCalled();
+  });
+  it("要求後に検索・ナビが始まったら、切替後も再読込しない", async () => {
+    const fake = await waitingSetup();
+    const result = fake.store.applyUpdate(fake.reload);
+    fake.store.setUpdateBlocked("navigation", true);
+    fake.container.dispatchEvent(new Event("controllerchange"));
+    await expect(result).resolves.toBe("blocked");
+    expect(fake.reload).not.toHaveBeenCalled();
+  });
+  it("応答しない待機中の版（切替に対応する前の版）は時間切れで諦め、後の切替でも再読込しない", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = await waitingSetup();
+      const result = fake.store.applyUpdate(fake.reload);
+      vi.advanceTimersByTime(SWITCH_TIMEOUT_MS);
+      await expect(result).resolves.toBe("timeout");
+      fake.container.dispatchEvent(new Event("controllerchange"));
+      expect(fake.reload).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it("waitingが置き換わったら切替を諦める", async () => {
     const fake = await waitingSetup();
