@@ -1,6 +1,6 @@
 # Cloud Run＋IAPへの配備手順（担当：③）
 
-**実施状況（2026-11-14時点）：** 1〜4章（イメージ・Secret Manager・Firestore・Cloud Runサービス）は実施済みで、サービスは稼働しています。5章のIAPは未実施で、サービスは未認証で公開しています（`allUsers` に `roles/run.invoker`）。6章のログの除外は未設定、7章の予算通知は未確認です。コマンドは公式資料に照らした確認をしていない下書きを含みます。実行前に、各リンク先の現行の資料でフラグ名と必要な権限を確かめてください。
+**実施状況（2026-11-14時点）：** 1〜4章（イメージ・Secret Manager・Firestore・Cloud Runサービス）は実施済みで、サービスは稼働しています。5章のIAPは未実施で、サービスは未認証で公開しています（`allUsers` に `roles/run.invoker`）。6章のログの除外は2026-11-14に設定済み（除外名 `tkb-api-requests`。設定の約5分後から、リクエストログが保存されないことを確認した）、7章の予算通知は未確認です。コマンドは公式資料に照らした確認をしていない下書きを含みます。実行前に、各リンク先の現行の資料でフラグ名と必要な権限を確かめてください。
 
 前提の仕様：[cloud-selection.md](../docs/cloud-selection.md)、[backend-spec.md](../docs/backend-spec.md) 7・8章、[architecture.md](../docs/architecture.md) 4〜6章。
 
@@ -141,6 +141,7 @@ gcloud logging sinks update _Default \
   --add-exclusion=name=tkb-api-requests,filter='resource.type="cloud_run_revision" AND resource.labels.service_name="tkb-api" AND logName="projects/PROJECT_ID/logs/run.googleapis.com%2Frequests"'
 ```
 
+- 除外は設定してすぐには効きません。2026-11-14の設定では、設定の1分以内のリクエストログは保存され、約5分後からは保存されませんでした。確認は数分おいてから行います。設定前に保存されたログは除外の対象にならず、保存期間（既定30日）が過ぎるまで残ります。
 - 他のsink・組織側の転送先があれば、同じログが保存されないことを確かめます。
 - アプリの標準出力はルートのテンプレート・status・処理時間・匿名のエラーコードだけです（URLのクエリ・住所・座標・本文・上流URL・鍵を出しません。`backend/tests/logging.rs`）。
 - ダミーの入力（実在しない地名と海上の座標など）で保存先を確認してから、実入力で使います。
