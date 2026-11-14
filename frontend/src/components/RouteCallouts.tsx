@@ -244,7 +244,7 @@ export function RouteCallouts({
             {routeSymbol(index)}
           </span>
           <i aria-hidden="true" />
-          <span>
+          <span className="map-card-title-text">
             {extraTitle === null ? (
               title
             ) : (
