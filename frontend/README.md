@@ -53,7 +53,7 @@ VITE_API_MODE=demo VITE_ENABLE_SIMULATION=true npm run dev
 VITE_ENABLE_SIMULATION=true npm run build
 ```
 
-Dockerのfrontendステージにも任意のビルド引数 `VITE_ENABLE_SIMULATION` を渡せます。未指定は無効です。模擬位置源とM1〜M11の判定器テストはフラグにかかわらず保持します。
+Dockerのfrontendステージ（ルートの `Dockerfile`）では、ビルド引数 `VITE_ENABLE_SIMULATION` の既定を `true` にしており、Cloud Runの配備イメージにも模擬走行を含めます。外すときは `--build-arg VITE_ENABLE_SIMULATION=false` を渡します。模擬位置源とM1〜M11の判定器テストはフラグにかかわらず保持します。
 
 ## API仕様との対応
 

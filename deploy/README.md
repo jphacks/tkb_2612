@@ -23,6 +23,7 @@ docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/$SERVICE:$RELEASE_ID
 
 - `ROUTING_ATTRIBUTION` は、イメージの `VITE_ROUTING_ATTRIBUTION` とCloud Runの `ROUTING_ATTRIBUTION` に同じ値を渡します（同じ変数から設定する）。
 - `VITE_*` はブラウザへ公開される値です。秘密を入れません。
+- 模擬走行（実機GPSで移動しなくてもナビを試せる機能）は既定で含めます。配備イメージから外すときだけ `--build-arg VITE_ENABLE_SIMULATION=false` を付けます。
 - `PUBLIC_ORIGIN` は任意で、Cloud RunのURLのorigin（例：`https://tkb-api-….run.app`、パスなし）です。設定するとOGPの `og:url`・`og:image` を出力します。未設定ならこの2つを出しません。リンクプレビューはクローラーが未認証でページと画像を取得できる場合だけ表示されます（IAPを有効にすると表示されません）。
 - **未決**：releaseをgitに含めるか、どこに置いてイメージへ入れるか（Issue #9 7章）。今はビルド引数 `ACCIDENT_RELEASE`（ビルドコンテキスト内のパス）で渡し、`accidents.csv.gz`・`metadata.json`・`syukujitsu.csv` が無ければビルドを止めます。中身の検証（hash・schema・件数）は起動時に `data::load_*` が行います。`ACCIDENT_RELEASE` には schema 3 の11ファイル（3ファイル＋8つの `.bin`）を揃えてください。Dockerfileが存在を検査するのは3ファイルだけなので、`.bin` の欠落はビルドでは検出されず、起動時の `data::load_engine` で失敗します。
 

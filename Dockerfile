@@ -19,7 +19,8 @@ COPY frontend/ ./
 # frontendのテストが型検査（tsc -b）の対象で、../../../docs/api/fixtures/ のJSONをimportする。配置はリポジトリと同じ相対位置にする。
 COPY docs/api/fixtures/ /src/docs/api/fixtures/
 # frontendの既定はdemo。配備ではlive modeでビルドする。VITE_* はブラウザへ公開される値で、秘密を入れない。
-ARG VITE_ENABLE_SIMULATION
+# 模擬走行の画面を含める。既定は有効（Cloud Runの配備イメージでも使う）。外すときは --build-arg VITE_ENABLE_SIMULATION=false。
+ARG VITE_ENABLE_SIMULATION=true
 ARG VITE_MAP_STYLE_URL
 ARG VITE_ROUTING_ATTRIBUTION
 ARG VITE_MAP_ATTRIBUTION
