@@ -10,7 +10,7 @@ Rust/Axumはデータ前処理・ロード・外部サービス呼出し・候�
 
 ## 2. ディレクトリ案と依存境界
 
-以下は将来の構成案。本作業はdocsの仕様書と契約fixtureだけを編集する。既存のapp/はデモ、backend/・frontend/は誤って作成された実装であり、仕様の根拠にせず変更しない。
+以下は当初の構成案。今の実装はbackend/（Rust/Axum）とfrontend/（React/TypeScript）にあり、細かな配置はこの案と異なる。app/は旧Pythonのデモで、仕様の根拠にしない。
 
 ```text
 app/                         デモ。仕様の根拠にせず変更しない
@@ -60,11 +60,11 @@ backendはfrontendのソースを読まず、ビルド済みdistを設定され�
 
 OpenAPI 3.1から `openapi-typescript` でTypeScript型を生成する。同ツールは3.1とローカルYAMLをサポートし、型はランタイム検証器ではない（[公式説明](https://openapi-ts.dev/introduction)）。依存版は実装時に検証してlockfile固定し、常にlatestを取得するCIにしない。
 
-将来の生成コマンド（今回実行・実装しない）：
+生成コマンド（`schema.d.ts` に続けて `scripts/generate-contract.mjs` で `contract.json` も作る。CIは生成し直して差分がないことを確かめる）：
 
 ```text
 cd frontend
-npx openapi-typescript ../docs/api/openapi.yaml -o src/api/generated/schema.d.ts
+npm run generate:api
 ```
 
 frontendはpaths/components由来型を使用する。`Position` のprefixItemsが `[number,number]` に生成されるかを採用版で確認し、座標順を意味付きアダプタで保つ。型生成時にスキーマ機能が欠落する場合は検証できる版へ合わせるか契約を修正し、手書き型で黙って補わない。

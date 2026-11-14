@@ -25,6 +25,8 @@
 
 `/api/reports`系の投票者は`X-Voter-Id`（ブラウザーごとの匿名ID）で区別し、保存先の失敗・期限切れは503 service_busyとする。統合契約版は`api_version: "2.0"`。GPSナビ用データも未リリースの2.0に含め、前処理スキーマ2は変更しない。新フロントは日本語条件値と`all`を送る。routeの必須入力は`origin/dest={lat,lon}`。`mode`省略はwalk、`period/day_type/weather`省略はall、`max_detour_min`省略は10分。PR #1のperiod/weather整数・null、`hour`・`時間帯`の互換入力は入口で正規化し、優先順も同PRに従う。day_typeは整数を受理せず、routeへ出発日時を追加しない。
 
+以下はroute・geocode・conditionsの入力規則で、`/api/reports`系には当てはまらない。`/api/reports`系の本文は8,192バイトまでで、未知キーは400 invalid_requestとする。
+
 入力はUTF-8のJSONオブジェクト、`application/json`（charset付き可）。有限数値だけを受理し、数値文字列/boolを数値へ変換しない。整数値の12.0表記は受理する。JSON重複キーと既知GETキー重複は400、未知キーは無視。本文は1〜16,384バイト。不正入力は外部呼出し前に400へ統一する。
 
 GeoJSONはWGS84の`[lon,lat]`、入力/住所候補は名前付きlat/lon。緯度20〜46・経度122〜154、標高なし。所要時間は秒、経路距離はm、追加時間/許容時間は分。PR #1の直線距離20m〜30km、許容分0〜30、候補80km/15,000頂点は初期の保護値として使う。距離判定とアルゴリズム側の接続が確定した時点で共同検証し、値が利用者指定だったとは扱わない。

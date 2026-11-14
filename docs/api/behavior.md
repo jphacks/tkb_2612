@@ -363,7 +363,7 @@ Bを事故ID昇順（gzip CSVの行順）で走査して、死者ありFとそ�
 
 サーバの受付から35秒はキュー待ち・上流・集計・JSONシリアライズ・送信用gzip圧縮完了まで（転送を除く）。圧縮も期限内で完了させ、期限超過なら本文送信開始前に503 service_busy。送信開始後の切断をJSONエラー/部分成功へ差し替えず、クライアントは本文不完了として失敗させる。サーバの転送待ちも送信開始から120秒を上限に中止し、切断時は圧縮/送信資源を解放する。Cloud Runの要求タイムアウトは180秒以上とするが、35秒の計算期限を伸ばす意味ではない。Cloud Run＋IAPを通るgzip/identity・Content-Encoding/Varyの維持、要求/転送タイムアウトの実効性は**要確認**で、配備前の実経路検証が必要である。
 
-クライアントのroute期限はfetch開始から本文全受信・展開・JSON解析/契約検査完了まで180秒、ヘッダー到着では解除しない。想定条件は実効下り1Mbps以上、RTT 300ms以下、転送を長く止める損失なし。16.1MBのidentityは `16,100,000*8/1,000,000=128.8` 秒（約129秒）、gzip 4MBの参考値は32秒。サーバ35秒＋転送129秒＋通信等2秒＋端末解析/検査5秒=171秒なので9秒を余裕とする（中間案で3経路にした値。2経路のときは12MB・96秒・138秒・余裕42秒だった。余裕はgzipの実測で確かめる）。conditionsが先行する場合の10秒は別要求として扱う。条件を下回る回線・大きな実応答での完了は保証せず、180秒で中止し自動再送しない。geocode/healthのクライアント45秒、conditionsの10秒は維持する。
+クライアントのroute期限はfetch開始から本文全受信・展開・JSON解析/契約検査完了まで180秒、ヘッダー到着では解除しない。想定条件は実効下り1Mbps以上、RTT 300ms以下、転送を長く止める損失なし。16.1MBのidentityは `16,100,000*8/1,000,000=128.8` 秒（約129秒）、gzip 4MBの参考値は32秒。サーバ35秒＋転送129秒＋通信等2秒＋端末解析/検査5秒=171秒なので9秒を余裕とする。ただしサーバは本文の送信開始から `ROUTE_TRANSFER_TIMEOUT_MS`（既定120秒）で接続を切るので、既定値のままではidentityの16.1MBは1Mbpsで送り切れずに切断される（中間案で3経路にした値。2経路のときは12MB・96秒・138秒・余裕42秒だった。余裕はgzipの実測で確かめる）。conditionsが先行する場合の10秒は別要求として扱う。条件を下回る回線・大きな実応答での完了は保証せず、180秒で中止し自動再送しない。geocode/healthのクライアント45秒、conditionsの10秒は維持する。
 
 受け入れでは最大件数（6候補・最大頂点・最大区間等）の応答と16,100,000バイト（16.1MB）以上の負荷本文について、下り1Mbps・RTT 300msを制限した環境でgzip/identityとも**fetch開始から本文全受信・展開・解析/契約検査完了まで180秒以内**であることを確認する。35秒近いサーバ処理遅延も含め、圧縮前後バイト数・ピークRAM・サーバ圧縮完了時間・ヘッダー/本文受信完了時間・端末解析時間を分けて記録する。gzip比率の参考値を合格条件の代用にせず、IAP経由でも同じ試験を行う。途中切断・遅延本文の180秒打切りと世代棄却も確認する。本書の見積りは実測合格を示さない。
 
@@ -576,7 +576,7 @@ JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-
 2. 浮動小数の距離・補間座標は通常ケースで座標絶対誤差1e-10度以内を目安とするが、採用/除外・丸め済み数値・順序の差は許さない。72m境界、75m分割、20m/30km/80km、許容時間+1e-6、丸め後のリスク同点、duration同点のfixtureを追加する。
 3. 起動時検証：metadataのdataset_id/release_idと実ファイル（gzip・祝日表）の不一致で起動停止すること。祝日表だけを差し替えたreleaseでrelease_idが変わり、事故CSVが同じならdataset_idは変わらないこと。
    15,000/15,001頂点、本文16,384/16,385バイト、provider12,000,000超、死亡250超、hotspot100超（high_risk_totalが100超）/重み2対3、重複座標と0長線分、元CSV重複行、初回/追加バッチ途中失敗を追加する。
-4. 全スキーマの必須/null/列挙/座標順を検証。`points_shown == features.length`、`high_risk_sections.features.length == min(high_risk_total, 100)`、source頂点範囲、feature.id/route_id、fastest_id/safest_idの参照整合を検証。正常・全候補0件（safest_id=null）・天候一致0件・天候all（weather_match=null）・同一経路・全HTTPエラーの共通fixtureでReact/Rustを結合する。
+4. 全スキーマの必須/null/列挙/座標順を検証。`points_shown == features.length`、`high_risk_sections.features.length == min(high_risk_total, 100)`、source頂点範囲、feature.id/route_id、fastest_id/safest_idの参照整合を検証。正常・全候補0件（旧方式（schema 2）はsafest_id=null、新方式（schema 3）は安全重視の経路を選びsafest_idはnullにならない）・天候一致0件・天候all（weather_match=null）・同一経路・全HTTPエラーの共通fixtureでReact/Rustを結合する。
 5. 前処理の全入力行数/保持数/除外理由とCSV復号後の全行を検査する。現行記録は入力2,182,298、保持2,182,127、除外171（全件DMS不正）だが入力スナップショットに依存する。曜日区分の追加で保持・除外件数は変わらない。性能記録（6モックケースで1秒未満）はSLAではない。実OSRM/Geoapify/Open-Meteo、ブラウザ描画、実GPSはVALIDATION時点で未検証で、別の結合受け入れ試験が必要。
 
 ### 時間帯・曜日区分・条件取得の追加試験
@@ -593,7 +593,7 @@ JSON応答はContent-Type application/json、UTF-8、Cache-Control no-store、X-
 12. [navigation-cases.json](fixtures/navigation-cases.json) は人工geometryとsid別の深刻度から作るナビ区間の期待値。入力は集計後の小線分重みを表し、実事故・位置履歴は使わない。未記載sidの重みは0。投影・75m分割・累積距離・結合・ID・順序を検証し、距離の照合許容差は1e-6m、整数・順序・対象採否は完全一致とする。フロントにも同じ期待値を渡す。
 13. fixtureの `overlapping_round_trip` と `overlapping_round_trip_between_fixes` はA(0)→B(200)→A(0)→C(100)mの直線往復（L=500m、durationはそれぞれ50秒/51秒）。通常と同じ投影・分割・累積値を再計算する。付属のsimulationはfrontend-spec 7.3/7.7の共通判定器への生成入力と受け入れ期待値であり、API応答や保存軌跡ではない。照合は利用者決定に従い [navigation-matching-cases.md](../navigation-matching-cases.md) の条件とテストで規定し、計算手順は実装時に選び記録する。揺らぎOFFは終点後6秒以内、ONは停止期限前の終点後14秒以内に到着し、確定進捗の誤差・許される保留期間・複数seedと1/2/4/8倍の一致を検査する。実際の引き返し・精度不足・長い欠測・解消不能入力も同文書に従う。内部状態や固定の到着時刻との一致は要求しない。12の1e-6mはサーバが生成する距離の検算許容差であり、GPS照合の許容差ではない。fixtureに通常、連続/非連続、重み2/3、対象0、0長、全長0、折返しを含める。追加生成ケースで100超でもナビ対象が落ちないこと、15,000頂点・80km・0長辺多数・最大8,233区間のサイズ、区間重みの整数幅を検査する。表示側は従来どおり `min(high_risk_total,100)`、ナビ側は `Σ(E−S+1)=high_risk_total`。
 14. RouteResponseで2選定別ID/同一ID/safest=null/未選定候補navigation=nullを検査する。 [route-example-inputs.json](fixtures/route-example-inputs.json) の共通人工事故・要求条件・固定経路から、6〜8章に従ってOpenAPIの全route応答例を再計算する。twoSelectedは事故ID 0/1/2を全候補共通の入力とし、各候補2件、weighted_risk=12.21/3.64/8.34、risk_per_km=12.210/3.309/5.957、削減率70.2%、fastest_id=route-1、safest_id=route-2となる。route-1はsid 6=12とsid 3=3、route-2/3はsid 3=11。件数/天候一致/事故点/表示区間/ナビ区間/選定/reasonを一体で検査する。singleRouteは事故ID 0だけの1件・重み12、noAccidentsは同じ3事故が指定時間帯と一致せず0件で、非緩和とする。全選定のnavigation必須、累積配列長・先頭/末尾・単調性・φ・sidと距離の対応を確認する。未選定からの開始、別応答世代の区間混入をフロントで拒否する。
-15. 固定OSRM応答でナビの有無による上流呼出し回数が同じ（最大3、steps=false）であること。再検索ボタンだけが新しい通常検索となり、1050msの全利用者共通ゲート・全体期限・503規則を通ること。ナビ中の定期API通信が0であることを模擬走行で確認する。
+15. 旧方式（schema 2）では、固定OSRM応答でナビの有無による上流呼出し回数が同じ（最大3、steps=false）であること。再検索ボタンだけが新しい通常検索となり、1050msの全利用者共通ゲート・全体期限・503規則を通ること。新方式（schema 3）はOSRMを呼ばないので、上流呼出しが0回であることと、再検索が全体期限・503規則を通ることを確かめる。ナビ中の定期API通信が0であることを模擬走行で確認する。
 16. frontend-spec 11章の共通処理を使う模擬走行結合試験と、実機GPS・音声・IAP・非表示・SW更新の実端末受け入れを分ける。本節は実装時の試験要求であり、この文書変更で実機検証を済ませたという意味ではない。
 
 ### 自前経路探索の受け入れ試験（schema 3）
