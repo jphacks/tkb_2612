@@ -11,7 +11,7 @@
 | N・E | 共通グラフのノード数・辺数 |
 | A | 事故数（`accidents.csv.gz` のデータ行数、`metadata.json` の `rows`） |
 | C | 交差点クラスタの数 |
-| 辺（edge） | 交差点とwayの端点で区切った、無向の道路区間。辺番号 `EdgeId` は `graph.bin` の `EDGE` 節での順番 |
+| 辺（edge） | 交差点、wayの端点、`NODEFLG` を持つノード（信号・横断歩道・一時停止・踏切・障害物）、右左折禁止 relation の via ノードで区切った、無向の道路区間。辺番号 `EdgeId` は `graph.bin` の `EDGE` 節での順番 |
 | 有向辺（dedge） | 辺を向き付きで見たもの。`DirEdge = 2×辺番号 + 向き`（向き0：辺の始点→終点、1：終点→始点） |
 | 始点・終点 | 辺の `tail`・`head`。OSMのwayのノード順の向き |
 | 手段 | walk・bike・car。ビットは `Mode::mask` と同じ（walk=1、bike=2、car=4） |
@@ -128,7 +128,7 @@ P9 `package` が決める細部は次のとおり。
 - `base_release` は `release_id`・`processor`・`generated_at` の3キーを持つ。base に `processor`・`generated_at` がなければ `null` にする。
 - `routing.files` の順は `data::release::ROUTING_FILES`（4.2節と同じ固定順）。`sections` は `DEPS`・`PARAMS` を含むすべての節の `count`（JSONの節はバイト数）。
 - `routing.inputs.osm` は `graph.bin` の `PARAMS.osm` をそのまま写す（キーがなければ `null`）。`routing.inputs.accidents` は `release_id`（base のschema 2の値）と `dataset_id` を持ち、`files`・`codebooks_*` は `base_release` から写したトップレベルの同名キーを参照する。`routing.inputs.holiday_table` はbase の `holiday_table` をそのまま写す。
-- `routing.risk` は `train_source_years`・`years`・`c`・`c_groups`・`beta`・`beta_cluster`・`weather_multiplier` を写す。`risk.bin` の `PARAMS` に `inherited_from`・`validate_year` があればそれも写す。`fit`・`pooling`・`urban` は写さない。
+- `routing.risk` は `train_source_years`・`years`・`c`・`c_groups`・`car_exposure`（存在するときだけ）・`beta`・`beta_cluster`・`weather_multiplier` を写す。`risk.bin` の `PARAMS` に `inherited_from`・`validate_year` があればそれも写す。`fit`・`pooling`・`urban`・`edges`・`clusters` は写さない。
 - `routing.audit.unverified_deps` は、各 `.bin` の `DEPS` のうち、release の11ファイルに含まれないキー（`graph_attrs.bin` など中間生成物）の配列。各要素は `file`（DEPS を持つファイル）・`key`・`sha256`。release内のファイルへのキーは、8ファイルを読み終えた後も含めて実ファイルのSHA-256と照合する。
 
 ### 4.2 `release_id`
@@ -159,7 +159,7 @@ alt.bin <SHA-256>
    - 各ファイルのマジックナンバー・`format_version`（読込側が対応する版と一致）・節の `count` が `routing.files[]` と一致する。
    - 各ファイルの `DEPS` が、実ファイルのハッシュと一致する。
    - 各章の「読込時の検査」。
-3. `payload_sha256` は、起動時には検査しない（ファイル全体のハッシュの一致で足りる）。前処理の各段階と `package` が、入力ファイルについて検査する。
+3. `payload_sha256` は、起動時にも前処理の各段階でも検査しない（起動時はファイル全体のハッシュの一致で足りる）。`package` だけが、入力ファイルについて検査する。前処理の各段階は、容器・`DEPS`・件数・各章の読込時検査だけを行う。
 4. 起動時間は4分以内、読込後のRSSは3.2GB以下（作業書M4.2）。最初は、mmapを使わず `Vec` に読み込む（計画書7.2節）。
 
 ## 5. ID・座標・方向
@@ -241,7 +241,7 @@ alt.bin <SHA-256>
 
 ### 6.4 形状点の差分の規則
 
-隣り合う2点の差分が `i16` の範囲（±32767、約±360m）を超える場合、P1は、その2点を結ぶ線分を等分する点を足し、すべての差分を範囲内に収める。足した点の座標は1e-7度に四捨五入する（線分からのずれは1cm未満）。`PARAMS.interpolated_points` に足した点の数を記録する。辺の長さは、足す前の折れ線から計算する。
+隣り合う2点の差分の絶対値が 32,766 を超える場合（`i16` の範囲は±32767・約±360m だが、丸めの余裕を1とる）、P1は、その2点を結ぶ線分を等分する点を足し、すべての差分を範囲内に収める。足した点の座標は1e-7度に四捨五入する（線分からのずれは1cm未満）。`PARAMS.interpolated_points` に足した点の数を記録する。辺の長さは、足す前の折れ線から計算する。
 
 ### 6.5 道路の種類 `class`
 
@@ -537,7 +537,7 @@ urban（人口集中地区か）：人口集中地区の境界データは手元
 
 ### 14.3 交差点の種別 j（`u8`）
 
-`j = top_group×8 + branch_band×2 + signal`。`top_group` はクラスタの `top_class` を14.2節のgroupにしたもの（0〜9）、`branch_band` は `branches` が3以下で0、4で1、5以上で2、`signal` は信号の有無。
+`j = top_group×8 + branch_band×2 + signal`。`top_group` はクラスタの `top_class` を14.2節のgroupにしたもの（0〜9）。group が 10 以上のときは 9 に丸める。`branch_band` は `branches` が3以下で0、4で1、5以上で2、`signal` は信号の有無。
 
 ### 14.4 `PARAMS`
 
@@ -712,7 +712,7 @@ backend/src/bin/
                     `od-sample --region/--region-id` は地域内の道路ノードからODを抽出する（M5.1・M5.2）
 ```
 
-依存方向は既存の規則（`backend/README.md`）に従う。`domain::routing` は `contract` と `domain` の既存モジュール（`navigation`・`rounding`・`snapshot`・`corridor` の75m分割）だけを使い、`data` に依存しない。ファイルの読み書きは `data` に置く。
+依存方向は既存の規則（`backend/README.md`）に従う。`domain::routing` は `contract` と `domain` の既存モジュール（`navigation`・`rounding`・`snapshot`・`corridor` の75m分割・`candidates`・`engine`・`scoring`）だけを使い、`data` に依存しない。ファイルの読み書きは `data` に置く。
 
 ### 18.1 `route-batch` の評価用の引数
 

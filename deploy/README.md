@@ -1,6 +1,6 @@
 # Cloud Run＋IAPへの配備手順（担当：③）
 
-**この手順は未実施です。** GCPプロジェクト・請求・IAPの許可アカウント・Geoapifyの鍵・Open-Meteoのプラン・経路提供元・地図style・実releaseが揃い、利用者が承認するまで実行しません（Issue #9 S18・S20）。コマンドは公式資料に照らした確認をしていない下書きです。実行前に、各リンク先の現行の資料でフラグ名と必要な権限を確かめてください。
+**実施状況（2026-11-14時点）：** 1〜4章（イメージ・Secret Manager・Firestore・Cloud Runサービス）は実施済みで、サービスは稼働しています。5章のIAPは未実施で、サービスは未認証で公開しています（`allUsers` に `roles/run.invoker`）。6章のログの除外は2026-11-14に設定済み（除外名 `tkb-api-requests`。設定の約5分後から、リクエストログが保存されないことを確認した）、7章の予算通知は未確認です。コマンドは公式資料に照らした確認をしていない下書きを含みます。実行前に、各リンク先の現行の資料でフラグ名と必要な権限を確かめてください。
 
 前提の仕様：[cloud-selection.md](../docs/cloud-selection.md)、[backend-spec.md](../docs/backend-spec.md) 7・8章、[architecture.md](../docs/architecture.md) 4〜6章。
 
@@ -24,7 +24,7 @@ docker push $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/$SERVICE:$RELEASE_ID
 - `ROUTING_ATTRIBUTION` は、イメージの `VITE_ROUTING_ATTRIBUTION` とCloud Runの `ROUTING_ATTRIBUTION` に同じ値を渡します（同じ変数から設定する）。
 - `VITE_*` はブラウザへ公開される値です。秘密を入れません。
 - `PUBLIC_ORIGIN` は任意で、Cloud RunのURLのorigin（例：`https://tkb-api-….run.app`、パスなし）です。設定するとOGPの `og:url`・`og:image` を出力します。未設定ならこの2つを出しません。リンクプレビューはクローラーが未認証でページと画像を取得できる場合だけ表示されます（IAPを有効にすると表示されません）。
-- **未決**：releaseをgitに含めるか、どこに置いてイメージへ入れるか（Issue #9 7章）。今はビルド引数 `ACCIDENT_RELEASE`（ビルドコンテキスト内のパス）で渡し、`accidents.csv.gz`・`metadata.json`・`syukujitsu.csv` が無ければビルドを止めます。中身の検証（hash・schema・件数）は起動時に `data::load_*` が行います。
+- **未決**：releaseをgitに含めるか、どこに置いてイメージへ入れるか（Issue #9 7章）。今はビルド引数 `ACCIDENT_RELEASE`（ビルドコンテキスト内のパス）で渡し、`accidents.csv.gz`・`metadata.json`・`syukujitsu.csv` が無ければビルドを止めます。中身の検証（hash・schema・件数）は起動時に `data::load_*` が行います。`ACCIDENT_RELEASE` には schema 3 の11ファイル（3ファイル＋8つの `.bin`）を揃えてください。Dockerfileが存在を検査するのは3ファイルだけなので、`.bin` の欠落はビルドでは検出されず、起動時の `data::load_engine` で失敗します。
 
 ローカルでの確認（偽上流は `cargo run --example dev_stack` で起動。コンテナからホストのループバックへは届かないので `--network host` を使う）：
 
@@ -36,7 +36,7 @@ docker run --rm --network host \
   -e OPEN_METEO_BASE_URL=… -e EXTERNAL_USER_AGENT=… \
   -e ROUTING_ATTRIBUTION=… -e GEOCODING_ATTRIBUTION='[{"text":"Powered by Geoapify","url":"https://www.geoapify.com/"}]' \
   -v /path/to/dummy.key:/secrets/geoapify/key:ro \
-  $SERVICE:local
+  $REGION-docker.pkg.dev/$PROJECT_ID/$REPO/$SERVICE:$RELEASE_ID
 curl -s http://127.0.0.1:8080/api/health
 ```
 
@@ -83,12 +83,13 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 
 ## 4. Cloud Runサービス
 
-初期値（cloud-selection.md）：東京、1 vCPU / 4 GiB（2 GiBでは起動時のデータ読み込み中にメモリ不足で停止する。2026-11-11の実測で、起動直後の最大2.16 GiB、測定中の最大2.25 GiB）、同時受付4、最大1台、通常は最小0台、要求タイムアウトは180秒以上、ingressはall、未認証の公開をしない。startup probeは `/api/health`（全件ロードと検証が終わるまで503）で、起動4分以内に成功させます。
+初期値（cloud-selection.md）：東京、第2世代の実行環境、1 vCPU / 4 GiB（2 GiBでは起動時のデータ読み込み中にメモリ不足で停止する。2026-11-11の実測で、起動直後の最大2.16 GiB、測定中の最大2.25 GiB）、同時受付4、最大1台、通常は最小0台、要求タイムアウトは180秒以上、ingressはall、未認証の公開をしない。startup probeは `/api/health`（全件ロードと検証が終わるまで503）で、起動4分以内に成功させます。
 
 ```sh
 gcloud run deploy $SERVICE \
   --image=$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/$SERVICE:$RELEASE_ID \
   --region=$REGION \
+  --execution-environment=gen2 \
   --cpu=1 --memory=4Gi --concurrency=4 \
   --min-instances=0 --max-instances=1 \
   --timeout=180 \
@@ -103,7 +104,9 @@ gcloud run deploy $SERVICE \
   '--set-env-vars=^@^GEOCODING_ATTRIBUTION=[{"text":"Powered by Geoapify","url":"https://www.geoapify.com/"}]'
 ```
 
+- 実行環境は第2世代（`--execution-environment=gen2`）にします。全件ロード後のサーバのメモリは約2.1 GBですが、起動時の検証でrelease（約2 GB）の全ファイルを読むため、第1世代では読んだファイルの内容（約1.9 GB）もメモリ使用量に数えられ、ロードの終わりに合計が4 GiBを超えて起動に失敗することがありました（実測で4,119〜4,127 MiB）。第2世代ではこの分が数えられず、使用量は約2.1 GB（4 GiBの約51%）で、ロード時間も40秒台から約11秒に短くなりました（2026-11-14に確認）。
 - 環境変数はarchitecture.md 6章の表のとおりです。必須の不足・不正は起動に失敗し、ログには変数名だけが出ます（値は出しません）。`BACKEND_BIND`・`UPSTREAM_GATE` は設定しません（`0.0.0.0:$PORT`、`firestore`）。
+- `OSRM_*_BASE_URL` と `ROUTING_ATTRIBUTION` は起動時に必須ですが、新方式（schema 3）の経路探索では呼ばれず、`ROUTING_ATTRIBUTION` は応答に使われません（表示はビルド時の `VITE_ROUTING_ATTRIBUTION`）。
 - `GEOCODING_ATTRIBUTION` はカンマを含むので、区切り文字を変える記法（`^@^`）か `--env-vars-file` を使います。`"`・`[`・`{` をシェルに解釈させないよう、引数全体を単引用符で囲みます。
 - `WEATHER_CACHE_TTL_SEC=0` で気象応答のキャッシュを無効にします。リクエスト課金（要求の処理外はCPUが割り当てられない）では、無通信の間にキャッシュの期限切れの削除が動く保証がなく、architecture.md 8章の「最大10分保持」を守れないためです。キャッシュを使うには、インスタンス課金（`--no-cpu-throttling`）への変更が必要で、費用の判断を伴います（**未決**、Issue #9で扱う）。無効にしても、Open-Meteoの分/時/日/月の上限は上流ゲートで守ります。
 - 有償のOpen-Meteoでは `--set-secrets=/secrets/open-meteo/key=open-meteo-api-key:latest` と `OPEN_METEO_API_KEY_FILE=/secrets/open-meteo/key` を足します。
@@ -139,6 +142,7 @@ gcloud logging sinks update _Default \
   --add-exclusion=name=tkb-api-requests,filter='resource.type="cloud_run_revision" AND resource.labels.service_name="tkb-api" AND logName="projects/PROJECT_ID/logs/run.googleapis.com%2Frequests"'
 ```
 
+- 除外は設定してすぐには効きません。2026-11-14の設定では、設定の1分以内のリクエストログは保存され、約5分後からは保存されませんでした。確認は数分おいてから行います。設定前に保存されたログは除外の対象にならず、保存期間（既定30日）が過ぎるまで残ります。
 - 他のsink・組織側の転送先があれば、同じログが保存されないことを確かめます。
 - アプリの標準出力はルートのテンプレート・status・処理時間・匿名のエラーコードだけです（URLのクエリ・住所・座標・本文・上流URL・鍵を出しません。`backend/tests/logging.rs`）。
 - ダミーの入力（実在しない地名と海上の座標など）で保存先を確認してから、実入力で使います。

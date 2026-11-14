@@ -529,8 +529,10 @@
   background: var(--route-color);
   flex-shrink: 0;
 }
-.map-card-title > span {
+/* 余白は見出しの文字だけが受け取る。記号の span は広げない。 */
+.map-card-title-text {
   flex: 1;
+  min-width: 0;
 }
 /* 追加時間は途中で折り返さず、名前とのあいだで折り返す。 */
 .map-card-title-extra {
