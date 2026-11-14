@@ -91,6 +91,7 @@ async fn japanese_query_is_trimmed_and_not_cached() {
 }
 
 /// name、county、city、district を含む上流応答が label と detail に分かれて返る。
+/// other_names の無い駅（つくば）は category から「駅」を補う。
 #[tokio::test]
 async fn upstream_name_and_address_fields_are_split_into_label_and_detail() {
     let upstream = FakeUpstream::fixed(Reply::json(&json!({"results": [
@@ -103,6 +104,16 @@ async fn upstream_name_and_address_fields_are_split_into_label_and_detail() {
             "county": "千葉県",
             "city": "柏市",
             "district": "旭町一丁目"
+        },
+        {
+            "lat": 36.082_7,
+            "lon": 140.111_5,
+            "formatted": "つくば, 吾妻二丁目, つくば市, 茨城県, 日本",
+            "name": "つくば",
+            "category": "public_transport.train",
+            "county": "茨城県",
+            "city": "つくば市",
+            "district": "吾妻二丁目"
         }
     ]})))
     .await;
@@ -141,6 +152,11 @@ async fn upstream_name_and_address_fields_are_split_into_label_and_detail() {
             "lon": 139.970_7,
             "label": "柏駅",
             "detail": "千葉県柏市旭町一丁目",
+        }, {
+            "lat": 36.082_7,
+            "lon": 140.111_5,
+            "label": "つくば駅",
+            "detail": "茨城県つくば市吾妻二丁目",
         }])
     );
 }
