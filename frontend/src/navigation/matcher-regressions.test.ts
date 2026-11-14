@@ -4,6 +4,9 @@ import { NavigationSimulator, lcgNext, type SimulationMultiplier } from "./simul
 import { VirtualClock } from "./clock";
 import { localPosition, testRoute, MatchingAudit } from "./test-utils";
 import { createRouteGeometry } from "./geometry";
+import { CONFIRM_FIXES, CONFIRM_MS } from "./thresholds";
+
+const C = CONFIRM_MS / 1000;
 
 const audit = new MatchingAudit();
 afterAll(() => { if (process.env.NAV_MATCH_REPORT) console.info("反例集計", JSON.stringify(audit.summaries())); });
@@ -116,7 +119,7 @@ describe("重複区間の再確認（再レビュー2）", () => {
 });
 
 describe("交差から非隣接辺への移行（再レビュー3）", () => {
-  for (const jitter of [false, true]) for (const seed of seeds) for (const mirrored of [false, true]) it(`3測位・5秒を再確認、jitter=${jitter}, seed=${seed}, 反転=${mirrored}`, () => {
+  for (const jitter of [false, true]) for (const seed of seeds) for (const mirrored of [false, true]) it(`規定の測位数・確認時間を再確認、jitter=${jitter}, seed=${seed}, 反転=${mirrored}`, () => {
     const route = testRoute();
     route.geometry.coordinates = [[-100, -100], [100, 100], [-100, 100], [100, -100]].map(([x, y]) => {
       const p = localPosition(x, mirrored ? -y : y); return [p.lon, p.lat];
@@ -136,14 +139,14 @@ describe("交差から非隣接辺への移行（再レビュー3）", () => {
       const p = localPosition(x + (jitter ? r * Math.cos(theta) : 0), (mirrored ? -y : y) + (jitter ? r * Math.sin(theta) : 0));
       results.push(matcher.update({ ...p, timestamp: t * 1000, accuracy: 10 }));
     }
-    // 交差近傍を通過しても、別辺を確定するまで新しい5秒が必要。
+    // 交差近傍を通過しても、別辺を確定するまで新しい確認時間が必要。
     expect(results[10].p).toBeNull();
-    for (let t = 11; t <= 15; t++) expect(results[t].p, `t=${t}`).toBeNull();
+    for (let t = 11; t < 11 + C; t++) expect(results[t].p, `t=${t}`).toBeNull();
     const first = results.findIndex((r, t) => t > 10 && r.updated);
-    expect(first).toBeGreaterThanOrEqual(16); expect(first).toBeLessThanOrEqual(17);
+    expect(first).toBeGreaterThanOrEqual(11 + C); expect(first).toBeLessThanOrEqual(12 + C);
     expect(Math.abs(results[first].p! - n.vertex_distances_m[2] - Math.sqrt(2) * (100 + 10 * (first - 10)))).toBeLessThanOrEqual(20);
   });
-  it("交差後は5秒経過しても新しい2測位だけでは確定しない", () => {
+  it("交差後は確認時間を過ぎても測位数が足りなければ確定しない", () => {
     const route = testRoute();
     route.geometry.coordinates = [[-100, -100], [100, 100], [-100, 100], [100, -100]].map(([x, y]) => {
       const p = localPosition(x, y); return [p.lon, p.lat];
@@ -156,9 +159,10 @@ describe("交差から非隣接辺への移行（再レビュー3）", () => {
       clock.set(t * 1000); return matcher.update({ ...localPosition(x, y), accuracy: 10, timestamp: t * 1000 });
     };
     for (let t = 0; t <= 10; t++) update(t, -100 + 10 * t, -100 + 10 * t);
-    expect(update(11, 10, -10).p).toBeNull();
-    expect(update(16, 60, -60).p).toBeNull();
-    expect(update(17, 70, -70).status).toBe("tracking");
+    const along = (t: number) => update(t, 10 * (t - 10), -10 * (t - 10));
+    expect(along(11).p).toBeNull();
+    for (let i = 1; i < CONFIRM_FIXES - 1; i++) expect(along(11 + C + i).p).toBeNull();
+    expect(along(11 + C + CONFIRM_FIXES).status).toBe("tracking");
   });
 });
 

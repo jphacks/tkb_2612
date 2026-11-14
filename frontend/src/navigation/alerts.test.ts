@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fixtures from "../../../docs/api/fixtures/navigation-cases.json";
 import type { Mode, NavigationData } from "../lib/types";
 import { createAlerts } from "./alerts";
+import { FIX_GAP_RESET_MS } from "./thresholds";
 
 const section = (id = "a", start_m = 200, end_m = 250): NavigationData["sections"][number] => ({
   id, start_m, end_m, start_segment_index: 0, end_segment_index: 0, severity_weight: 3,
@@ -102,7 +103,7 @@ describe("接近通知", () => {
   it.each(["保留", "進行停止", "欠測", "古い入力"])("%sで連続確認をリセットする", (reason) => {
     const alerts = createAlerts("walk", [section()]);
     alerts.update(fix(1000, 120));
-    const input = reason === "保留" ? fix(2000, null) : reason === "進行停止" ? fix(2000, 120, false) : reason === "欠測" ? fix(6001, 120) : fix(1000, 120);
+    const input = reason === "保留" ? fix(2000, null) : reason === "進行停止" ? fix(2000, 120, false) : reason === "欠測" ? fix(1000 + FIX_GAP_RESET_MS + 1, 120) : fix(1000, 120);
     expect(alerts.update(input).notification).toBeNull();
     const t = input.timestampMs + 1000;
     const next = alerts.update(fix(t, 120));

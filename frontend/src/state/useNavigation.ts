@@ -9,6 +9,7 @@ import {
 } from "../navigation/session";
 import type { SimulationMultiplier } from "../navigation/simulator";
 import type { PositionFix } from "../navigation/source";
+import { ACCURACY_LIMIT_M, FIX_FUTURE_SKEW_MS, FIX_MAX_AGE_MS } from "../navigation/thresholds";
 
 export const START_MESSAGE = {
   device: "ナビを開始します",
@@ -32,7 +33,7 @@ export interface ReSearchSource {
   selection: NavigationSelection;
   simulation: SimulationSettings | null;
   fix: PositionFix | null;
-  /** 精度30m以下かつ5秒以内（実機は端末時計、模擬は仮想時計）。 */
+  /** 精度50m以下かつ5秒以内、未来は1秒まで（実機は端末時計、模擬は仮想時計）。 */
   fixFresh: boolean;
   /** 停止した模擬位置源。呼ぶたびに新しい仮想時刻の未補正測位を返す。 */
   measureSimulation: (() => PositionFix | null) | null;
@@ -198,7 +199,7 @@ export function useNavigation({ result, mapAvailable }: Options): NavigationCont
         : null,
       measureSimulation: active.stopForReSearch(),
       fix,
-      fixFresh: !!fix && fix.accuracy <= 30 && age >= 0 && age <= 5000,
+      fixFresh: !!fix && fix.accuracy <= ACCURACY_LIMIT_M && age >= -FIX_FUTURE_SKEW_MS && age <= FIX_MAX_AGE_MS,
     };
     end();
     return taken;

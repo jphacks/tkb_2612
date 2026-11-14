@@ -3,6 +3,7 @@ import { createAlerts, ALERT_MESSAGES } from "./alerts";
 import { createBrowserSpeechAdapter, createSpeech, SPEECH_UNAVAILABLE } from "./speech";
 import { createDeviation } from "./deviation";
 import type { SpeechAdapter, SpeechEvents, SpeechVoice, SpeechClock, SpeechCancelReason } from "./speech";
+import { CONFIRM_FIXES, CONFIRM_MS } from "./thresholds";
 
 // 呼出側の文言をそのまま渡す検証用の値。画面や製品の文言としては使用しない。
 const START_MESSAGE = "__caller_start_message__";
@@ -167,13 +168,13 @@ describe("音声の実時間制御", () => {
     expect(events.onStart).toHaveBeenCalledOnce(); expect(events.onEnd).toHaveBeenCalledOnce(); expect(events.onError).toHaveBeenCalledOnce();
     adapter.cancel(); expect(synth.cancel).toHaveBeenCalledOnce();
   });
-  it.each([1, 2, 4, 8])("%i倍でも位置の5秒確認は仮想時計、音声の失敗後も位置通知を続ける", speed => {
+  it.each([1, 2, 4, 8])("%i倍でも位置の確認時間は仮想時計、音声の失敗後も位置通知を続ける", speed => {
     const f = setup();
     f.speech.enable(START_MESSAGE);
     const deviation = createDeviation();
     [0, 5000, 10000].forEach(t => deviation.update({ timestampMs: t, accuracyM: 10, distanceToRouteM: 120 }));
-    [11000, 13500].forEach(t => expect(deviation.update({ timestampMs: t, accuracyM: 10, distanceToRouteM: 0, matchConfirmed: true }).deviated).toBe(true));
-    expect(deviation.update({ timestampMs: 16000, accuracyM: 10, distanceToRouteM: 0, matchConfirmed: true }).deviated).toBe(false);
+    for (let i = 0; i < CONFIRM_FIXES - 1; i++) expect(deviation.update({ timestampMs: 11000 + i, accuracyM: 10, distanceToRouteM: 0, matchConfirmed: true }).deviated).toBe(true);
+    expect(deviation.update({ timestampMs: 11000 + CONFIRM_MS, accuracyM: 10, distanceToRouteM: 0, matchConfirmed: true }).deviated).toBe(false);
     f.advance(5000 / speed);
     if (speed >= 2) expect(f.unavailable).not.toHaveBeenCalled();
     f.events().onError();

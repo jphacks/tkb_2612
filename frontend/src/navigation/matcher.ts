@@ -2,6 +2,7 @@ import type { NavigationData, RouteCandidate } from "../lib/types";
 import type { Clock } from "./clock";
 import type { PositionFix } from "./source";
 import { createRouteGeometry, projectPoint, routeProjections, type RouteProjection } from "./geometry";
+import { ACCURACY_LIMIT_M, CONFIRM_FIXES, CONFIRM_MS, FIX_FUTURE_SKEW_MS, FIX_GAP_RESET_MS, FIX_MAX_AGE_MS, NO_FIX_GRACE_MS, ROUTE_CORRIDOR_MIN_M } from "./thresholds";
 
 export type MatchStatus = "waiting" | "tracking" | "poor-accuracy" | "matching-hold" | "arrived" | "paused" | "stopped";
 export interface MatchResult {
@@ -222,22 +223,26 @@ export class NavigationMatcher {
   }
   poll(): MatchResult {
     if (["paused", "stopped", "arrived"].includes(this.result.status)) return { ...this.result, accepted: null, updated: false };
-    if (this.clock.now() - (this.result.status === "waiting" ? this.waitingSince : this.lastGood) > 5000) return this.suspend("poor-accuracy");
+    if (this.clock.now() - (this.result.status === "waiting" ? this.waitingSince : this.lastGood) > NO_FIX_GRACE_MS) return this.suspend("poor-accuracy");
     return { ...this.result, p: null, accepted: null, updated: false };
   }
   update(fix: PositionFix): MatchResult {
     if (["paused", "stopped", "arrived"].includes(this.result.status)) return { ...this.result, accepted: null, updated: false };
     const now = this.clock.now();
-    const valid = [fix.lon, fix.lat, fix.accuracy, fix.timestamp, now].every(Number.isFinite) && fix.lon >= 122 && fix.lon <= 154 && fix.lat >= 20 && fix.lat <= 46 && fix.accuracy > 0 && fix.timestamp > this.lastTimestamp && fix.timestamp <= now && now - fix.timestamp <= 5000;
+    const valid = [fix.lon, fix.lat, fix.accuracy, fix.timestamp, now].every(Number.isFinite) && fix.lon >= 122 && fix.lon <= 154 && fix.lat >= 20 && fix.lat <= 46 && fix.accuracy > 0 && fix.timestamp > this.lastTimestamp && fix.timestamp <= now + FIX_FUTURE_SKEW_MS && now - fix.timestamp <= FIX_MAX_AGE_MS;
     if (!valid) return this.suspend("poor-accuracy");
     this.lastTimestamp = fix.timestamp;
     const projections = routeProjections(this.geometry, fix);
     const nearest = projections.reduce((a, b) => b.distanceM < a.distanceM ? b : a);
-    if (fix.accuracy > 30) { this.resetSearch(); return this.suspend("poor-accuracy", fix, nearest.distanceM); }
+    if (fix.accuracy > ACCURACY_LIMIT_M) {
+      // 猶予内の単発の低精度は捨て、照合の状態を保つ。続けば猶予切れで精度不足になる。
+      if (["tracking", "matching-hold"].includes(this.result.status) && fix.timestamp - this.lastGood <= NO_FIX_GRACE_MS) return { ...this.result, p: null, accepted: null, updated: false };
+      this.resetSearch(); return this.suspend("poor-accuracy", fix, nearest.distanceM);
+    }
     const gap = fix.timestamp - this.lastGood;
     if (!Number.isFinite(this.lastGood)) this.searchSince = fix.timestamp;
     if (Number.isFinite(this.lastGood) && (gap > 30000 || fix.timestamp - Math.max(this.lastUsable, this.searchSince) > 30000)) { this.resetSearch(); this.searchSince = fix.timestamp; }
-    else if (gap > 5000) {
+    else if (gap > FIX_GAP_RESET_MS) {
       this.resetConfirmation();
       // 30秒以内は枝だけを保持し、欠測中の速度・回帰を外挿しない。
       this.hypotheses = this.hypotheses.map(h => ({ ...h, v: 0, pp: positionVariance(fix.accuracy), pv: 0, vv: fix.accuracy ** 2, motion: null }));
@@ -249,18 +254,18 @@ export class NavigationMatcher {
       if (Math.hypot(b.x - a.x, b.y - a.y) > 70 * (fix.timestamp - this.previousGood.timestamp) / 1000 + this.previousGood.accuracy + fix.accuracy) this.resetSearch();
     }
     this.previousGood = fix;
-    const corridor = Math.max(20, fix.accuracy);
+    const corridor = Math.max(ROUTE_CORRIDOR_MIN_M, fix.accuracy);
     if (nearest.distanceM > corridor + 1e-6) { this.resetSearch(); return this.suspend("matching-hold", fix, nearest.distanceM); }
     const interval = this.previousTimestamp === null ? 1 : (fix.timestamp - this.previousTimestamp) / 1000;
-    const dt = interval > 5 ? 1 : Math.max(0.001, interval);
+    const dt = interval > FIX_GAP_RESET_MS / 1000 ? 1 : Math.max(0.001, interval);
     this.previousTimestamp = fix.timestamp;
     const chosen = this.matchHypotheses(projections, fix, dt);
     if (!chosen) return this.suspend("matching-hold", fix, nearest.distanceM);
     this.lastUsable = fix.timestamp;
     const previouslyTrusted = this.trusted;
     this.confirmation ??= { since: fix.timestamp, count: 0 };
-    this.confirmation.count = Math.min(3, this.confirmation.count + 1);
-    this.trusted = this.confirmation.count >= 3 && fix.timestamp - this.confirmation.since >= 5000;
+    this.confirmation.count = Math.min(CONFIRM_FIXES, this.confirmation.count + 1);
+    this.trusted = this.confirmation.count >= CONFIRM_FIXES && fix.timestamp - this.confirmation.since >= CONFIRM_MS;
     if (!this.trusted) {
       this.result = { ...this.result, status: "matching-hold", p: null, distanceToRouteM: nearest.distanceM, accuracy: fix.accuracy, timestamp: fix.timestamp, lastAccepted: fix, accepted: fix, updated: false };
       return this.result;

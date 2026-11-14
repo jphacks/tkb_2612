@@ -13,6 +13,7 @@ import {
 } from "../state/useReSearch";
 import { SIM_STOP_CAUSE } from "./SimulationBanner";
 import { SimulationControls } from "./SimulationControls";
+import { ACCURACY_LIMIT_M } from "../navigation/thresholds";
 
 export interface NavigationPanelProps {
   snapshot: NavigationSnapshot;
@@ -43,7 +44,7 @@ export function phaseCause(snapshot: NavigationSnapshot): string {
     case "poor-accuracy":
       if (snapshot.sourceError === "timeout" || snapshot.sourceError === "unavailable")
         return "位置を取得できないため判定を停止中";
-      return snapshot.match.accuracy !== null && snapshot.match.accuracy > 30
+      return snapshot.match.accuracy !== null && snapshot.match.accuracy > ACCURACY_LIMIT_M
         ? "位置精度が低いため判定を停止中"
         : "位置を受信できないため判定を停止中";
     case "matching-hold":

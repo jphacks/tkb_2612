@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NavigationSession, type NavigationSnapshot } from "./session";
 import type { SpeechAdapter, SpeechVoice } from "./speech";
 import { localPosition, testRoute } from "./test-utils";
+import { ACCURACY_LIMIT_M, CONFIRM_MS, NO_FIX_GRACE_MS, ROUTE_CORRIDOR_MIN_M } from "./thresholds";
 
 type Success = (position: GeolocationPosition) => void;
 type Failure = (error: GeolocationPositionError) => void;
@@ -129,14 +130,19 @@ describe("NavigationSession: 接近通知と音声の結線（手順10）", () =
     for (let i = 0; i < 9; i++) feed(150 + i * 3);
     expect(speech.speak).toHaveBeenCalledTimes(2);
     vi.mocked(speech.cancel).mockClear();
-    feed(180, 80);
+    // 猶予内の低精度では進行中のまま、猶予を超えて続くと精度不足になる。
+    feed(180, ACCURACY_LIMIT_M + 1);
+    expect(last().phase).toBe("tracking");
+    expect(speech.cancel).not.toHaveBeenCalled();
+    for (let i = 0; i < NO_FIX_GRACE_MS / 1000; i++) feed(180, ACCURACY_LIMIT_M + 1);
     expect(last().phase).toBe("poor-accuracy");
     expect(speech.cancel).toHaveBeenCalled();
     expect(last().alertMessage).not.toBeNull();
     session.stop();
   });
 
-  it.each([2, 3] as const)("tracking中のGPSエラー%dで直ちに保留・発話取消し、watchを保ち良好測位の再確認後に復帰する", (code) => {
+  it("tracking中のGPSエラー2で直ちに保留・発話取消し、watchを保ち良好測位の再確認後に復帰する", () => {
+    const code = 2;
     const { session, feed, fail, speech, last, geolocation } = setup({
       sections: [{ start_m: 100, end_m: 400 }, { start_m: 550, end_m: 600 }], hangAfterStart: true,
     });
@@ -156,15 +162,42 @@ describe("NavigationSession: 接近通知と音声の結線（手順10）", () =
     expect(last().alertIds).toEqual(before.alertIds);
     expect(geolocation.watchPosition).toHaveBeenCalledTimes(1);
     expect(geolocation.clearWatch).not.toHaveBeenCalled();
-    // 短い欠測でも連続判定は引き継がず、最初の良好測位から5秒間確認する。
-    for (let i = 0; i < 5; i++) {
+    // 短い欠測でも連続判定は引き継がず、最初の良好測位から確認時間を置く。
+    for (let i = 0; i < CONFIRM_MS / 1000; i++) {
       feed(180 + i * 3);
       expect(last().phase).not.toBe("tracking");
       expect(last().phase).not.toBe("arrived");
       expect(last().remaining).toEqual(before.remaining);
       expect(last().alertIds).toEqual(before.alertIds);
     }
-    feed(195);
+    feed(180 + (CONFIRM_MS / 1000) * 3);
+    expect(last().phase).toBe("tracking");
+    expect(last().sourceError).toBeNull();
+    session.stop();
+  });
+
+  it("tracking中のGPSタイムアウトは猶予の間は進行中を保ち、猶予を超えると精度不足にする", () => {
+    const { session, feed, fail, speech, last, geolocation } = setup({
+      sections: [{ start_m: 100, end_m: 400 }, { start_m: 550, end_m: 600 }], hangAfterStart: true,
+    });
+    session.begin();
+    vi.advanceTimersByTime(11_000);
+    for (let i = 0; i < 9; i++) feed(150 + i * 3);
+    expect(last().phase).toBe("tracking");
+    vi.mocked(speech.cancel).mockClear();
+    fail(3);
+    expect(last().phase).toBe("tracking");
+    expect(last().sourceError).toBe("timeout");
+    expect(speech.cancel).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(NO_FIX_GRACE_MS - 1000);
+    expect(last().phase).toBe("tracking");
+    vi.advanceTimersByTime(2000);
+    expect(last().phase).toBe("poor-accuracy");
+    expect(speech.cancel).toHaveBeenCalled();
+    expect(geolocation.watchPosition).toHaveBeenCalledTimes(1);
+    expect(geolocation.clearWatch).not.toHaveBeenCalled();
+    // 測位が戻れば確認時間の後に進行中へ戻る。
+    for (let i = 0; i <= CONFIRM_MS / 1000; i++) feed(180 + i * 3);
     expect(last().phase).toBe("tracking");
     expect(last().sourceError).toBeNull();
     session.stop();
@@ -199,7 +232,7 @@ describe("NavigationSession: 模擬走行の停止期限と明示再開（7.7）
   };
 
   it("精度不足が続くと基準位置が終点に着いて15仮想秒で理由付きに停止し、到着にはせず、明示再開で再び進む", () => {
-    const session = simulate((fix, seconds) => (seconds >= 10 ? { ...fix, accuracy: 50 } : fix));
+    const session = simulate((fix, seconds) => (seconds >= 10 ? { ...fix, accuracy: ACCURACY_LIMIT_M + 1 } : fix));
     session.begin();
     run(9);
     expect(session.getSnapshot().phase).toBe("tracking");
@@ -243,17 +276,18 @@ describe("NavigationSession: 現在地からの再検索の案内（7.5）", () 
   it("開始直後の位置確認では案内せず、照合保留が15秒続いたときと逸脱中に案内する", () => {
     const { session, feed, last } = setup();
     session.begin();
-    for (let i = 0; i < 4; i++) feed(100 + i);
+    for (let i = 0; i < CONFIRM_MS / 1000; i++) feed(100 + i);
     expect(last().phase).toBe("matching-hold");
     expect(last().reSearchAvailable).toBe(false);
     for (let i = 0; i < 8; i++) feed(110 + i);
     expect(last().phase).toBe("tracking");
     expect(last().reSearchAvailable).toBe(false);
-    // 経路から25m離れると、位置を一意に確認できず保留になる。
-    for (let i = 0; i < 12; i++) feed(120, 10, 25);
+    // 経路上とみなす距離を超え、逸脱の閾値(40m)には届かない位置では保留になる。
+    const off = ROUTE_CORRIDOR_MIN_M + 5;
+    for (let i = 0; i < 12; i++) feed(120, 10, off);
     expect(last().phase).toBe("matching-hold");
     expect(last().reSearchAvailable).toBe(false);
-    for (let i = 0; i < 5; i++) feed(120, 10, 25);
+    for (let i = 0; i < 5; i++) feed(120, 10, off);
     expect(last().reSearchAvailable).toBe(true);
     // 経路へ戻って進行中になれば案内は消える。
     for (let i = 0; i < 9; i++) feed(125 + i);
