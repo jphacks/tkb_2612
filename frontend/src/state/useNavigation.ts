@@ -33,7 +33,7 @@ export interface ReSearchSource {
   selection: NavigationSelection;
   simulation: SimulationSettings | null;
   fix: PositionFix | null;
-  /** 精度30m以下かつ5秒以内（実機は端末時計、模擬は仮想時計）。 */
+  /** 精度50m以下かつ5秒以内、未来は1秒まで（実機は端末時計、模擬は仮想時計）。 */
   fixFresh: boolean;
   /** 停止した模擬位置源。呼ぶたびに新しい仮想時刻の未補正測位を返す。 */
   measureSimulation: (() => PositionFix | null) | null;
