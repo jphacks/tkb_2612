@@ -142,6 +142,7 @@
   - D6：音声案内は追加しない。音声は危険区間の通知専用のままとする。
 
   D1 は利用者の決定である。D2〜D6 は [navigation-guidance-plan.md](navigation-guidance-plan.md) で提案し、利用者がこの計画書で実装の開始を指示した。判定の規則と実データでの確認は、同書の4章と [routing-reports/guidance.md](routing-reports/guidance.md) に記録する。
+- **追加の決定（2026-11-14）：Cloud Runの配備イメージでも模擬走行を使えるようにする。** 2026-10-25の決定の「フラグのない本番ビルドでは模擬走行を出さない」を変更し、ルートの `Dockerfile` のビルド引数 `VITE_ENABLE_SIMULATION` の既定を `true` にする。配備の手順（deploy/README.md）でビルドしたイメージには、開始方法の選択（実機GPS／模擬走行）、SimulationControls、常設表示が含まれる。外すときは `--build-arg VITE_ENABLE_SIMULATION=false` を渡す。フロントの判定（`"true"` のときだけ有効）と、Docker以外のビルド・開発サーバーの既定（無効）は変えない。
 
 この決定はフロントエンドの範囲を含む。「今回の対象」でフロントエンドを確定対象から外した扱いの例外として、ナビ機能の振る舞いに限って確定する。警告の距離、ナビ用区間データの形式、逸脱の判定基準などの技術的な細部は、これまでどおりGPT-6.1 Solに委任する。委任判断は[backend-delegated-decisions.md](backend-delegated-decisions.md)と同様に利用者決定と区別して記録する。
 

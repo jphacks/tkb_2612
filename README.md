@@ -148,7 +148,7 @@ APIサーバ・フロントエンド・事故データを1つのイメージに�
    # package が標準出力に出すJSONの release_id を RELEASE_ID に設定する
    ```
 
-2. イメージをビルドします。`VITE_ENABLE_SIMULATION=true` を付けると、実際に移動しなくてもナビを試せる模擬走行を使えます。
+2. イメージをビルドします。実際に移動しなくてもナビを試せる模擬走行は既定で含まれます（外すときは `--build-arg VITE_ENABLE_SIMULATION=false`）。
 
    ```bash
    docker build \
@@ -156,7 +156,6 @@ APIサーバ・フロントエンド・事故データを1つのイメージに�
      --build-arg VITE_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/liberty \
      --build-arg VITE_ROUTING_ATTRIBUTION="© OpenStreetMap contributors" \
      --build-arg VITE_MAP_ATTRIBUTION="OpenFreeMap © OpenMapTiles Data from OpenStreetMap" \
-     --build-arg VITE_ENABLE_SIMULATION=true \
      -t acciless-navi:local .
    ```
 
