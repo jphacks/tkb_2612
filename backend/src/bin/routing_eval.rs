@@ -81,7 +81,7 @@
 //!
 //! `engine-summary`：`--results <result.jsonl>[,<result2.jsonl>...]`。任意：`--group-by mode|mode,region`
 //! （既定 `mode`）、`--out <summary.json>`（省略時は標準出力）。グループごとに状態の内訳、`total_ms` の
-//! 分位点、候補数・選定候補の高リスク区間の数の分布、`safest` の有無、`route_too_long`・80km超で
+//! 分位点、候補数・選定候補の高リスク区間の数の分布、`safest` の有無、`route_too_long`・250km超で
 //! 外した候補・間引いた候補の割合、`safest` の事故件数が `fastest` より多いODの割合を出す。
 //!
 //! `y-metrics`：`--dir <DIR> --assignment <assignment.bin> --accidents <accidents.csv.gz>
@@ -338,11 +338,10 @@ fn bench(options: &Options) -> Result<(), String> {
 // ---------------------------------------------------------------------------------------------
 
 /// 最短時間経路の距離の上限（m、behavior.md 5章。③の `ROUTE_MAX_DISTANCE_M` と同じ値）。
-const ROUTE_MAX_DISTANCE_M: f64 = 80_000.0;
+const ROUTE_MAX_DISTANCE_M: f64 = 250_000.0;
 
-/// 契約の直線距離の範囲（m、behavior.md 4章）。
+/// 契約の直線距離の下限（m、behavior.md 4章）。上限はない。
 const STRAIGHT_MIN_M: f64 = 20.0;
-const STRAIGHT_MAX_M: f64 = 30_000.0;
 
 /// 常駐データ（M1で作った4ファイル）。
 struct Data {
@@ -898,12 +897,9 @@ fn od_sample(options: &Options) -> Result<(), String> {
             return Err("--region と --region-id は同時に指定してください".to_owned());
         }
     };
-    if !(STRAIGHT_MIN_M..=STRAIGHT_MAX_M).contains(&min_m)
-        || !(STRAIGHT_MIN_M..=STRAIGHT_MAX_M).contains(&max_m)
-        || min_m >= max_m
-    {
+    if !(STRAIGHT_MIN_M..).contains(&min_m) || !max_m.is_finite() || min_m >= max_m {
         return Err(format!(
-            "距離帯は {STRAIGHT_MIN_M}〜{STRAIGHT_MAX_M}m の範囲で min-m < max-m です"
+            "距離帯は {STRAIGHT_MIN_M}m 以上の有限の値で min-m < max-m です"
         ));
     }
     let started = Instant::now();
@@ -2429,7 +2425,7 @@ fn engine_error_status(error: &EngineError) -> (&'static str, String) {
         EngineError::NoRoute => ("no_route", "経路が見つかりません".to_owned()),
         EngineError::RouteTooLong => (
             "route_too_long",
-            "最短時間経路の距離が80,000mを超えています".to_owned(),
+            "最短時間経路の距離が250,000mを超えています".to_owned(),
         ),
         EngineError::Interrupted(Interrupt::DeadlineExceeded) => {
             ("timeout", "期限を超えました".to_owned())

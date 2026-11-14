@@ -453,7 +453,7 @@
       "body": {
         "error": {
           "code": "route_too_long",
-          "message": "候補経路が80kmを超えました。近い地点を指定してください。"
+          "message": "候補経路が250kmを超えました。近い地点を指定してください。"
         }
       },
       "headers": {

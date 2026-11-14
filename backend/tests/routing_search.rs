@@ -2285,8 +2285,8 @@ fn select_candidates_limits_to_six_sorts_by_time_and_enforces_the_budget() {
 }
 
 #[test]
-fn select_candidates_drops_candidates_longer_than_80km() {
-    // 1本の辺が 90 km（900,000 dm）の2点。p0 は短い辺、候補の1つは 90 km。
+fn select_candidates_drops_candidates_longer_than_250km() {
+    // 1本の辺が 260 km（2,600,000 dm）の2点。p0 は短い辺、候補の1つは 260 km。
     let nodes = [
         (35.00, 139.00),
         (35.00, 139.01),
@@ -2298,7 +2298,7 @@ fn select_candidates_drops_candidates_longer_than_80km() {
         b.add_node_deg(lat, lon);
     }
     let short = b.add_edge(EdgeSpec::new(0, 1).length_dm(1_000));
-    let long = b.add_edge(EdgeSpec::new(2, 3).length_dm(900_000));
+    let long = b.add_edge(EdgeSpec::new(2, 3).length_dm(2_600_000));
     let exactly = b.add_edge(EdgeSpec::new(0, 2).length_dm(MAX_ROUTE_DISTANCE_DM as u32));
     let graph = b.build();
     let topology = empty_topology(&graph);
@@ -2315,9 +2315,9 @@ fn select_candidates_drops_candidates_longer_than_80km() {
     assert_eq!(
         kept,
         vec![p0.clone(), one(exactly, 300)],
-        "80,000mちょうどは残す"
+        "250,000mちょうどは残す"
     );
-    // p0 は距離の検査の対象外（最短時間経路の80km超は RouteTooLong として別に扱う）。
+    // p0 は距離の検査の対象外（最短時間経路の250km超は RouteTooLong として別に扱う）。
     let long_p0 = one(long, 100);
     let kept = select_candidates(
         &graph,

@@ -242,7 +242,7 @@ fn single(route: RoutedPath) -> Vec<RouterResponse> {
 }
 
 #[tokio::test]
-async fn vertex_count_and_80km_limits() {
+async fn vertex_count_and_250km_limits() {
     let many = |n: usize| {
         let coordinates: Vec<(f64, f64)> = (0..n)
             .map(|i| (139.0 + 0.01 * i as f64 / n as f64, 35.0))
@@ -254,38 +254,38 @@ async fn vertex_count_and_80km_limits() {
     let (result, _) = collect(Mode::Car, single(many(15_001))).await;
     assert_eq!(result.unwrap_err(), EngineError::ExternalApi);
 
-    // distance：80,000ちょうどは可、超過はroute_too_long
+    // distance：250,000ちょうどは可、超過はroute_too_long
     let with_distance = |d: f64| path(600.0, d, &[(139.0, 35.0), (139.01, 35.0)]);
-    let (result, _) = collect(Mode::Car, single(with_distance(80_000.0))).await;
+    let (result, _) = collect(Mode::Car, single(with_distance(250_000.0))).await;
     assert!(result.is_ok());
-    let (result, _) = collect(Mode::Car, single(with_distance(80_000.001))).await;
+    let (result, _) = collect(Mode::Car, single(with_distance(250_000.001))).await;
     assert_eq!(result.unwrap_err(), EngineError::RouteTooLong);
 
-    // geometry長（頂点間の直線距離の和）が80km超
+    // geometry長（頂点間の直線距離の和）が250km超
     let long = path(
         600.0,
         1000.0,
-        &[(139.0, 35.0), (139.0, 35.0 + 80_001.0 / METERS_PER_DEGREE)],
+        &[(139.0, 35.0), (139.0, 35.0 + 250_001.0 / METERS_PER_DEGREE)],
     );
     let (result, _) = collect(Mode::Car, single(long.clone())).await;
     assert_eq!(result.unwrap_err(), EngineError::RouteTooLong);
     // 南北の1辺のgeometry長は K×|Δlat|（behavior.md 4章の式で経度差0）。
-    // この長さが80,000m以下となる最大の緯度を1 ulpずつ探し、境界ちょうどは可、直上は超過とする
+    // この長さが250,000m以下となる最大の緯度を1 ulpずつ探し、境界ちょうどは可、直上は超過とする
     let length = |lat: f64| METERS_PER_DEGREE * (lat - 35.0);
     let next_up = |x: f64| f64::from_bits(x.to_bits() + 1);
-    let mut lat = 35.0 + 79_999.999 / METERS_PER_DEGREE;
-    while length(next_up(lat)) <= 80_000.0 {
+    let mut lat = 35.0 + 249_999.999 / METERS_PER_DEGREE;
+    while length(next_up(lat)) <= 250_000.0 {
         lat = next_up(lat);
     }
-    assert!(length(lat) <= 80_000.0 && length(next_up(lat)) > 80_000.0);
+    assert!(length(lat) <= 250_000.0 && length(next_up(lat)) > 250_000.0);
     let at_limit = path(600.0, 1000.0, &[(139.0, 35.0), (139.0, lat)]);
     let (result, _) = collect(Mode::Car, single(at_limit)).await;
-    assert!(result.is_ok(), "geometry長80,000m以下は可");
+    assert!(result.is_ok(), "geometry長250,000m以下は可");
     let over = path(600.0, 1000.0, &[(139.0, 35.0), (139.0, next_up(lat))]);
     let (result, _) = collect(Mode::Car, single(over)).await;
     assert_eq!(result.unwrap_err(), EngineError::RouteTooLong);
 
-    // 追加呼出しの80km超は警告にして既存候補を残す
+    // 追加呼出しの250km超は警告にして既存候補を残す
     let (result, _) = collect(
         Mode::Car,
         vec![

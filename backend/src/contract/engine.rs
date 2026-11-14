@@ -14,8 +14,8 @@ use super::conditions::{ConditionFilter, DayType, Mode, Period, Weather};
 use super::geo::{LatLon, LonLat, straight_distance_m};
 use super::routing::{RoutedPath, Router, RoutingError};
 
-/// 出発地と目的地の直線距離（m、両端を含む）。
-pub const STRAIGHT_DISTANCE_RANGE_M: RangeInclusive<f64> = 20.0..=30_000.0;
+/// 出発地と目的地の直線距離の下限（m、この値を含む）。上限はない（issue #39）。
+pub const MIN_STRAIGHT_DISTANCE_M: f64 = 20.0;
 /// 最短時間経路からの追加許容時間（分、両端を含む）。
 pub const MAX_DETOUR_RANGE_MIN: RangeInclusive<f64> = 0.0..=30.0;
 /// `max_detour_min` 省略時の値（分）。
@@ -60,7 +60,7 @@ impl QueryError {
         match self {
             QueryError::InvalidOrigin => "出発地には日本国内の緯度・経度を指定してください。",
             QueryError::InvalidDest => "目的地には日本国内の緯度・経度を指定してください。",
-            QueryError::StraightDistance => "出発地と目的地の直線距離は20m〜30kmにしてください。",
+            QueryError::StraightDistance => "出発地と目的地の直線距離は20m以上にしてください。",
             QueryError::MaxDetour => "追加を許容する時間は0〜30分で指定してください。",
         }
     }
@@ -75,7 +75,7 @@ pub fn validate_endpoints(origin: LatLon, dest: LatLon) -> Result<(), QueryError
     if !dest.is_in_japan() {
         return Err(QueryError::InvalidDest);
     }
-    if !STRAIGHT_DISTANCE_RANGE_M.contains(&straight_distance_m(origin, dest)) {
+    if !(MIN_STRAIGHT_DISTANCE_M..).contains(&straight_distance_m(origin, dest)) {
         return Err(QueryError::StraightDistance);
     }
     Ok(())
@@ -164,8 +164,8 @@ pub enum EngineError {
     /// 502 no_route。旧方式：初回の経路なし、または全呼出し後に候補0。
     /// 新方式：出発地か目的地を道路へ吸着できない、2点が同じ位置に吸着された、経路がない。
     NoRoute,
-    /// 422 route_too_long。旧方式：初回候補のdistanceまたはgeometry長が80km超。
-    /// 新方式：最短時間経路の距離が80km超（それ以外の80km超の候補は、エラーにせず外す）。
+    /// 422 route_too_long。旧方式：初回候補のdistanceまたはgeometry長が250km超。
+    /// 新方式：最短時間経路の距離が250km超（それ以外の250km超の候補は、エラーにせず外す）。
     RouteTooLong,
     /// 502 external_api_error。旧方式：初回呼出しの外部失敗、または初回候補の値・形状の不正。
     /// 新方式：返さない（経路提供元を呼ばない）。
@@ -407,7 +407,7 @@ pub struct RouteOutcome {
 /// 2なら旧方式の `AccidentEngine`（OSRMの候補を `collect_candidates` で取得する）、
 /// 3なら新方式の `RoutingEngine`（`collect_candidates` はルーターを呼ばずに空の
 /// [`CandidateSet`] を返し、`evaluate` が経路探索から集計・選定までを行う）。
-/// どちらの結果も、③の `api::route_response` の検査（頂点数2〜15,000、距離0超80km以下、
+/// どちらの結果も、③の `api::route_response` の検査（頂点数2〜15,000、距離0超250km以下、
 /// `check_detour`、`check_outcome` のその他の検査）を満たさなければならない。
 pub trait RouteEngine: Send + Sync {
     /// ロード済みデータの識別情報。

@@ -132,7 +132,7 @@ async fn origin_and_dest_must_be_named_finite_numbers_in_japan() {
 
 #[tokio::test]
 async fn japan_rectangle_edges_are_inclusive() {
-    // 端の点そのものは受理する（距離は20m〜30kmに収める）
+    // 端の点そのものは受理する（距離は20m以上にする）
     for (origin, dest) in [
         (
             json!({"lat": 20.0, "lon": 136.0}),
@@ -162,15 +162,13 @@ async fn straight_distance_bounds() {
     let lat = 35.0;
     let point = |meters: f64| json!({"lat": lat + meters / METERS_PER_DEGREE, "lon": 139.0});
     let origin = json!({"lat": lat, "lon": 139.0});
-    for meters in [19.9, 30_001.0] {
+    for meters in [19.9] {
         let message =
             assert_rejected(&json!({"origin": origin, "dest": point(meters)}).to_string()).await;
-        assert_eq!(
-            message,
-            "出発地と目的地の直線距離は20m〜30kmにしてください。"
-        );
+        assert_eq!(message, "出発地と目的地の直線距離は20m以上にしてください。");
     }
-    for meters in [20.1, 29_999.0] {
+    // 上限はない（issue #39）
+    for meters in [20.1, 29_999.0, 30_001.0, 1_000_000.0] {
         let body = json!({"origin": origin, "dest": point(meters)}).to_string();
         assert!(parse_route_request(body.as_bytes()).is_ok(), "{meters}");
     }

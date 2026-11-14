@@ -8,7 +8,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use accident_route_backend::contract::geo::METERS_PER_DEGREE;
+use accident_route_backend::contract::geo::{METERS_PER_DEGREE, straight_distance_m};
 use accident_route_backend::contract::{
     Attribution, BoxFuture, CancelToken, CandidateSet, ConditionFilter, DatasetInfo, DayType,
     EngineError, Interrupt, LatLon, Maneuver, Mode, Period, ProviderRoute, RouteEngine, RouteQuery,
@@ -17,7 +17,9 @@ use accident_route_backend::contract::{
 use accident_route_backend::domain::routing::accident::{
     AssignTarget, Assignment, UnassignedReason, UnassignedRecord,
 };
-use accident_route_backend::domain::routing::evaluate::routing_risk_note;
+use accident_route_backend::domain::routing::evaluate::{
+    EARLY_ROUTE_TOO_LONG_STRAIGHT_M, routing_risk_note,
+};
 use accident_route_backend::domain::routing::graph::synthetic::{EdgeSpec, GraphBuilder, grid};
 use accident_route_backend::domain::routing::graph::{Coord, EdgeId, Graph, NodeId, access};
 use accident_route_backend::domain::routing::prep::odindex::build_odindex;
@@ -403,7 +405,7 @@ fn normal_search_passes_invariants_with_fractional_detour() {
             candidate.path.duration_s <= fastest.path.duration_s + 7.5 * 60.0 + 1e-6,
             "候補の所要時間が上限を超えた"
         );
-        assert!(candidate.path.distance_m <= 80_000.0);
+        assert!(candidate.path.distance_m <= 250_000.0);
     }
     assert_no_duplicate_vertices(&outcome);
     assert_eq!(outcome.mode, Mode::Car);
@@ -1043,11 +1045,11 @@ fn long_path_is_simplified_and_keeps_both_ends() {
 // ---------------------------------------------------------------------------------------------
 
 #[test]
-fn a_fastest_path_over_80km_is_route_too_long() {
+fn a_fastest_path_over_250km_is_route_too_long() {
     let mut builder = GraphBuilder::new();
     let a = builder.add_node_deg(35.6, 139.7);
     let b = builder.add_node_deg(35.6, 139.701);
-    builder.add_edge(EdgeSpec::new(a, b).length_dm(800_001));
+    builder.add_edge(EdgeSpec::new(a, b).length_dm(2_500_001));
     let graph = builder.build();
     let engine = engine(&builder, empty_topology(&graph), &[], snapshot(&[]));
     let q = query(
@@ -1058,6 +1060,56 @@ fn a_fastest_path_over_80km_is_route_too_long() {
         ConditionFilter::default(),
     );
     assert_eq!(evaluate(&engine, &q), Err(EngineError::RouteTooLong));
+}
+
+/// 直線距離が `EARLY_ROUTE_TOO_LONG_STRAIGHT_M` を超える要求は、探索せずに `RouteTooLong`。
+/// 辺の長さは短くして、経路の距離ではなく直線距離で判定していることを確かめる。
+#[test]
+fn a_straight_distance_over_the_early_limit_is_route_too_long_without_search() {
+    // しきい値の直前・直後（±10m）と、明らかに長い・短い組。
+    let kx = METERS_PER_DEGREE * 35.0_f64.to_radians().cos();
+    let east = |d: f64| 139.0 + d / kx;
+    for (lon_b, expected) in [
+        (
+            east(EARLY_ROUTE_TOO_LONG_STRAIGHT_M + 10.0),
+            Err(EngineError::RouteTooLong),
+        ),
+        (east(EARLY_ROUTE_TOO_LONG_STRAIGHT_M - 10.0), Ok(())),
+        (142.3, Err(EngineError::RouteTooLong)),
+        (139.5, Ok(())),
+    ] {
+        let mut builder = GraphBuilder::new();
+        let a = builder.add_node_deg(35.0, 139.0);
+        let b = builder.add_node_deg(35.0, lon_b);
+        builder.add_edge(EdgeSpec::new(a, b).length_dm(1_000));
+        let graph = builder.build();
+        let engine = engine(&builder, empty_topology(&graph), &[], snapshot(&[]));
+        let (origin, dest) = (
+            graph.node_coord(a).to_latlon(),
+            graph.node_coord(b).to_latlon(),
+        );
+        let straight = straight_distance_m(origin, dest);
+        assert_eq!(
+            straight > EARLY_ROUTE_TOO_LONG_STRAIGHT_M,
+            expected.is_err(),
+            "{straight}"
+        );
+        let q = query(origin, dest, Mode::Car, 10.0, ConditionFilter::default());
+        assert_eq!(evaluate(&engine, &q).map(|_| ()), expected, "{straight}");
+    }
+}
+
+/// 吸着できない出発地は、直線距離が早期判定の上限を超えていても `NoRoute`（吸着が先）。
+#[test]
+fn an_unsnappable_far_origin_is_no_route_before_the_early_limit() {
+    let (builder, _a, b, _e0) = line_ab();
+    let graph = builder.build();
+    let engine = engine(&builder, empty_topology(&graph), &[], snapshot(&[]));
+    let dest = graph.node_coord(b).to_latlon();
+    let origin = LatLon::new(43.0, 141.3);
+    assert!(straight_distance_m(origin, dest) > EARLY_ROUTE_TOO_LONG_STRAIGHT_M);
+    let q = query(origin, dest, Mode::Car, 10.0, ConditionFilter::default());
+    assert_eq!(evaluate(&engine, &q), Err(EngineError::NoRoute));
 }
 
 #[test]

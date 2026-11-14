@@ -355,12 +355,14 @@ describe("API 2.0 contract and cross-field validation", () => {
     expect(result.attribution[0].url).toMatch(/^https:\/\//);
   });
 
-  it("rejects identical places and distances beyond the API domain", () => {
+  it("rejects identical places but accepts long straight-line distances", () => {
     expect(() =>
       validateRouteRequest({ ...request, dest: request.origin }),
     ).toThrow(/20m/);
-    expect(() =>
-      validateRouteRequest({ ...request, dest: DEMO_PLACES[5] }),
-    ).toThrow(/30km/);
+    // No upper bound on the straight-line distance (issue #39).
+    expect(validateRouteRequest({ ...request, dest: DEMO_PLACES[5] })).toEqual({
+      ...request,
+      dest: DEMO_PLACES[5],
+    });
   });
 });

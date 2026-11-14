@@ -19,8 +19,8 @@ use super::endpoints::{Placement, path_distance_dm, placement};
 /// この割合を **超える** ものを捨てる（80%ちょうどは残す）。
 pub const OVERLAP_THRESHOLD: f64 = 0.8;
 
-/// 返す候補の距離の上限（デシメートル）。80,000m（behavior.md 5章。契約の `ROUTE_MAX_DISTANCE_M`）。
-pub const MAX_ROUTE_DISTANCE_DM: u64 = 800_000;
+/// 返す候補の距離の上限（デシメートル）。250,000m（behavior.md 5章。契約の `ROUTE_MAX_DISTANCE_M`）。
+pub const MAX_ROUTE_DISTANCE_DM: u64 = 2_500_000;
 
 /// 経路が通る辺の区間：辺番号と、辺の始点からの距離（デシメートル）の範囲。出発・到着の吸着点が辺の
 /// 途中（`endpoints::Placement::Inside`）のときだけ、最初・最後の有向辺は通った部分になる
@@ -166,7 +166,7 @@ pub(crate) fn same_route(a: &Path, b: &Path) -> bool {
 /// 候補の整理で落とした理由の内訳（評価用）。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SelectStats {
-    /// 80,000mを超えるために外した候補の数（時間の上限は満たすもの）。
+    /// 250,000mを超えるために外した候補の数（時間の上限は満たすもの）。
     pub dropped_too_long: usize,
 }
 
@@ -175,7 +175,7 @@ pub struct SelectStats {
 /// `p0` は最短時間経路、`best` は事故考慮経路、`others` は凸包上の解とペナルティ法の代替経路
 /// （この順に並べる）。`budget_ds` は時間の上限 B。
 ///
-/// 1. 時間が `budget_ds` を超えるもの、距離が80,000mを超えるものを捨てる（`p0` は対象外）。
+/// 1. 時間が `budget_ds` を超えるもの、距離が250,000mを超えるものを捨てる（`p0` は対象外）。
 /// 2. 前から順に（`p0`、`best`、`others`）、すでに残した候補のいずれかと共有する物理区間の長さが、
 ///    その候補の長さの [`OVERLAP_THRESHOLD`] を超えるものを捨てる。ただし `p0` と `best` は常に残す。
 ///    `best` が `p0` と有向辺の列・吸着点まで同じなら、`best` は `p0` と同じ候補として1本にまとめる。
@@ -192,7 +192,7 @@ pub fn select_candidates(
     select_candidates_with_middle(graph, topology, p0, best, None, others, budget_ds).0
 }
 
-/// [`select_candidates`] と同じ整理を行い、80,000m超で外した候補の数も返す。
+/// [`select_candidates`] と同じ整理を行い、250,000m超で外した候補の数も返す。
 pub fn select_candidates_with_stats(
     graph: &Graph,
     topology: &Topology,
@@ -208,7 +208,7 @@ pub fn select_candidates_with_stats(
 ///
 /// 並べる順は `p0`、`best`、`middle`、`others`。`middle` は `p0`・`best` と同じく80%の重複除去の
 /// 対象から外して常に残すが、`p0` または `best` と有向辺の列・吸着点まで同じなら加えない。
-/// `middle` にも時間の上限と80,000mの検査をかけ、最大 `MAX_CANDIDATES`（6）本には含める。
+/// `middle` にも時間の上限と250,000mの検査をかけ、最大 `MAX_CANDIDATES`（6）本には含める。
 /// `others` の重複判定は `p0`・`best`・先に残した `others` とだけ比べ、`middle` とは比べない。
 pub fn select_candidates_with_middle(
     graph: &Graph,

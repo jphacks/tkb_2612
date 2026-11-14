@@ -29,7 +29,7 @@ use super::reduced::reduced_ellipse;
 pub enum RouteError {
     /// 2点が同じ位置、最短時間経路がない。
     NoRoute,
-    /// 最短時間経路の距離が80,000m超。
+    /// 最短時間経路の距離が250,000m超。
     RouteTooLong,
     /// 取り消し・期限切れ。
     Interrupted,
@@ -86,7 +86,7 @@ pub struct RouteSearch {
     pub budget_ds: u64,
     /// 候補（`select_candidates` の結果。所要時間の昇順、最大6本、すべて `time_ds ≤ B`）。
     pub candidates: Vec<Path>,
-    /// 候補の整理で80,000mを超えるために外した候補の数（評価用）。
+    /// 候補の整理で250,000mを超えるために外した候補の数（評価用）。
     pub dropped_too_long: u64,
     pub stats: RouteStats,
 }
@@ -182,7 +182,7 @@ pub fn find_routes_ds(
 /// `middle_detour_ds` が `Some(dm)` なら、`dm` を遠回りの上限にして中間案も探す。
 ///
 /// 1. 2点が同じ位置なら [`RouteError::NoRoute`]。
-/// 2. 最短時間経路 p0 を求める。到達できなければ [`RouteError::NoRoute`]、距離が80,000m超なら
+/// 2. 最短時間経路 p0 を求める。到達できなければ [`RouteError::NoRoute`]、距離が250,000m超なら
 ///    [`RouteError::RouteTooLong`]。
 /// 3. p0 のリスクを [`path_risk_fx`] で計算する。
 /// 4. `B = T0 + detour_ds`。

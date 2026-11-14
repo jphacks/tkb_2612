@@ -22,7 +22,7 @@ pub fn display_sections(subdivision: &Subdivision, weights: &[u64]) -> (Vec<High
 }
 
 /// [`display_sections`] を、整列の前後で `cancel.check()` を確かめながら作る。
-/// 整列の対象は最大で小線分数（16,466本）。
+/// 整列の対象は最大で小線分数（19,533本）。
 pub fn display_sections_checked(
     subdivision: &Subdivision,
     weights: &[u64],

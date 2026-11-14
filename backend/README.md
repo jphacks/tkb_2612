@@ -48,8 +48,8 @@ providers ──> contract
 | 処理 | ② | ③ |
 |---|---|---|
 | route入力 | — | JSON・Content-Type・型・列挙・互換入力（整数コード、null、`時間帯`、`hour`）の解釈。`RouteQuery::new` で座標・直線距離・許容時間を検証する（`validate_endpoints` を先に呼ぶと、behavior.md 4章の検証順を守れる） |
-| 経路取得 | 追加候補の要否、左右の経由点、呼出し順（初回→左→右）、値と頂点数の検証、80km判定、重複排除、並べ替え、警告 | URLの組立て、識別UA、上流ゲート、8秒の通信期限、サイズ上限、JSON構造の解釈、提供元のエラーの変換。先頭6本までを提供元の順で1本ずつ解釈して返す |
-| 計算 | 事故集計、選定、ナビ区間、説明文、計算中の中断 | `spawn_blocking` での実行、CPU同時数の上限、navigationのサイズ（10,200,000バイト）とJSONの安全整数範囲の検査 |
+| 経路取得 | 追加候補の要否、左右の経由点、呼出し順（初回→左→右）、値と頂点数の検証、250km判定、重複排除、並べ替え、警告 | URLの組立て、識別UA、上流ゲート、8秒の通信期限、サイズ上限、JSON構造の解釈、提供元のエラーの変換。先頭6本までを提供元の順で1本ずつ解釈して返す |
+| 計算 | 事故集計、選定、ナビ区間、説明文、計算中の中断 | `spawn_blocking` での実行、CPU同時数の上限、navigationのサイズ（11,400,000バイト）とJSONの安全整数範囲の検査 |
 | conditions | `Calendar` の実装（祝日表の読込、判定） | datetimeの検証とAsia/Tokyoへの換算、`TokyoMinute` の作成、天候の取得 |
 | health | `DatasetInfo` の提供 | 応答の組立て、未ready時の503 |
 
@@ -279,7 +279,7 @@ Issue #8 の実装です。計算は [behavior.md](../docs/api/behavior.md) 2〜
 | モジュール | 内容 |
 |---|---|
 | `domain::calendar` | `HolidayCalendar`（`contract::Calendar` の唯一の実装）。前処理と `/api/conditions` が同じ型を使う |
-| `domain::candidates` | 候補の取得（初回→side=-1→+1）・検証・80km判定・5桁fingerprintの重複排除・duration安定ソート |
+| `domain::candidates` | 候補の取得（初回→side=-1→+1）・検証・250km判定・5桁fingerprintの重複排除・duration安定ソート |
 | `domain::corridor` | 局所投影・75m分割・72m回廊（0.001度グリッド。結果は索引の走査順に依存しない） |
 | `domain::scoring`・`navigation`・`engine` | 集合B・スコア・事故点・高リスク区間・ナビ区間・選定・文言（`AccidentEngine`） |
 | `domain::rounding` | `py_round`（Pythonの `round` と同じ二進値のhalf-even）。丸めはすべてこれを使う |

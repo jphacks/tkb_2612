@@ -539,12 +539,12 @@ fn same_position_and_unreachable_are_no_route() {
 }
 
 #[test]
-fn fastest_path_longer_than_80km_is_route_too_long() {
+fn fastest_path_longer_than_250km_is_route_too_long() {
     let mut b = GraphBuilder::new();
     let a = b.add_node_deg(35.0, 139.0);
-    let c = b.add_node_deg(35.0, 140.0);
-    // 90 km（900,000 dm）。80,000 m を超える。
-    let e = b.add_edge(EdgeSpec::new(a, c).length_dm(900_000));
+    let c = b.add_node_deg(35.0, 141.9);
+    // 260 km（2,600,000 dm）。250,000 m を超える。
+    let e = b.add_edge(EdgeSpec::new(a, c).length_dm(2_600_000));
     assert!(u64::from(b.edge_spec(e).length_dm.unwrap()) > MAX_ROUTE_DISTANCE_DM);
     let world = World::new(&b, Mode::Car);
     let g = &world.graph;

@@ -41,7 +41,7 @@ paths:
       summary: 最短時間経路と事故考慮経路を比較する
       description: |
         候補1〜6本を返す。最短は所要時間最小で、最短距離ではない。
-        直線距離20〜30000m、候補distanceは80000m以下（最短時間経路が超えたら422、他の候補は外す）。
+        直線距離20m以上（上限なし）、候補distanceは250000m以下（最短時間経路が超えたら422、他の候補は外す）。
         リクエストはUTF-8 JSON、1〜16384バイト。大きすぎる場合も400。
         Content-Type不正・JSON不正・値不正は外部呼出し前に400。
         unknownキーは無視。hour/period整合と距離等の相関制約はbehavior.mdを参照。
@@ -58,10 +58,10 @@ paths:
         候補が取得済みでも全体期限後に200を返さない。
         gzipを許可するAccept-Encodingなら応答圧縮必須、Content-Encoding: gzipとVary: Accept-Encodingを返す。
         identity要求は非圧縮。サイズ・スキーマ検査は展開後のJSONに適用する。
-        全応答は概ね11〜12MB、負荷基準は非圧縮12000000バイト。圧縮率は保証しない。
+        全応答は理論上限で概ね17MB、負荷基準は非圧縮17300000バイト。圧縮率は保証しない。
         クライアント期限180秒はfetch開始から本文全受信・展開・解析/検査完了まで。ヘッダーで解除しない。
-        想定下り1Mbps以上・RTT 300ms以下。非圧縮12MBは転送96秒、サーバ等を含む見積り138秒。
-        サーバの転送待ちは送信開始から120秒、Cloud Run要求タイムアウトは180秒以上。
+        想定下り1Mbps以上・RTT 300ms以下。非圧縮17.3MBは転送138.4秒、サーバ等を含む見積り180.4秒で、この理論上限の最悪の組合せでは180秒で打ち切られうる。
+        サーバの転送待ちは送信開始から140秒、Cloud Run要求タイムアウトは180秒以上。
         Cloud Run＋IAP経由の圧縮/ヘッダー/期限は要確認。途中切断は本文不完了として失敗扱い。
         詳細と回線制限下の本文受信完了の受け入れはbehavior.md 7章。
       requestBody:
@@ -2140,7 +2140,7 @@ components:
       content:
         application/json:
           schema: {$ref: '#/components/schemas/ErrorResponse'}
-          example: {error: {code: invalid_request, message: 出発地と目的地の直線距離は20m〜30kmにしてください。}}
+          example: {error: {code: invalid_request, message: 出発地と目的地の直線距離は20m以上にしてください。}}
     NotFound:
       description: 404 not_found。未定義/api/*へ返す共通応答（OpenAPIの明示パス外にも適用）。
       headers:
@@ -2163,14 +2163,14 @@ components:
           schema: {$ref: '#/components/schemas/ErrorResponse'}
           example: {error: {code: method_not_allowed, message: このAPIでは指定のメソッドを使用できません。}}
     RouteTooLong:
-      description: 422 route_too_long。最短時間経路のdistanceが80000m超（旧方式は初回の候補distanceまたはgeometry_lengthが80000m超）。
+      description: 422 route_too_long。最短時間経路のdistanceが250000m超、または出発地と目的地の直線距離が265000m超（探索せずに返す）（旧方式は初回の候補distanceまたはgeometry_lengthが250000m超）。
       headers:
         Cache-Control: {$ref: '#/components/headers/NoStore'}
         X-Content-Type-Options: {$ref: '#/components/headers/NoSniff'}
       content:
         application/json:
           schema: {$ref: '#/components/schemas/ErrorResponse'}
-          example: {error: {code: route_too_long, message: 候補経路が80kmを超えました。近い地点を指定してください。}}
+          example: {error: {code: route_too_long, message: 候補経路が250kmを超えました。近い地点を指定してください。}}
     UpstreamError:
       description: |
         502 no_route（route APIのみ。出発地・目的地を道路へ吸着できない、または経路なし）またはexternal_api_error
@@ -2495,22 +2495,22 @@ components:
         start_segment_index:
           type: integer
           minimum: 0
-          maximum: 16465
+          maximum: 19532
           description: 結合した最初のsid（75m分割後、0始まり）。
         end_segment_index:
           type: integer
           minimum: 0
-          maximum: 16465
+          maximum: 19532
           description: 結合した最後のsid、両端を含む。start_segment_index以上。
         start_m:
           type: number
           minimum: 0
-          maximum: 110000
+          maximum: 340000
           description: 経路先頭から区間先頭までの局所平面累積距離、m。behavior.md 6・7章。丸めなし。
         end_m:
           type: number
           minimum: 0
-          maximum: 110000
+          maximum: 340000
           description: 区間末尾までの同じ累積距離、m。start_m以上、navigation.length_m以下。0長も残す。
         severity_weight:
           type: integer
@@ -2531,7 +2531,7 @@ components:
         at_m:
           type: number
           minimum: 0
-          maximum: 110000
+          maximum: 340000
           description: 経路始点から案内地点までの距離、m。vertex_distances_mと同じ軸で、丸めない。
     NavigationData:
       type: object
@@ -2546,17 +2546,17 @@ components:
         length_m:
           type: number
           minimum: 0
-          maximum: 110000
+          maximum: 340000
           description: 局所平面での経路全長L、m。候補のdistance・geometry_lengthと異なる。0ならナビ開始不可、候補は保持。
         vertex_distances_m:
           type: array
           minItems: 2
           maxItems: 15000
-          items: {type: number, minimum: 0, maximum: 110000}
+          items: {type: number, minimum: 0, maximum: 340000}
           description: 元geometryの各頂点までの累積距離、m。頂点数と同数、先頭0、非減少、末尾length_m。重複頂点を残しf64値を丸めず返す。
         sections:
           type: array
-          maxItems: 8233
+          maxItems: 9767
           items: {$ref: '#/components/schemas/NavigationSection'}
           description: |
             全対象区間をstart_segment_index昇順で返し、切り捨てない。対象なしは[]。
@@ -2573,8 +2573,8 @@ components:
       description: |
         移行追加。選定1〜3経路だけに付けるブラウザ内ナビ用データ。geometryは同じ候補のものを使う。
         距離はR=6371008.8m、全頂点の平均緯度、先頭頂点原点の局所平面近似。計算規則はbehavior.md 7章。
-        110000m/8233区間は80km・15000頂点からの保守上限で、候補受付の80km制限を変更しない。
-        選定経路分のnavigation合計は空白なしUTF-8 JSONで10200000バイト以下を検証する。
+        340000m/9767区間は250km・15000頂点からの保守上限で、候補受付の250km制限を変更しない。
+        選定経路分のnavigation合計は空白なしUTF-8 JSONで11400000バイト以下を検証する。
     WeatherMatch:
       type: object
       required: [accident_count, fatal_accidents, injury_accidents, deaths, injuries]
@@ -2593,7 +2593,7 @@ components:
       properties:
         id: {$ref: '#/components/schemas/RouteId'}
         duration: {type: number, exclusiveMinimum: 0, description: 推定所要時間、秒（新方式は道路グラフの所要時間モデル、旧方式はOSRM）}
-        distance: {type: number, exclusiveMinimum: 0, maximum: 80000, description: 経路距離、メートル（新方式は通った辺の長さの和、旧方式はOSRM）}
+        distance: {type: number, exclusiveMinimum: 0, maximum: 250000, description: 経路距離、メートル（新方式は通った辺の長さの和、旧方式はOSRM）}
         geometry: {$ref: '#/components/schemas/LineString'}
         accident_count:
           $ref: '#/components/schemas/Count'

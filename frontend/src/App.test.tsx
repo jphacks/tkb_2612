@@ -549,7 +549,7 @@ describe("App search flow and condition ownership", () => {
 describe("App result comparison and failures (frontend-spec 5, 10)", () => {
   it.each([
     ["no_route", 502, /道路に近い地点/],
-    ["route_too_long", 422, /80km.*近づけて/],
+    ["route_too_long", 422, /250km.*近づけて/],
     ["service_busy", 503, /混み合って/],
     ["invalid_response", undefined, /再読み込み/],
     [

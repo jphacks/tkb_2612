@@ -5,7 +5,7 @@
 //! 数値・件数・順序・選定・文言は②の値をそのまま使う（再計算しない）。
 //!
 //! 変換の前に相関制約・OpenAPIの値の範囲・JSONの安全整数範囲・有限値・navigationのサイズ
-//! （10,200,000バイト）を検査し、違反は内部契約違反（500）にする。間引いた200は返さない。
+//! （11,400,000バイト）を検査し、違反は内部契約違反（500）にする。間引いた200は返さない。
 
 use std::collections::HashSet;
 use std::io;
@@ -24,17 +24,17 @@ use crate::contract::{
 /// JSONの安全整数の上限（2^53−1）。
 pub const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 /// 選定経路分のnavigationの合計（空白なしUTF-8 JSON）の上限。
-pub const MAX_NAVIGATION_BYTES: u64 = 10_200_000;
+pub const MAX_NAVIGATION_BYTES: u64 = 11_400_000;
 /// OpenAPIの `NavigationData`・`NavigationSection` の範囲。
 pub const NAV_PROJECTION_LAT_RANGE: std::ops::RangeInclusive<f64> = 20.0..=46.0;
-pub const NAV_MAX_LENGTH_M: f64 = 110_000.0;
+pub const NAV_MAX_LENGTH_M: f64 = 340_000.0;
 pub const NAV_MAX_VERTICES: usize = 15_000;
-pub const NAV_MAX_SECTIONS: usize = 8_233;
+pub const NAV_MAX_SECTIONS: usize = 9_767;
 pub const NAV_MAX_GUIDANCE_STEPS: usize = 14_999;
-pub const NAV_MAX_SEGMENT_INDEX: u32 = 16_465;
+pub const NAV_MAX_SEGMENT_INDEX: u32 = 19_532;
 /// OpenAPIの `LineString`（頂点数）・`RouteCandidate`（`distance`）の範囲。
 pub const ROUTE_VERTICES_RANGE: std::ops::RangeInclusive<usize> = 2..=15_000;
-pub const ROUTE_MAX_DISTANCE_M: f64 = 80_000.0;
+pub const ROUTE_MAX_DISTANCE_M: f64 = 250_000.0;
 /// OpenAPIの `AccidentFeature`・`Years` の範囲。
 pub const ACCIDENT_MAX_PEOPLE: u16 = 999;
 pub const MIN_SOURCE_YEAR: u16 = 1900;

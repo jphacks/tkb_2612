@@ -68,9 +68,10 @@ export function validateRouteRequest(value: unknown): RouteRequest {
       (origin.lon - dest.lon) *
         Math.cos(((origin.lat + dest.lat) / 2) * radians),
     );
-  if (distance < 20 || distance > 30_000)
+  // No upper bound (issue #39); the 250km route-length limit is checked by the server.
+  if (!(distance >= 20))
     throw new ApiError(
-      "出発地と目的地の直線距離は20m以上、30km以内にしてください。",
+      "出発地と目的地の直線距離は20m以上にしてください。",
       "invalid_request",
       400,
     );
@@ -238,8 +239,8 @@ export function validateRouteResponse(
   return response;
 }
 
-/** behavior.md 7: selected routes' navigation must be at most 10,200,000 bytes. */
-const MAX_NAVIGATION_BYTES = 10_200_000;
+/** behavior.md 7: selected routes' navigation must be at most 11,400,000 bytes. */
+const MAX_NAVIGATION_BYTES = 11_400_000;
 const encoder = new TextEncoder();
 const utf8Length = (text: string) => encoder.encode(text).length;
 

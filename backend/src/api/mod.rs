@@ -78,7 +78,7 @@ impl ApiSettings {
     ) -> Self {
         Self {
             request_timeout: Duration::from_millis(35_000),
-            route_transfer_timeout: Duration::from_millis(120_000),
+            route_transfer_timeout: Duration::from_millis(140_000),
             conditions_timeout: Duration::from_millis(8_000),
             weather_forecast_days: 7,
             geocoding_attribution,

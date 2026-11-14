@@ -13,7 +13,7 @@ use super::rounding::py_round;
 /// 経路の頂点数（両端を含む）。
 pub const VERTEX_COUNT_RANGE: std::ops::RangeInclusive<usize> = 2..=15_000;
 /// distanceまたはgeometry長がこれを超えるとroute_too_long（ちょうどは可）。
-pub const MAX_ROUTE_LENGTH_M: f64 = 80_000.0;
+pub const MAX_ROUTE_LENGTH_M: f64 = 250_000.0;
 /// 初回の重複排除後がこれ未満なら左右の経由点で2回追加する。
 pub const MIN_INITIAL_CANDIDATES: usize = 3;
 /// fingerprintの桁数。
@@ -56,7 +56,7 @@ pub fn geometry_length_m(path: &RoutedPath) -> f64 {
 pub enum RouteDefect {
     /// 型として解釈できない、または値・形状が不正。
     Invalid,
-    /// distanceまたはgeometry長が80km超。
+    /// distanceまたはgeometry長が250km超。
     TooLong,
 }
 

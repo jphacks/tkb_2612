@@ -112,7 +112,7 @@ fn unsafe_integer_outcome() -> RouteOutcome {
     outcome
 }
 
-/// navigationが10,200,000バイトを超える結果（頂点数を増やす）。
+/// navigationが11,400,000バイトを超える結果（頂点数を増やす）。
 fn oversized_navigation_outcome() -> RouteOutcome {
     let mut outcome = expected_route_outcome("noAccidents");
     let candidate = &mut outcome.candidates[outcome.fastest];
@@ -138,8 +138,8 @@ fn json_safe_integer_overflow_is_rejected() {
     assert!(render_route_response(&unsafe_integer_outcome()).is_err());
 }
 
-/// 10,200,000バイトを超えるnavigationは拒否する。OpenAPIの範囲（頂点15,000・区間8,233・
-/// 案内14,999）内では選定3本の合計は約10.15MBに収まるので、超える結果は頂点数の範囲外でもある。
+/// 11,400,000バイトを超えるnavigationは拒否する。OpenAPIの範囲（頂点15,000・区間9,767・
+/// 案内14,999）内では選定3本の合計は約11.33MBに収まるので、超える結果は頂点数の範囲外でもある。
 #[test]
 fn navigation_over_limit_is_rejected() {
     let outcome = oversized_navigation_outcome();
@@ -184,14 +184,14 @@ fn navigation_outside_the_openapi_ranges_is_rejected() {
         assert!(render_route_response(&with(&|n| n.projection_lat_deg = lat)).is_ok());
     }
     let message = rejection(&with(&|n| {
-        let scale = 110_000.5 / n.length_m;
+        let scale = 340_000.5 / n.length_m;
         for d in &mut n.vertex_distances_m {
             *d *= scale;
         }
         n.length_m = *n.vertex_distances_m.last().unwrap();
     }));
     assert!(message.contains("length_m"), "{message}");
-    // sidの上限16,465（区間を後ろへずらす。相関検査だけでは通ってしまう）
+    // sidの上限19,532（区間を後ろへずらす。相関検査だけでは通ってしまう）
     let message = rejection(&with(&|n| {
         for s in &mut n.sections {
             s.start_segment_index += 20_000;
