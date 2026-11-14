@@ -55,7 +55,7 @@ GeoJSONはWGS84の`[lon,lat]`、入力/住所候補は名前付きlat/lon。緯�
 
 利用者決定のA＋B＋模擬走行に必要なデータを、既存route応答に同梱する。`RouteCandidate.navigation` は必須nullableで、fastest_id、nullでないsafest_id、nullでないmiddle_idの候補だけに返す。同じIDは1個を共用、未選定はnull、対象0件はsections=[]。応答の`middle_id`は新方式で中間案を出すときだけ非null、旧方式は常にnull。サーバにナビセッション・経路キャッシュ/保存・追跡APIを追加しない。
 
-`NavigationData` はprojection_lat_deg・length_m・vertex_distances_m・sections。behavior 6章の局所平面で累積距離を作り、深刻度3以上の全sidを経路順に並べ、連続sidの最大列だけ結合する。距離減衰・天候倍率を加えない。数値・結合・順序はbackend一か所に置き、表示用high_risk_sectionsの上位100件・非結合・high_risk_totalは維持する。正確な計算と相関制約は [api/behavior.md](api/behavior.md) 7章、判断理由は [navigation-delegated-decisions.md](navigation-delegated-decisions.md) に従う。
+`NavigationData` はprojection_lat_deg・length_m・vertex_distances_m・sections。behavior 6章の局所平面で累積距離を作り、深刻度3以上の全sidを経路順に並べ（新方式は事故3件未満のsidの重みを先に0にするので、事故3件以上のsidだけが対象になる）、連続sidの最大列だけ結合する。距離減衰・天候倍率を加えない。数値・結合・順序はbackend一か所に置き、表示用high_risk_sectionsの上位100件・非結合・high_risk_totalは維持する。正確な計算と相関制約は [api/behavior.md](api/behavior.md) 7章、判断理由は [navigation-delegated-decisions.md](navigation-delegated-decisions.md) に従う。
 
 80km/15,000頂点から保守的に局所全長110,000m、小線分16,466本、結合後8,233区間/経路。3経路のnavigationは10,200,000バイト以下を検証し、全route応答の小計は16,030,836バイト、メタデータ込み概ね16MBのケースでサイズ・RAM・gzip圧縮を含む全体35秒期限を測る。圧縮率は保証せず、送信形式は区間オブジェクトを維持する。1Mbps・RTT 300msでgzip/identityとも本文全受信・展開・解析/検査まで180秒以内を受け入れとする（behavior 7章）。navigation構築もaggregation_msへ含む。区間を切り捨てた部分成功にはしない。
 
